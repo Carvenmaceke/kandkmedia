@@ -1,0 +1,43 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: kandkmedia-payroll-system
+
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/kandkmedia_payroll?createDatabaseIfNotExist=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  mail:
+    host: ${MAIL_HOST:smtp.example.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+app:
+  jwt:
+    # Override with a long random secret via the JWT_SECRET env var in every real environment.
+    secret: ${JWT_SECRET:change-this-secret-before-deploying-to-production}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  # Only accounts with this email domain may sign up — mirrors the frontend's rule.
+  allowed-email-domain: ${ALLOWED_EMAIL_DOMAIN:kandkmedia.co.za}
+  payslip-delivery:
+    auto-send: true
+    send-time: "18:00"
+    send-on: LAST_DAY_OF_MONTH

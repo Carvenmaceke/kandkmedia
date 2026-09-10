@@ -1,0 +1,93 @@
+package co.za.kandkmedia.payroll.service;
+
+import co.za.kandkmedia.payroll.domain.Employee;
+import co.za.kandkmedia.payroll.domain.Payroll;
+import co.za.kandkmedia.payroll.domain.PayrollStatus;
+import co.za.kandkmedia.payroll.repository.PayrollRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * NOTE: PAYE and UIF below are simplified placeholders (flat 15% / 1% capped),
+ * matching the frontend prototype, purely to make the pipeline demonstrable
+ * end-to-end. Replace with a real SARS-compliant tax table before this
+ * touches an actual payslip.
+ */
+@Service
+@RequiredArgsConstructor
+public class PayrollService {
+
+    private static final BigDecimal PAYE_RATE = new BigDecimal("0.15");
+    private static final BigDecimal UIF_RATE = new BigDecimal("0.01");
+    private static final BigDecimal UIF_CAP = new BigDecimal("17712"); // monthly UIF-contributable ceiling
+
+    private final PayrollRepository payrollRepository;
+
+    public Payroll generateDraft(Employee employee, String payPeriod, BigDecimal overtime, BigDecimal bonus) {
+        return payrollRepository.findByEmployeeIdAndPayPeriod(employee.getId(), payPeriod)
+                .orElseGet(() -> {
+                    BigDecimal basic = employee.getSalary();
+                    BigDecimal housing = isSeniorOrManager(employee) ? new BigDecimal("2000") : BigDecimal.ZERO;
+                    BigDecimal transport = isIntern(employee) ? BigDecimal.ZERO : new BigDecimal("1000");
+                    BigDecimal gross = basic.add(overtime).add(bonus).add(housing).add(transport);
+
+                    BigDecimal paye = gross.multiply(PAYE_RATE).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal uif = gross.min(UIF_CAP).multiply(UIF_RATE).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal totalDeductions = paye.add(uif);
+                    BigDecimal net = gross.subtract(totalDeductions);
+
+                    Payroll payroll = Payroll.builder()
+                            .employee(employee)
+                            .payPeriod(payPeriod)
+                            .basicSalary(basic)
+                            .overtime(overtime)
+                            .bonus(bonus)
+                            .housingAllowance(housing)
+                            .transportAllowance(transport)
+                            .grossPay(gross)
+                            .paye(paye)
+                            .uif(uif)
+                            .totalDeductions(totalDeductions)
+                            .netPay(net)
+                            .status(PayrollStatus.DRAFT)
+                            .build();
+                    return payrollRepository.save(payroll);
+                });
+    }
+
+    /** Advances every record for a pay period exactly one stage — mirrors the HR "Advance to X" button. */
+    public List<Payroll> advanceStage(String payPeriod) {
+        List<Payroll> records = payrollRepository.findByPayPeriod(payPeriod);
+        if (records.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No payroll records found for " + payPeriod);
+        }
+        PayrollStatus[] stages = PayrollStatus.values();
+        for (Payroll payroll : records) {
+            int idx = payroll.getStatus().ordinal();
+            if (idx < stages.length - 1) {
+                payroll.setStatus(stages[idx + 1]);
+                if (payroll.getStatus() == PayrollStatus.FINALIZED) {
+                    payroll.setFinalizedAt(LocalDateTime.now());
+                }
+            }
+        }
+        return payrollRepository.saveAll(records);
+    }
+
+    private boolean isSeniorOrManager(Employee employee) {
+        String level = employee.getLevel() != null ? employee.getLevel().getName() : "";
+        return "Senior".equals(level) || "Manager".equals(level);
+    }
+
+    private boolean isIntern(Employee employee) {
+        String level = employee.getLevel() != null ? employee.getLevel().getName() : "";
+        return "Intern".equals(level);
+    }
+}

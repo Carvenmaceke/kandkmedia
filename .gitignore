@@ -1,4 +1,23 @@
+# Frontend
 node_modules/
-dist/
+frontend/dist/
+
+# Backend
+backend/target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
 *.log

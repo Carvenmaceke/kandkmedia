@@ -91,7 +91,11 @@ public class DataSeeder implements CommandLineRunner {
                 "Michael", "Chen", "michael.chen@kandkmedia.co.za", "083 111 2200", "Sales Executive", grace);
         seedUser(michael, Role.EMPLOYEE);
 
-        for (Employee employee : List.of(lindiwe, karabo, thabo, grace, john, amahle, pieter, sarah, michael)) {
+        Employee support = seedPerson(company, departments.get("Admin"), levels.get("Junior"),
+                "Support", "Desk", "support@kandkmedia.co.za", "083 222 3300", "Support Coordinator", null);
+        seedUser(support, Role.EMPLOYEE);
+
+        for (Employee employee : List.of(lindiwe, karabo, thabo, grace, john, amahle, pieter, sarah, michael, support)) {
             seedLeaveBalances(employee, leaveTypes);
         }
     }

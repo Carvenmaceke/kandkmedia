@@ -80,6 +80,7 @@ let EMPLOYEES = [
   { id: "EMP-00004", name: "Naledi Mokoena", role: "employee", level: "Intern", position: "Digital Media Intern", dept: "Digital Media", salary: 4500, manager: "EMP-00005", start: "2026-02-03", email: "naledi.mokoena@kandkmedia.co.za", phone: "082 888 9900" },
   { id: "EMP-00006", name: "Sarah Botha", role: "employee", level: "Junior", position: "Copywriter", dept: "Publications", salary: 12500, manager: "EMP-00007", start: "2024-01-09", email: "sarah.botha@kandkmedia.co.za", phone: "082 999 0011" },
   { id: "EMP-00008", name: "Michael Chen", role: "employee", level: "Mid-Level", position: "Sales Executive", dept: "Sales", salary: 19500, manager: "EMP-00007", start: "2021-11-22", email: "michael.chen@kandkmedia.co.za", phone: "083 111 2200" },
+  { id: "EMP-00011", name: "Support Desk", role: "employee", level: "Junior", position: "Support Coordinator", dept: "Admin", salary: 12000, manager: null, start: "2023-01-01", email: "support@kandkmedia.co.za", phone: "083 222 3300" },
 ];
 
 const ROLE_LABEL = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee" };
@@ -94,6 +95,7 @@ let LEAVE_BALANCES = {
   "EMP-00006": { "Annual Leave": 11, "Sick Leave": 7, "Family Responsibility Leave": 1 },
   "EMP-00007": { "Annual Leave": 16, "Sick Leave": 10, "Family Responsibility Leave": 3 },
   "EMP-00008": { "Annual Leave": 8, "Sick Leave": 5, "Family Responsibility Leave": 2 },
+  "EMP-00011": { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 },
   "EMP-00009": { "Annual Leave": 20, "Sick Leave": 10, "Family Responsibility Leave": 3 },
   "EMP-00010": { "Annual Leave": 17, "Sick Leave": 10, "Family Responsibility Leave": 3 },
 };

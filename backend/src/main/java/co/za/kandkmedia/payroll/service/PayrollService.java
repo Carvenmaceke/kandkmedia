@@ -29,6 +29,7 @@ public class PayrollService {
     private static final BigDecimal UIF_CAP = new BigDecimal("17712"); // monthly UIF-contributable ceiling
 
     private final PayrollRepository payrollRepository;
+    private final EmailService emailService;
 
     public Payroll generateDraft(Employee employee, String payPeriod, BigDecimal overtime, BigDecimal bonus) {
         return payrollRepository.findByEmployeeIdAndPayPeriod(employee.getId(), payPeriod)
@@ -69,16 +70,42 @@ public class PayrollService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No payroll records found for " + payPeriod);
         }
         PayrollStatus[] stages = PayrollStatus.values();
+        boolean movingToSent = false;
         for (Payroll payroll : records) {
             int idx = payroll.getStatus().ordinal();
             if (idx < stages.length - 1) {
-                payroll.setStatus(stages[idx + 1]);
-                if (payroll.getStatus() == PayrollStatus.FINALIZED) {
+                PayrollStatus next = stages[idx + 1];
+                payroll.setStatus(next);
+                if (next == PayrollStatus.FINALIZED) {
                     payroll.setFinalizedAt(LocalDateTime.now());
+                }
+                if (next == PayrollStatus.SENT) {
+                    movingToSent = true;
                 }
             }
         }
-        return payrollRepository.saveAll(records);
+        List<Payroll> saved = payrollRepository.saveAll(records);
+
+        // Actually send the payslip emails once the batch reaches SENT.
+        // sendPayslip() catches its own mail errors and records them on the
+        // row (emailFailureReason) rather than throwing, so one bad address
+        // doesn't stop the rest of the batch from sending.
+        if (movingToSent) {
+            for (Payroll payroll : saved) {
+                emailService.sendPayslip(payroll);
+            }
+            saved = payrollRepository.saveAll(saved);
+        }
+
+        return saved;
+    }
+
+    /** Resend a single payslip email — used by HR to retry a failed send. */
+    public Payroll resendEmail(Long payrollId) {
+        Payroll payroll = payrollRepository.findById(payrollId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
+        emailService.sendPayslip(payroll);
+        return payrollRepository.save(payroll);
     }
 
     private boolean isSeniorOrManager(Employee employee) {

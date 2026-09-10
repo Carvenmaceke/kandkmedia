@@ -73,4 +73,10 @@ public class HrController {
         String period = payPeriod != null ? payPeriod : Payroll.currentPeriod();
         return payrollService.advanceStage(period);
     }
+
+    /** Retry a payslip email that previously failed (or resend one that already succeeded). */
+    @PostMapping("/payroll/{id}/resend-email")
+    public Payroll resendEmail(@PathVariable Long id) {
+        return payrollService.resendEmail(id);
+    }
 }

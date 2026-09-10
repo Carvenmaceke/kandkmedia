@@ -4,7 +4,7 @@ import {
   Users, Banknote, CalendarDays, FileText, Bell, CheckCircle2, XCircle,
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
-  ArrowRight, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
+  ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
   Lock, Mail, Phone as PhoneIcon, AlertCircle,
 } from "lucide-react";
 
@@ -593,7 +593,7 @@ function SignupScreen({ onSignup, goLogin }) {
 /* ---------------------------------------------------------------------- */
 /* SETTINGS — edit my profile                                             */
 /* ---------------------------------------------------------------------- */
-function Settings({ emp, onSaveProfile, onChangePassword }) {
+function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
   const [form, setForm] = useState({ name: emp.name, email: emp.email, phone: emp.phone || "", position: emp.position, dept: emp.dept });
   const [saved, setSaved] = useState(false);
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
@@ -620,6 +620,12 @@ function Settings({ emp, onSaveProfile, onChangePassword }) {
 
   return (
     <div>
+      <button onClick={onBack} style={{
+        display: "flex", alignItems: "center", gap: 6, background: "none", border: "none",
+        color: T.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 14,
+      }}>
+        <ArrowLeft size={15} /> Back
+      </button>
       <SectionTitle sub="Update your personal information, password and notification preferences">Settings</SectionTitle>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
@@ -1321,7 +1327,7 @@ export default function App() {
 
       {/* CONTENT */}
       <div style={{ flex: 1, padding: "26px 30px", overflowY: "auto", maxHeight: 720 }}>
-        {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} />}
+        {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} onBack={() => setViewMode("role")} />}
 
         {viewMode === "selfService" && role !== "employee" && (
           <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />

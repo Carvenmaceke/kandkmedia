@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import jsPDF from "jspdf";
 import {
   Users, Banknote, CalendarDays, FileText, Bell, CheckCircle2, XCircle,
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
@@ -209,6 +210,99 @@ function Field({ label, children }) {
 const inputStyle = { width: "100%", padding: "9px 10px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13.5, fontFamily: sans, boxSizing: "border-box" };
 
 /* ---------------------------------------------------------------------- */
+/* PDF GENERATION — builds an actual downloadable payslip PDF client-side */
+/* ---------------------------------------------------------------------- */
+function downloadPayslipPdf(emp, month, figures) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 42;
+  let y;
+
+  // Header band — matches the on-screen payslip's dark header with red accent
+  doc.setFillColor(23, 17, 15);
+  doc.rect(0, 0, pageWidth, 108, "F");
+  doc.setFillColor(216, 31, 44);
+  doc.rect(marginX, 26, 40, 3, "F");
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text(COMPANY.name, marginX, 50);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(201, 191, 188);
+  const addressLines = doc.splitTextToSize(COMPANY.address, 300);
+  doc.text(addressLines, marginX, 64);
+  let afterAddressY = 64 + (addressLines.length - 1) * 10;
+  if (COMPANY.regNo) {
+    afterAddressY += 12;
+    doc.text(`Reg No: ${COMPANY.regNo}`, marginX, afterAddressY);
+  }
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text(emp.name, pageWidth - marginX, 50, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(201, 191, 188);
+  doc.text(`${emp.id} \u00b7 ${emp.position}`, pageWidth - marginX, 64, { align: "right" });
+  doc.text(`Pay Period: ${month}`, pageWidth - marginX, 78, { align: "right" });
+
+  const row = (label, value, bold) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(10.5);
+    doc.setTextColor(26, 20, 20);
+    doc.text(label, marginX, y);
+    doc.text(money(value), pageWidth - marginX, y, { align: "right" });
+    doc.setDrawColor(231, 225, 224);
+    doc.line(marginX, y + 5, pageWidth - marginX, y + 5);
+    y += 19;
+  };
+
+  const sectionHeader = (label) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(216, 31, 44);
+    doc.text(label, marginX, y);
+    y += 16;
+  };
+
+  y = 140;
+  sectionHeader("EARNINGS");
+  row("Basic Salary", figures.basic);
+  if (figures.housing > 0) row("Housing Allowance", figures.housing);
+  if (figures.transport > 0) row("Transport Allowance", figures.transport);
+  if (figures.overtime > 0) row("Overtime", figures.overtime);
+  if (figures.bonus > 0) row("Bonus", figures.bonus);
+  row("Gross Earnings", figures.gross, true);
+
+  y += 12;
+  sectionHeader("DEDUCTIONS");
+  row("PAYE", -figures.paye);
+  row("UIF", -figures.uif);
+  row("Total Deductions", -figures.totalDeductions, true);
+
+  y += 16;
+  doc.setFillColor(251, 234, 234);
+  doc.roundedRect(marginX, y - 15, pageWidth - marginX * 2, 34, 4, 4, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(23, 17, 15);
+  doc.text("Net Pay", marginX + 12, y + 7);
+  doc.text(money(figures.net), pageWidth - marginX - 12, y + 7, { align: "right" });
+
+  y += 48;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 110, 108);
+  doc.text("Figures are illustrative dummy data, not real tax calculations.", marginX, y);
+
+  doc.save(`${month.replace(" ", "-")}-${emp.id}.pdf`);
+}
+
+/* ---------------------------------------------------------------------- */
 /* PAYSLIP DOCUMENT                                                       */
 /* ---------------------------------------------------------------------- */
 function Payslip({ emp, month, figures, onClose }) {
@@ -257,7 +351,7 @@ function Payslip({ emp, month, figures, onClose }) {
             <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: T.navy }}>{money(figures.net)}</span>
           </div>
           <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
-            <Button variant="teal" icon={Download} small>Download PDF</Button>
+            <Button variant="teal" icon={Download} small onClick={() => downloadPayslipPdf(emp, month, figures)}>Download PDF</Button>
             <Button variant="ghost" icon={Send} small>Resend Email</Button>
           </div>
           <div style={{ marginTop: 10, fontSize: 10.5, color: T.muted }}>Filename: {month.replace(" ", "-")}-{emp.id}.pdf — figures are illustrative dummy data, not real tax calculations.</div>
@@ -694,7 +788,12 @@ function HrPayroll({ payrollStage, setPayslipView }) {
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 600 }}>{money(f.gross)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, color: T.red }}>-{money(f.totalDeductions)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 700, color: T.navy }}>{money(f.net)}</td>
-                  <td style={{ padding: "10px 14px" }}><button onClick={() => setPayslipView({ emp: e, month: CURRENT_MONTH, figures: f })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview payslip"><Eye size={16} /></button></td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button onClick={() => setPayslipView({ emp: e, month: CURRENT_MONTH, figures: f })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview payslip"><Eye size={16} /></button>
+                      <button onClick={() => downloadPayslipPdf(e, CURRENT_MONTH, f)} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF"><Download size={16} /></button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -997,8 +1096,8 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
                     <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 600 }}>{money(h.figures.net)}</td>
                     <td style={{ padding: "10px 14px" }}>
                       <div style={{ display: "flex", gap: 10 }}>
-                        <button onClick={() => setPayslipView({ emp, month: h.month, figures: h.figures })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }}><Eye size={16} /></button>
-                        <Download size={16} color={T.muted} style={{ cursor: "pointer" }} />
+                        <button onClick={() => setPayslipView({ emp, month: h.month, figures: h.figures })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview"><Eye size={16} /></button>
+                        <button onClick={() => downloadPayslipPdf(emp, h.month, h.figures)} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF"><Download size={16} /></button>
                       </div>
                     </td>
                   </tr>

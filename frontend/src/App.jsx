@@ -299,7 +299,28 @@ function downloadPayslipPdf(emp, month, figures) {
   doc.setTextColor(120, 110, 108);
   doc.text("Figures are illustrative dummy data, not real tax calculations.", marginX, y);
 
-  doc.save(`${month.replace(" ", "-")}-${emp.id}.pdf`);
+  const filename = `${month.replace(" ", "-")}-${emp.id}.pdf`;
+  triggerPdfDownload(doc, filename);
+}
+
+function triggerPdfDownload(doc, filename) {
+  try {
+    const blob = doc.output("blob");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (err) {
+    // Some embedded/sandboxed browser contexts block a programmatic download
+    // click. Fall back to opening the PDF in a new tab so the person can
+    // still save it manually from there.
+    console.error("PDF download failed, opening in a new tab instead:", err);
+    window.open(doc.output("bloburl"), "_blank");
+  }
 }
 
 /* ---------------------------------------------------------------------- */

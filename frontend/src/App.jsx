@@ -5,7 +5,7 @@ import {
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
-  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, MapPin,
+  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, MapPin, Bot,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -51,7 +51,10 @@ const COMPANY = {
 const ALLOWED_EMAIL_DOMAIN = "kandkmedia.co.za";
 const isCompanyEmail = (email) => (email || "").toLowerCase().trim().endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
 
-const LEVELS = [
+// `let`, not `const` — App syncs this from React state each render (same
+// pattern as EMPLOYEES/LEAVE_BALANCES) so HR's salary-structure edits and
+// new levels are reflected everywhere that reads LEVELS.
+let LEVELS = [
   { name: "Intern", default: 4000, min: 3500, max: 6000 },
   { name: "Junior", default: 12000, min: 8000, max: 15000 },
   { name: "Mid-Level", default: 20000, min: 15000, max: 25000 },
@@ -72,6 +75,41 @@ const OFFICE_ISSUE_TYPES = ["Hardware / Equipment", "Network / WiFi", "Printer /
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 const OFFICES = ["Midrand", "Sandton"];
 const TICKET_STATUSES = ["Open", "In Progress", "Resolved"];
+
+// Sourced from K and K Media's internal "IT Operations Documentation"
+// (S. Memela, IT Specialist), plus a few general quick-fix tips added on
+// request. The document's Office Activation section ends with a
+// third-party script that bypasses official Microsoft licensing — that
+// step is intentionally left out.
+//
+// `must`: every word here has to appear (as a substring) for this entry to
+// even qualify — keeps e.g. "outlook" answers from firing on a plain
+// "my computer is frozen" with no app named. `any`: at least one of these
+// has to appear too (skipped if empty). Matched in array order, so more
+// specific/topic-named entries are listed before generic fallbacks.
+const IT_FAQ = [
+  { must: [], any: ["printer", "print", "scanner", "scan"], answer: "First check the printer is connected to the network and powered on, and that the paper is loaded/aligned correctly. Still not working? This is an Office Issue (Printer/Scanner) — log one with your office selected so IT support can look at it." },
+  { must: ["outlook"], any: ["freeze", "frozen", "hang", "responding", "slow"], answer: "For Outlook freezing or not responding: try starting it in safe mode first (press Windows + R, type outlook.exe /safe, Enter). If that helps, disable add-ins one by one under File > Options > Add-ins. You can also try File > Account Settings > Data Files > Settings > Compact Now." },
+  { must: ["outlook"], any: ["crash", "startup", "won't open", "wont open", "open"], answer: "For Outlook crashing on startup: try creating a new Outlook profile (Control Panel > Mail > Show Profiles > Add), or run a Quick Repair (Settings > Apps > Microsoft Office > Modify > Quick Repair)." },
+  { must: ["outlook"], any: ["password", "credentials"], answer: "If Outlook keeps asking for your password: clear saved credentials via Control Panel > Credential Manager > Windows Credentials, then check whether 'Always prompt for logon credentials' is enabled under Account Settings > Security." },
+  { must: ["email"], any: ["sending", "receiving", "send", "won't send", "wont send", "stuck"], answer: "Check your account settings under File > Account Settings > Email, clear your outbox, and reduce attachment sizes if they're large. Outlook's built-in Inbox Repair Tool (scanpst.exe) can also fix a corrupted PST file." },
+  { must: ["calendar"], any: [], answer: "For calendar sync issues: try removing and re-adding the calendar, and double-check sync settings on both your phone and desktop." },
+  { must: ["email"], any: ["set up", "setup", "new account", "add account", "imap", "new email"], answer: "To set up a new company email account in Outlook: Add Account > choose IMAP manually > Incoming server mail.kandkmedia.co.za, port 993 > Outgoing server mail.kandkmedia.co.za, port 465. If you're not sure of your password, log a Support ticket (Account/Access Issue)." },
+  { must: ["teams"], any: ["connect", "load", "stuck", "disconnect", "laggy", "freeze", "freezing", "frozen"], answer: "For Teams connectivity problems: check your internet connection, temporarily disable VPN/firewall, and try clearing the Teams cache." },
+  { must: ["teams"], any: ["login", "sign in", "signin", "credentials"], answer: "For Teams login errors: double-check your credentials, make sure your device's date/time is correct (a mismatch can break sign-in), and check whether multi-factor authentication is the issue." },
+  { must: ["teams"], any: ["message", "sync", "chat"], answer: "If Teams isn't showing new messages: restart the app, clear its cache, or reinstall Teams if that doesn't help." },
+  { must: ["teams"], any: ["microphone", "camera", "webcam", "audio", "video", "mic", "echo"], answer: "For Teams audio/video problems: check your hardware connections, confirm the app and your system both have permission to use the mic/camera, and run a test call to verify." },
+  { must: ["teams"], any: ["notification", "alert"], answer: "If you're not getting Teams notifications: check the notification settings inside Teams itself, and also your system/OS notification preferences." },
+  { must: ["teams"], any: ["file", "upload", "onedrive", "sharepoint"], answer: "For file access errors in Teams: check your permissions, confirm OneDrive/SharePoint is properly connected, and try refreshing before retrying." },
+  { must: ["teams"], any: ["meeting", "recording"], answer: "For meeting problems (recordings not saving, chat unavailable): check your organization's meeting policies, storage limits, and recording permissions." },
+  { must: [], any: ["3cx", "softphone", "soft-phone", "phone system", "extension"], answer: "The 3CX portal is at https://kandkmedia.3cx.co.za:5001/ — setting up a new extension (with the QR code for the mobile app) needs to be done by IT support, so please log a ticket rather than trying to self-configure it." },
+  { must: [], any: ["slow", "freeze", "freezing", "laptop", "computer", "crash", "frozen", "hang"], answer: "For a general slow or frozen computer, the simplest first step is a full restart — that alone resolves a surprising number of issues. If it's still slow or freezing after a restart, log an Office Issue (Hardware/Equipment)." },
+  { must: [], any: ["wifi", "wi-fi", "internet", "network", "connection", "no internet"], answer: "Try turning WiFi off and back on, and confirm you're connected to the correct office network. If a router restart is something you have access to, that's worth trying too. Still not working? This is an Office Issue (Network/WiFi) — log one with your office selected." },
+  { must: [], any: ["password", "reset", "locked out", "can't log in", "cannot log in", "login"], answer: "For a locked account or forgotten password to a company system (not Outlook specifically — see the Outlook password question for that), log a Support ticket (Account/Access Issue) so IT support can reset it for you." },
+  { must: [], any: ["vpn", "remote"], answer: "Confirm you're using the correct VPN credentials and try reconnecting. If it still fails, log a Support ticket so IT support can check your access." },
+  { must: [], any: ["payslip", "salary", "pay"], answer: "For a payslip that looks wrong, use Support (Payslip Issue) rather than this chat — that routes it straight to the right place with your details attached." },
+  { must: [], any: ["leave", "vacation", "annual leave", "sick leave"], answer: "For a problem with a leave application, use Support (Leave Application Issue) — that routes it straight to the right place with your details attached." },
+];
 
 const LEAVE_TYPES = [
   "Annual Leave", "Sick Leave", "Family Responsibility Leave",
@@ -1593,8 +1631,38 @@ function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
   );
 }
 
-function HrEmployees({ onOpenProfile }) {
+function EditSalaryModal({ employee, onClose, onSave }) {
+  const [value, setValue] = useState(employee ? String(employee.salary) : "");
+  if (!employee) return null;
+  const submit = () => {
+    const num = parseFloat(value);
+    if (!isNaN(num) && num >= 0) onSave(employee.id, num);
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.5)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ background: T.surface, width: 380, maxWidth: "100%", borderRadius: 10, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>Edit Salary</div>
+            <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{employee.name} · {employee.level}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
+        </div>
+        <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Monthly Salary (R)</label>
+        <input type="number" value={value} onChange={(e) => setValue(e.target.value)} style={{ ...inputStyle, marginTop: 5 }} />
+        <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>This overrides the {employee.level} level default just for {employee.name} — used the next time their payroll is generated.</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <Button variant="teal" onClick={submit}>Save</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HrEmployees({ onOpenProfile, onUpdateSalary }) {
   const [q, setQ] = useState("");
+  const [salaryTarget, setSalaryTarget] = useState(null);
   const filtered = EMPLOYEES.filter((e) => (e.name + e.id + e.position + e.dept).toLowerCase().includes(q.toLowerCase()));
   return (
     <div>
@@ -1618,13 +1686,17 @@ function HrEmployees({ onOpenProfile }) {
                 <td style={{ padding: "10px 14px" }}><Pill tone="teal">{e.level}</Pill></td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.dept}</td>
-                <td style={{ padding: "10px 14px", fontFamily: mono }}>{money(e.salary)}</td>
+                <td style={{ padding: "10px 14px" }}>
+                  <button onClick={() => setSalaryTarget(e)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: mono, color: T.text, textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: T.muted }}>{money(e.salary)}</button>
+                </td>
                 <td style={{ padding: "10px 14px" }}><button onClick={() => onOpenProfile(e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }}><ChevronRight size={16} /></button></td>
               </tr>
             ))}
           </tbody>
         </table>
       </Card>
+      <EditSalaryModal employee={salaryTarget} onClose={() => setSalaryTarget(null)}
+        onSave={(id, salary) => { onUpdateSalary(id, salary); setSalaryTarget(null); }} />
     </div>
   );
 }
@@ -1781,25 +1853,95 @@ function AdminCompanySettings() {
   );
 }
 
-function AdminLevels() {
+function LevelRow({ level, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ default: level.default, min: level.min, max: level.max });
+
+  if (!editing) {
+    return (
+      <tr style={{ borderTop: `1px solid ${T.border}` }}>
+        <td style={{ padding: "10px 14px", fontWeight: 600 }}>{level.name}</td>
+        <td style={{ padding: "10px 14px", fontFamily: mono }}>{money(level.default)}</td>
+        <td style={{ padding: "10px 14px", fontFamily: mono, color: T.muted }}>{money(level.min)} – {money(level.max)}</td>
+        <td style={{ padding: "10px 14px" }}><button onClick={() => setEditing(true)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal, fontSize: 12.5, fontWeight: 600 }}>Edit</button></td>
+      </tr>
+    );
+  }
+  return (
+    <tr style={{ borderTop: `1px solid ${T.border}`, background: T.tealLight }}>
+      <td style={{ padding: "8px 14px", fontWeight: 600 }}>{level.name}</td>
+      <td style={{ padding: "8px 14px" }}><input type="number" value={draft.default} onChange={(e) => setDraft({ ...draft, default: Number(e.target.value) })} style={{ ...inputStyle, padding: "5px 8px", width: 100 }} /></td>
+      <td style={{ padding: "8px 14px" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="number" value={draft.min} onChange={(e) => setDraft({ ...draft, min: Number(e.target.value) })} style={{ ...inputStyle, padding: "5px 8px", width: 90 }} />
+          <span style={{ color: T.muted }}>–</span>
+          <input type="number" value={draft.max} onChange={(e) => setDraft({ ...draft, max: Number(e.target.value) })} style={{ ...inputStyle, padding: "5px 8px", width: 90 }} />
+        </div>
+      </td>
+      <td style={{ padding: "8px 14px" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { onSave(level.name, draft); setEditing(false); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.green, fontSize: 12.5, fontWeight: 600 }}>Save</button>
+          <button onClick={() => { setDraft({ default: level.default, min: level.min, max: level.max }); setEditing(false); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, fontSize: 12.5 }}>Cancel</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function AddLevelForm({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", default: "", min: "", max: "" });
+  const [error, setError] = useState("");
+
+  const submit = () => {
+    if (!form.name.trim()) { setError("Give the new level/role a name."); return; }
+    if (LEVELS.some((l) => l.name.toLowerCase() === form.name.trim().toLowerCase())) { setError("A level with that name already exists."); return; }
+    onAdd({ name: form.name.trim(), default: Number(form.default) || 0, min: Number(form.min) || 0, max: Number(form.max) || 0 });
+    setForm({ name: "", default: "", min: "", max: "" });
+    setError("");
+    setOpen(false);
+  };
+
+  if (!open) return <Button variant="ghost" small onClick={() => setOpen(true)}>+ Add Level</Button>;
+
+  return (
+    <Card style={{ padding: 16, marginTop: 12, maxWidth: 460 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>New Level / Role</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} placeholder="Level name, e.g. Lead" />
+        <div style={{ display: "flex", gap: 8 }}>
+          <input type="number" value={form.default} onChange={(e) => setForm({ ...form, default: e.target.value })} style={inputStyle} placeholder="Default salary" />
+          <input type="number" value={form.min} onChange={(e) => setForm({ ...form, min: e.target.value })} style={inputStyle} placeholder="Min" />
+          <input type="number" value={form.max} onChange={(e) => setForm({ ...form, max: e.target.value })} style={inputStyle} placeholder="Max" />
+        </div>
+        {error && <div style={{ fontSize: 11.5, color: T.red }}>{error}</div>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button variant="teal" small onClick={submit}>Add Level</Button>
+          <Button variant="ghost" small onClick={() => setOpen(false)}>Cancel</Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function AdminLevels({ onUpdateLevel, onAddLevel }) {
   return (
     <div>
-      <SectionTitle sub="Configure default salary structures and organizational departments">Employee Levels & Departments</SectionTitle>
+      <SectionTitle sub="Set default salaries and ranges per level/role — used when generating payroll and as the starting salary for new signups">Salary Structure & Departments</SectionTitle>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <Card style={{ overflow: "hidden", flex: "2 1 420px" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Level", "Default Salary", "Range"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-            <tbody>
-              {LEVELS.map((l) => (
-                <tr key={l.name} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px", fontWeight: 600 }}>{l.name}</td>
-                  <td style={{ padding: "10px 14px", fontFamily: mono }}>{money(l.default)}</td>
-                  <td style={{ padding: "10px 14px", fontFamily: mono, color: T.muted }}>{money(l.min)} – {money(l.max)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <div style={{ flex: "2 1 460px" }}>
+          <Card style={{ overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Level", "Default Salary", "Range", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {LEVELS.map((l) => <LevelRow key={l.name} level={l} onSave={onUpdateLevel} />)}
+              </tbody>
+            </table>
+          </Card>
+          <div style={{ marginTop: 12 }}>
+            <AddLevelForm onAdd={onAddLevel} />
+          </div>
+        </div>
         <Card style={{ padding: 18, flex: "1 1 220px" }}>
           <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>Departments</div>
           {DEPARTMENTS.map((d) => (
@@ -1915,6 +2057,126 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
 /* ---------------------------------------------------------------------- */
 /* EMPLOYEE VIEW (also used as self-service for HR / Admin / Manager)     */
 /* ---------------------------------------------------------------------- */
+/* IT ASSISTANT — keyword-matched chatbot over IT_FAQ, sourced from       */
+/* K and K Media's IT Operations Documentation plus a few general tips    */
+/* ---------------------------------------------------------------------- */
+function ITAssistantChat() {
+  const [messages, setMessages] = useState([
+    { from: "bot", text: "Hi! I can help with common IT issues — Outlook, Teams, printers, email setup, WiFi, and more. Try asking, or use the quick suggestions below." },
+  ]);
+  const [input, setInput] = useState("");
+  const listRef = useRef(null);
+
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [messages]);
+
+  const findAnswer = (text) => {
+    const lower = text.toLowerCase();
+    const match = IT_FAQ.find((entry) => {
+      const mustOk = entry.must.every((m) => lower.includes(m));
+      const anyOk = entry.any.length === 0 || entry.any.some((a) => lower.includes(a));
+      return mustOk && anyOk;
+    });
+    return match ? match.answer : "I don't have guidance for that yet. Please log a Support or Office Issue ticket and IT support will help you directly.";
+  };
+
+  const send = (text) => {
+    if (!text.trim()) return;
+    setMessages((m) => [...m, { from: "user", text }, { from: "bot", text: findAnswer(text) }]);
+    setInput("");
+  };
+
+  return (
+    <Card style={{ padding: 0, maxWidth: 540, overflow: "hidden" }}>
+      <div style={{ background: T.navy, padding: "12px 16px", display: "flex", alignItems: "center", gap: 8 }}>
+        <Bot size={16} color="#fff" />
+        <span style={{ color: "#fff", fontWeight: 700, fontSize: 13.5 }}>IT Assistant</span>
+      </div>
+      <div ref={listRef} style={{ padding: 16, height: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            alignSelf: m.from === "user" ? "flex-end" : "flex-start",
+            background: m.from === "user" ? T.navy : T.bg, color: m.from === "user" ? "#fff" : T.text,
+            padding: "8px 12px", borderRadius: 10, maxWidth: "82%", fontSize: 13, lineHeight: 1.5,
+          }}>{m.text}</div>
+        ))}
+      </div>
+      <div style={{ padding: "10px 12px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {["Outlook frozen", "Teams won't load", "Printer not working", "Set up email"].map((q) => (
+          <button key={q} onClick={() => send(q)} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 14, border: `1px solid ${T.border}`, background: "#fff", cursor: "pointer", color: T.muted }}>{q}</button>
+        ))}
+      </div>
+      <div style={{ padding: 12, borderTop: `1px solid ${T.border}`, display: "flex", gap: 8 }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(input); }} style={{ ...inputStyle, flex: 1 }} placeholder="Describe your issue…" />
+        <Button variant="teal" small onClick={() => send(input)}>Send</Button>
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* PORTAL CHOOSER — first thing shown after login (for the employee-      */
+/* facing side): choose Payroll & Leave, or IT Support                    */
+/* ---------------------------------------------------------------------- */
+function ChoicePortalCard({ icon: Icon, title, desc, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      flex: "1 1 240px", textAlign: "left", background: T.surface, border: `1px solid ${T.border}`,
+      borderRadius: 10, padding: 22, cursor: "pointer", display: "flex", flexDirection: "column", gap: 10,
+    }}>
+      <div style={{ width: 38, height: 38, borderRadius: 8, background: T.tealLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon size={19} color={T.teal} />
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{title}</div>
+      <div style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.5 }}>{desc}</div>
+      <div style={{ fontSize: 12.5, color: T.teal, fontWeight: 600, marginTop: 4 }}>Continue →</div>
+    </button>
+  );
+}
+
+function PortalChooser({ empName, onChoose }) {
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <SectionTitle sub={`Welcome, ${empName}. What would you like to do?`}>Choose a Portal</SectionTitle>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <ChoicePortalCard icon={Banknote} title="Payroll & Leave" desc="View your payslips, apply for leave, and check your leave balance." onClick={() => onChoose("leave")} />
+        <ChoicePortalCard icon={LifeBuoy} title="IT Support" desc="Ask the assistant, or log a system or office issue." onClick={() => onChoose("itSupport")} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* IT SUPPORT PORTAL — assistant + entry points into Support/Office Issues */
+/* ---------------------------------------------------------------------- */
+function ITSupportPortal({ onChangeChoice, goSupport, goOfficeIssues }) {
+  const [tab, setTab] = useState("assistant");
+  const tabs = [
+    { id: "assistant", label: "Ask the Assistant" },
+    { id: "system", label: "Report a System Issue" },
+    { id: "office", label: "Report an Office Issue" },
+  ];
+  return (
+    <div>
+      <button onClick={onChangeChoice} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: T.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 14 }}>
+        <ArrowLeft size={15} /> Change
+      </button>
+      <SectionTitle sub="Ask the assistant for a quick fix, or log a ticket directly">IT Support</SectionTitle>
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => (t.id === "system" ? goSupport() : t.id === "office" ? goOfficeIssues() : setTab(t.id))} style={{
+            background: "none", border: "none", cursor: "pointer", padding: "8px 4px", fontSize: 13, fontWeight: 600,
+            color: tab === t.id ? T.navy : T.muted, borderBottom: tab === t.id ? `2px solid ${T.teal}` : "2px solid transparent",
+          }}>{t.label}</button>
+        ))}
+      </div>
+      {tab === "assistant" && <ITAssistantChat />}
+    </div>
+  );
+}
+
+
 function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslipView }) {
   const [tab, setTab] = useState("dashboard");
   const [form, setForm] = useState({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null, proofFile: null });
@@ -2072,8 +2334,10 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
 export default function App() {
   const [screen, setScreen] = useState("login"); // "login" | "signup" | "app"
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [portalChoice, setPortalChoice] = useState(null); // null | "leave" | "itSupport"
   const [employeesState, setEmployeesState] = useState(EMPLOYEES);
   const [balancesState, setBalancesState] = useState(LEAVE_BALANCES);
+  const [levelsState, setLevelsState] = useState(LEVELS);
   const [viewMode, setViewMode] = useState("role"); // "role" | "selfService" | "settings"
   const [hrTab, setHrTab] = useState("dashboard");
   const [adminTab, setAdminTab] = useState("overview");
@@ -2090,6 +2354,7 @@ export default function App() {
   // every component below always reads the latest signups / profile edits.
   EMPLOYEES = employeesState;
   LEAVE_BALANCES = balancesState;
+  LEVELS = levelsState;
 
   const history = useMemo(() => buildHistory(employeesState.filter((e) => PAST_MONTHS && e.start <= "2026-06-01")), [employeesState]);
 
@@ -2100,6 +2365,7 @@ export default function App() {
     if (password !== expected) return "Incorrect password.";
     setCurrentUserId(user.id);
     setViewMode("role");
+    setPortalChoice(null);
     setScreen("app");
     return null;
   };
@@ -2118,10 +2384,11 @@ export default function App() {
     setBalancesState((bs) => ({ ...bs, [id]: { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 } }));
     setCurrentUserId(id);
     setViewMode("role");
+    setPortalChoice(null);
     setScreen("app");
   };
 
-  const handleLogout = () => { setCurrentUserId(null); setScreen("login"); setViewMode("role"); };
+  const handleLogout = () => { setCurrentUserId(null); setScreen("login"); setViewMode("role"); setPortalChoice(null); };
 
   const handleSaveProfile = (fields) => {
     setEmployeesState((es) => es.map((e) => (e.id === currentUserId ? { ...e, ...fields } : e)));
@@ -2129,6 +2396,11 @@ export default function App() {
   const handleChangePassword = (newPassword) => {
     setEmployeesState((es) => es.map((e) => (e.id === currentUserId ? { ...e, password: newPassword } : e)));
   };
+  const updateLevel = (name, updates) =>
+    setLevelsState((ls) => ls.map((l) => (l.name === name ? { ...l, ...updates } : l)));
+  const addLevel = (level) => setLevelsState((ls) => [...ls, level]);
+  const updateEmployeeSalary = (employeeId, newSalary) =>
+    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, salary: newSalary } : e)));
 
   if (screen === "login") return <LoginScreen onLogin={handleLogin} goSignup={() => setScreen("signup")} />;
   if (screen === "signup") return <SignupScreen onSignup={handleSignup} goLogin={() => setScreen("login")} />;
@@ -2158,6 +2430,7 @@ export default function App() {
   const hrNav = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "employees", label: "Employees", icon: Users },
     { id: "payroll", label: "Payroll", icon: Banknote }, { id: "leave", label: "Leave", icon: CalendarDays },
+    { id: "salaryStructure", label: "Salary Structure", icon: SlidersHorizontal },
   ];
   const adminNav = [
     { id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
@@ -2198,7 +2471,7 @@ export default function App() {
         </div>
 
         {role !== "employee" && (
-          <button onClick={() => setViewMode((v) => (v === "selfService" ? "role" : "selfService"))} style={{
+          <button onClick={() => { setViewMode((v) => (v === "selfService" ? "role" : "selfService")); setPortalChoice(null); }} style={{
             display: "flex", alignItems: "center", gap: 7, background: viewMode === "selfService" ? T.teal : "rgba(255,255,255,0.08)",
             border: "none", color: "#fff", padding: "8px 10px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer", marginBottom: 6, width: "100%",
           }}>
@@ -2257,18 +2530,25 @@ export default function App() {
         {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={() => setViewMode("role")} isAdminView={false} onUpdateTicket={updateSupportTicket} />}
         {viewMode === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} onBack={() => setViewMode("role")} isAdminView={false} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
-        {viewMode === "selfService" && role !== "employee" && (
+        {viewMode === "selfService" && role !== "employee" && portalChoice === null && (
+          <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
+        )}
+        {viewMode === "selfService" && role !== "employee" && portalChoice === "leave" && (
           <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />
+        )}
+        {viewMode === "selfService" && role !== "employee" && portalChoice === "itSupport" && (
+          <ITSupportPortal onChangeChoice={() => setPortalChoice(null)} goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
         )}
 
         {viewMode === "role" && role === "hr" && hrTab === "dashboard" && <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} />}
-        {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} />}
+        {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} />}
         {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} />}
         {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
+        {viewMode === "role" && role === "hr" && hrTab === "salaryStructure" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
 
         {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings />}
-        {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels />}
+        {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} />}
         {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
         {viewMode === "role" && role === "admin" && adminTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
@@ -2277,12 +2557,20 @@ export default function App() {
         {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} />}
 
         {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
 
-        {viewMode === "role" && role === "employee" && <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />}
+        {viewMode === "role" && role === "employee" && portalChoice === null && (
+          <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
+        )}
+        {viewMode === "role" && role === "employee" && portalChoice === "leave" && (
+          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />
+        )}
+        {viewMode === "role" && role === "employee" && portalChoice === "itSupport" && (
+          <ITSupportPortal onChangeChoice={() => setPortalChoice(null)} goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
+        )}
       </div>
 
       {profileEmp && <ProfileDrawer emp={profileEmp} onClose={() => setProfileEmp(null)} />}

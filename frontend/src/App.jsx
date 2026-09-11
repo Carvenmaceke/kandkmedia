@@ -2150,7 +2150,7 @@ function PortalChooser({ empName, onChoose }) {
 /* ---------------------------------------------------------------------- */
 /* IT SUPPORT PORTAL — assistant + entry points into Support/Office Issues */
 /* ---------------------------------------------------------------------- */
-function ITSupportPortal({ onChangeChoice, goSupport, goOfficeIssues }) {
+function ITSupportPortal({ goSupport, goOfficeIssues }) {
   const [tab, setTab] = useState("assistant");
   const tabs = [
     { id: "assistant", label: "Ask the Assistant" },
@@ -2159,9 +2159,6 @@ function ITSupportPortal({ onChangeChoice, goSupport, goOfficeIssues }) {
   ];
   return (
     <div>
-      <button onClick={onChangeChoice} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: T.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 14 }}>
-        <ArrowLeft size={15} /> Change
-      </button>
       <SectionTitle sub="Ask the assistant for a quick fix, or log a ticket directly">IT Support</SectionTitle>
       <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
         {tabs.map((t) => (
@@ -2177,7 +2174,7 @@ function ITSupportPortal({ onChangeChoice, goSupport, goOfficeIssues }) {
 }
 
 
-function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslipView }) {
+function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslipView, onBackToChooser }) {
   const [tab, setTab] = useState("dashboard");
   const [form, setForm] = useState({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null, proofFile: null });
   const [formError, setFormError] = useState("");
@@ -2210,6 +2207,11 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
 
   return (
     <div>
+      {onBackToChooser && (
+        <button onClick={onBackToChooser} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: T.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 14 }}>
+          <ArrowLeft size={15} /> Back
+        </button>
+      )}
       <SectionTitle sub={emp.role === "employee" ? `Signed in as ${emp.name} · ${emp.position}` : `Personal self-service · ${emp.name} (${ROLE_LABEL[emp.role]})`}>
         {emp.role === "employee" ? "Employee Dashboard" : "My Profile"}
       </SectionTitle>
@@ -2444,6 +2446,10 @@ export default function App() {
     { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
   ];
   const roleTitle = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" }[role];
+  // True on the chooser itself, and anywhere inside whichever portal was
+  // chosen (including sub-pages like Support/Office Issues reached from
+  // the IT Support portal) — regardless of which viewMode got us there.
+  const inEmployeeFlow = role === "employee" || viewMode === "selfService" || portalChoice !== null;
 
   const goRoleTab = (setter, id) => { setter(id); setViewMode("role"); };
 
@@ -2509,12 +2515,21 @@ export default function App() {
         {viewMode === "role" && role === "manager" && <div style={{ fontSize: 12, color: "#C9BFBC", padding: "10px 6px" }}>Viewing your team's dashboard.</div>}
 
         <div style={{ marginTop: "auto", paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-          <button onClick={() => setViewMode("support")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "support" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "support" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
-            <LifeBuoy size={14} /> Support
-          </button>
-          <button onClick={() => setViewMode("officeIssues")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "officeIssues" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "officeIssues" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
-            <MapPin size={14} /> Office Issues
-          </button>
+          {!inEmployeeFlow && (
+            <>
+              <button onClick={() => setViewMode("support")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "support" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "support" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
+                <LifeBuoy size={14} /> Support
+              </button>
+              <button onClick={() => setViewMode("officeIssues")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "officeIssues" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "officeIssues" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
+                <MapPin size={14} /> Office Issues
+              </button>
+            </>
+          )}
+          {inEmployeeFlow && portalChoice !== null && (
+            <button onClick={() => { setPortalChoice(null); setViewMode(role === "employee" ? "role" : "selfService"); }} style={{ display: "flex", alignItems: "center", gap: 8, color: "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
+              <ArrowLeft size={14} /> Back to Portal Selection
+            </button>
+          )}
           <button onClick={() => setViewMode("settings")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "settings" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "settings" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
             <SettingsIcon size={14} /> Settings
           </button>
@@ -2534,10 +2549,10 @@ export default function App() {
           <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
         )}
         {viewMode === "selfService" && role !== "employee" && portalChoice === "leave" && (
-          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />
+          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
         )}
         {viewMode === "selfService" && role !== "employee" && portalChoice === "itSupport" && (
-          <ITSupportPortal onChangeChoice={() => setPortalChoice(null)} goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
+          <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
         )}
 
         {viewMode === "role" && role === "hr" && hrTab === "dashboard" && <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} />}
@@ -2566,10 +2581,10 @@ export default function App() {
           <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
         )}
         {viewMode === "role" && role === "employee" && portalChoice === "leave" && (
-          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />
+          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
         )}
         {viewMode === "role" && role === "employee" && portalChoice === "itSupport" && (
-          <ITSupportPortal onChangeChoice={() => setPortalChoice(null)} goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
+          <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
         )}
       </div>
 

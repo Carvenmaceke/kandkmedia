@@ -20,12 +20,20 @@ Spring Boot + MySQL system.
   approvals.
 - **Admin** — system overview, company profile & payslip delivery settings,
   employee levels & departments, and user accounts.
+- **IT Support** — a separate role (full system access, same screens as
+  Admin) that defaults to a Support Tickets view: manage every submitted
+  request, change its status (Open/In Progress/Resolved), write a response
+  back to the employee, and set an availability note employees see before
+  submitting ("At Midrand until 1pm, then Sandton").
 - **Manager** — team view with leave approvals for direct reports.
+- **Help & Support** — every role can submit a support request (subject,
+  category, priority, description, and which office — Midrand or Sandton —
+  they're at) that's sent directly server-side, no email client involved.
 - **Settings** — every user can edit their own profile, change their
   password, and set notification preferences.
-- Anyone in HR, Admin, or a Manager role can also **switch to their own
-  employee profile** to apply for their own leave, since they're employees
-  too.
+- Anyone in HR, Admin, IT Support, or a Manager role can also **switch to
+  their own employee profile** to apply for their own leave, since they're
+  employees too.
 
 ## Running locally
 
@@ -42,6 +50,7 @@ Password for all seed accounts: `password123`
 
 | Role     | Email                              |
 |----------|-------------------------------------|
+| IT Support (full access) | carven.maceke@kandkmedia.co.za |
 | HR       | lindiwe.zulu@kandkmedia.co.za       |
 | Admin    | karabo.mahlangu@kandkmedia.co.za    |
 | Manager  | thabo.nkosi@kandkmedia.co.za        |

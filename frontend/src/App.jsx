@@ -69,6 +69,8 @@ const SUPPORT_EMAIL = "itsupport@kandkmedia.co.za";
 const API_BASE_URL = "";
 const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payroll Question", "Leave Question", "Account / Access Issue", "Other"];
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
+const OFFICES = ["Midrand", "Sandton"];
+const TICKET_STATUSES = ["Open", "In Progress", "Resolved"];
 
 const LEAVE_TYPES = [
   "Annual Leave", "Sick Leave", "Family Responsibility Leave",
@@ -85,21 +87,22 @@ const MAX_PROOF_FILE_BYTES = 4 * 1024 * 1024; // 4MB
 // syncs them from React state each render, so every screen always reads the
 // latest signed-up users / edited profiles without a big prop-drilling pass.
 let EMPLOYEES = [
-  { id: "EMP-00009", name: "Karabo Mahlangu", role: "admin", level: "Manager", position: "System Administrator", dept: "Admin", salary: 46000, manager: null, start: "2016-04-18", email: "karabo.mahlangu@kandkmedia.co.za", phone: "082 111 2233" },
-  { id: "EMP-00010", name: "Lindiwe Zulu", role: "hr", level: "Manager", position: "HR Manager", dept: "HR", salary: 41000, manager: null, start: "2015-10-02", email: "lindiwe.zulu@kandkmedia.co.za", phone: "082 222 3344" },
-  { id: "EMP-00005", name: "Thabo Nkosi", role: "manager", level: "Manager", position: "Digital Media Manager", dept: "Digital Media", salary: 45000, manager: null, email: "thabo.nkosi@kandkmedia.co.za", start: "2018-05-11", phone: "082 333 4455" },
-  { id: "EMP-00007", name: "Grace Sithole", role: "manager", level: "Manager", position: "Creative & Events Manager", dept: "Creative Services", salary: 43000, manager: null, start: "2017-09-04", email: "grace.sithole@kandkmedia.co.za", phone: "082 444 5566" },
-  { id: "EMP-00001", name: "John Doe", role: "employee", level: "Junior", position: "Web Developer", dept: "Digital Media", salary: 13500, manager: "EMP-00005", start: "2023-03-01", email: "john.doe@kandkmedia.co.za", phone: "082 555 6677" },
-  { id: "EMP-00002", name: "Amahle Dlamini", role: "employee", level: "Mid-Level", position: "Social Media Manager", dept: "Digital Media", salary: 21000, manager: "EMP-00005", start: "2022-07-14", email: "amahle.dlamini@kandkmedia.co.za", phone: "082 666 7788" },
-  { id: "EMP-00003", name: "Pieter van der Merwe", role: "employee", level: "Senior", position: "Senior Videographer", dept: "Creative Services", salary: 34000, manager: "EMP-00007", start: "2019-01-20", email: "pieter.vdmerwe@kandkmedia.co.za", phone: "082 777 8899" },
-  { id: "EMP-00004", name: "Naledi Mokoena", role: "employee", level: "Intern", position: "Digital Media Intern", dept: "Digital Media", salary: 4500, manager: "EMP-00005", start: "2026-02-03", email: "naledi.mokoena@kandkmedia.co.za", phone: "082 888 9900" },
-  { id: "EMP-00006", name: "Sarah Botha", role: "employee", level: "Junior", position: "Copywriter", dept: "Publications", salary: 12500, manager: "EMP-00007", start: "2024-01-09", email: "sarah.botha@kandkmedia.co.za", phone: "082 999 0011" },
-  { id: "EMP-00008", name: "Michael Chen", role: "employee", level: "Mid-Level", position: "Sales Executive", dept: "Sales", salary: 19500, manager: "EMP-00007", start: "2021-11-22", email: "michael.chen@kandkmedia.co.za", phone: "083 111 2200" },
-  { id: "EMP-00011", name: "Support Desk", role: "employee", level: "Junior", position: "Support Coordinator", dept: "Admin", salary: 12000, manager: null, start: "2023-01-01", email: "support@kandkmedia.co.za", phone: "083 222 3300" },
+  { id: "EMP-00009", name: "Karabo Mahlangu", role: "admin", level: "Manager", position: "System Administrator", dept: "Admin", salary: 46000, manager: null, start: "2016-04-18", email: "karabo.mahlangu@kandkmedia.co.za", phone: "082 111 2233", office: "Midrand" },
+  { id: "EMP-00010", name: "Lindiwe Zulu", role: "hr", level: "Manager", position: "HR Manager", dept: "HR", salary: 41000, manager: null, start: "2015-10-02", email: "lindiwe.zulu@kandkmedia.co.za", phone: "082 222 3344", office: "Midrand" },
+  { id: "EMP-00005", name: "Thabo Nkosi", role: "manager", level: "Manager", position: "Digital Media Manager", dept: "Digital Media", salary: 45000, manager: null, email: "thabo.nkosi@kandkmedia.co.za", start: "2018-05-11", phone: "082 333 4455", office: "Midrand" },
+  { id: "EMP-00007", name: "Grace Sithole", role: "manager", level: "Manager", position: "Creative & Events Manager", dept: "Creative Services", salary: 43000, manager: null, start: "2017-09-04", email: "grace.sithole@kandkmedia.co.za", phone: "082 444 5566", office: "Sandton" },
+  { id: "EMP-00001", name: "John Doe", role: "employee", level: "Junior", position: "Web Developer", dept: "Digital Media", salary: 13500, manager: "EMP-00005", start: "2023-03-01", email: "john.doe@kandkmedia.co.za", phone: "082 555 6677", office: "Midrand" },
+  { id: "EMP-00002", name: "Amahle Dlamini", role: "employee", level: "Mid-Level", position: "Social Media Manager", dept: "Digital Media", salary: 21000, manager: "EMP-00005", start: "2022-07-14", email: "amahle.dlamini@kandkmedia.co.za", phone: "082 666 7788", office: "Midrand" },
+  { id: "EMP-00003", name: "Pieter van der Merwe", role: "employee", level: "Senior", position: "Senior Videographer", dept: "Creative Services", salary: 34000, manager: "EMP-00007", start: "2019-01-20", email: "pieter.vdmerwe@kandkmedia.co.za", phone: "082 777 8899", office: "Sandton" },
+  { id: "EMP-00004", name: "Naledi Mokoena", role: "employee", level: "Intern", position: "Digital Media Intern", dept: "Digital Media", salary: 4500, manager: "EMP-00005", start: "2026-02-03", email: "naledi.mokoena@kandkmedia.co.za", phone: "082 888 9900", office: "Midrand" },
+  { id: "EMP-00006", name: "Sarah Botha", role: "employee", level: "Junior", position: "Copywriter", dept: "Publications", salary: 12500, manager: "EMP-00007", start: "2024-01-09", email: "sarah.botha@kandkmedia.co.za", phone: "082 999 0011", office: "Sandton" },
+  { id: "EMP-00008", name: "Michael Chen", role: "employee", level: "Mid-Level", position: "Sales Executive", dept: "Sales", salary: 19500, manager: "EMP-00007", start: "2021-11-22", email: "michael.chen@kandkmedia.co.za", phone: "083 111 2200", office: "Sandton" },
+  { id: "EMP-00011", name: "Support Desk", role: "employee", level: "Junior", position: "Support Coordinator", dept: "Admin", salary: 12000, manager: null, start: "2023-01-01", email: "support@kandkmedia.co.za", phone: "083 222 3300", office: "Midrand" },
+  { id: "EMP-00012", name: "Carven Maceke", role: "it_support", level: "Manager", position: "IT Support & System Owner", dept: "Admin", salary: 50000, manager: null, start: "2015-01-01", email: "carven.maceke@kandkmedia.co.za", phone: "060 795 0837", office: "Midrand" },
 ];
 
-const ROLE_LABEL = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee" };
-const ROLE_TONE = { admin: "purple", hr: "teal", manager: "amber", employee: "muted" };
+const ROLE_LABEL = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" };
+const ROLE_TONE = { admin: "purple", hr: "teal", manager: "amber", employee: "muted", it_support: "indigo" };
 
 let LEAVE_BALANCES = {
   "EMP-00001": { "Annual Leave": 12, "Sick Leave": 8, "Family Responsibility Leave": 3 },
@@ -111,6 +114,7 @@ let LEAVE_BALANCES = {
   "EMP-00007": { "Annual Leave": 16, "Sick Leave": 10, "Family Responsibility Leave": 3 },
   "EMP-00008": { "Annual Leave": 8, "Sick Leave": 5, "Family Responsibility Leave": 2 },
   "EMP-00011": { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 },
+  "EMP-00012": { "Annual Leave": 20, "Sick Leave": 10, "Family Responsibility Leave": 3 },
   "EMP-00009": { "Annual Leave": 20, "Sick Leave": 10, "Family Responsibility Leave": 3 },
   "EMP-00010": { "Annual Leave": 17, "Sick Leave": 10, "Family Responsibility Leave": 3 },
 };
@@ -166,6 +170,7 @@ function Pill({ tone = "muted", children }) {
     muted: { bg: "#EEF0F3", fg: T.muted }, green: { bg: T.greenBg, fg: T.green },
     amber: { bg: T.amberBg, fg: T.amber }, red: { bg: T.redBg, fg: T.red },
     teal: { bg: T.tealLight, fg: T.teal }, purple: { bg: T.purpleBg, fg: T.purple },
+    indigo: { bg: "#EBEAFB", fg: "#4F46C4" },
   }[tone];
   return <span style={{ background: map.bg, color: map.fg, fontSize: 12, fontWeight: 600, padding: "3px 9px", borderRadius: 4, whiteSpace: "nowrap" }}>{children}</span>;
 }
@@ -857,6 +862,7 @@ function LoginScreen({ onLogin, goSignup }) {
       </div>
       <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${T.border}`, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
         Demo accounts (password: <span style={{ fontFamily: mono }}>{DEFAULT_PASSWORD}</span>):<br />
+        IT Support (full access) — carven.maceke@kandkmedia.co.za<br />
         HR — lindiwe.zulu@kandkmedia.co.za<br />
         Admin — karabo.mahlangu@kandkmedia.co.za<br />
         Manager — thabo.nkosi@kandkmedia.co.za<br />
@@ -869,7 +875,7 @@ function LoginScreen({ onLogin, goSignup }) {
 function SignupScreen({ onSignup, goLogin }) {
   const [form, setForm] = useState({
     name: "", email: "", phone: "", password: "", confirm: "",
-    role: "employee", dept: DEPARTMENTS[0], position: "", level: "Junior",
+    role: "employee", dept: DEPARTMENTS[0], position: "", level: "Junior", office: OFFICES[0],
   });
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -950,6 +956,13 @@ function SignupScreen({ onSignup, goLogin }) {
           </div>
         </div>
 
+        <Field label="Office">
+          <select value={form.office} onChange={set("office")} style={inputStyle}>
+            {OFFICES.map((o) => <option key={o}>{o}</option>)}
+          </select>
+          <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Which office you're based at — used to route IT support requests to the right location.</div>
+        </Field>
+
         {form.role === "employee" && (
           <Field label="Employee Level">
             <select value={form.level} onChange={set("level")} style={inputStyle}>
@@ -1006,12 +1019,54 @@ async function sendSupportRequestToServer(ticket, emp) {
   }
 }
 
-function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
+function TicketDetailModal({ ticket, onClose, onSave }) {
+  const [status, setStatus] = useState(ticket?.status || "Open");
+  const [response, setResponse] = useState(ticket?.response || "");
+
+  if (!ticket) return null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.5)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ background: T.surface, width: 480, maxWidth: "100%", borderRadius: 10, padding: 26, boxShadow: "0 20px 60px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{ticket.subject}</div>
+            <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{ticket.empName} · {ticket.category} · {ticket.office || "No office set"}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
+        </div>
+
+        <div style={{ marginTop: 14, background: T.bg, borderRadius: 8, padding: 12, fontSize: 13, color: T.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{ticket.description}</div>
+
+        <div style={{ marginTop: 16 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Status</label>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, marginTop: 5 }}>
+            {TICKET_STATUSES.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Response to {ticket.empName}</label>
+          <textarea value={response} onChange={(e) => setResponse(e.target.value)} rows={4} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="e.g. I'll be at the Sandton office from 2pm today and can look at this then…" />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <Button variant="teal" onClick={() => onSave(ticket.id, status, response)}>Save</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availability, onSetAvailability, onUpdateTicket }) {
   const [view, setView] = useState(isAdminView ? "all" : "new");
-  const [form, setForm] = useState({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
+  const [form, setForm] = useState({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "", office: emp.office || OFFICES[0] });
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(null);
+  const [detailTicket, setDetailTicket] = useState(null);
+  const [availabilityDraft, setAvailabilityDraft] = useState(availability || "");
 
   const myTickets = tickets.filter((t) => t.empId === emp.id);
 
@@ -1022,7 +1077,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
     const ticket = {
       id: `TCK-${Math.floor(Math.random() * 9000 + 1000)}`,
       empId: emp.id, empName: emp.name, subject: form.subject.trim(), category: form.category,
-      priority: form.priority, description: form.description.trim(), status: "Open",
+      priority: form.priority, description: form.description.trim(), status: "Open", office: form.office,
       createdAt: new Date().toISOString(),
     };
     const result = await sendSupportRequestToServer(ticket, emp);
@@ -1040,12 +1095,15 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
 
     onSubmit(ticket);
     setJustSubmitted(ticket);
-    setForm({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
+    setForm({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "", office: emp.office || OFFICES[0] });
   };
 
   const tabs = isAdminView
     ? [{ id: "all", label: "All Support Tickets" }]
     : [{ id: "new", label: "New Request" }, { id: "mine", label: "My Requests" }];
+
+  const statusTone = (s) => s === "Resolved" ? "green" : s === "In Progress" ? "amber" : "teal";
+  const priorityTone = (p) => p === "Urgent" ? "red" : p === "High" ? "amber" : "muted";
 
   return (
     <div>
@@ -1054,7 +1112,24 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
           <ArrowLeft size={15} /> Back
         </button>
       )}
-      <SectionTitle sub={`Requests are emailed directly to ${SUPPORT_EMAIL}`}>Help &amp; Support</SectionTitle>
+      <SectionTitle sub={`Requests are sent directly to ${SUPPORT_EMAIL}`}>Help &amp; Support</SectionTitle>
+
+      {isAdminView && (
+        <Card style={{ padding: 16, marginBottom: 20 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: T.muted, marginBottom: 8 }}>Your Availability (shown to employees before they submit a request)</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={availabilityDraft} onChange={(e) => setAvailabilityDraft(e.target.value)} style={{ ...inputStyle, flex: 1 }} placeholder="e.g. At the Midrand office until 1pm, then Sandton" />
+            <Button variant="teal" small onClick={() => onSetAvailability(availabilityDraft)}>Save</Button>
+          </div>
+        </Card>
+      )}
+
+      {!isAdminView && availability && (
+        <Card style={{ padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "center", gap: 8, background: T.tealLight }}>
+          <LifeBuoy size={14} color={T.teal} />
+          <span style={{ fontSize: 12.5, color: T.text }}><strong>IT Support availability:</strong> {availability}</span>
+        </Card>
+      )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
         {tabs.map((t) => (
@@ -1105,6 +1180,13 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
                 </div>
               </div>
               <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Office</label>
+                <select value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>
+                  {OFFICES.map((o) => <option key={o}>{o}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>So IT support knows which office to go to.</div>
+              </div>
+              <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Describe the problem</label>
                 <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={5} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="What happened, what you expected, and when it started…" />
               </div>
@@ -1122,15 +1204,16 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
       {view === "mine" && (
         <Card style={{ overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Category", "Priority", "Status", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Office", "Priority", "Status", "Response", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {myTickets.length === 0 && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {myTickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
               {myTickets.map((t) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.subject}</td>
-                  <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
-                  <td style={{ padding: "10px 14px" }}><Pill tone={t.priority === "Urgent" ? "red" : t.priority === "High" ? "amber" : "muted"}>{t.priority}</Pill></td>
-                  <td style={{ padding: "10px 14px" }}><Pill tone={t.status === "Resolved" ? "green" : "teal"}>{t.status}</Pill></td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>{t.office || "—"}</td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(t.priority)}>{t.priority}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(t.status)}>{t.status}</Pill></td>
+                  <td style={{ padding: "10px 14px", color: T.muted, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.response || "—"}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{new Date(t.createdAt).toLocaleDateString("en-ZA")}</td>
                 </tr>
               ))}
@@ -1142,30 +1225,36 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
       {view === "all" && (
         <Card style={{ overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Subject", "Category", "Priority", "Status", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Office", "Subject", "Category", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {tickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {tickets.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
               {[...tickets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((t) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>{t.empName}</td>
-                  <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.subject}</td>
+                  <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.office || "—"}</td>
+                  <td style={{ padding: "10px 14px" }}>{t.subject}</td>
                   <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
-                  <td style={{ padding: "10px 14px" }}><Pill tone={t.priority === "Urgent" ? "red" : t.priority === "High" ? "amber" : "muted"}>{t.priority}</Pill></td>
-                  <td style={{ padding: "10px 14px" }}><Pill tone={t.status === "Resolved" ? "green" : "teal"}>{t.status}</Pill></td>
-                  <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{new Date(t.createdAt).toLocaleDateString("en-ZA")}</td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(t.priority)}>{t.priority}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(t.status)}>{t.status}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <button onClick={() => setDetailTicket(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal, fontWeight: 600, fontSize: 12.5 }}>Manage</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </Card>
       )}
+
+      <TicketDetailModal ticket={detailTicket} onClose={() => setDetailTicket(null)}
+        onSave={(id, status, response) => { onUpdateTicket(id, status, response); setDetailTicket(null); }} />
     </div>
   );
 }
 
 
 function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
-  const [form, setForm] = useState({ name: emp.name, email: emp.email, phone: emp.phone || "", position: emp.position, dept: emp.dept });
+  const [form, setForm] = useState({ name: emp.name, email: emp.email, phone: emp.phone || "", position: emp.position, dept: emp.dept, office: emp.office || OFFICES[0] });
   const [saved, setSaved] = useState(false);
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
   const [pwMsg, setPwMsg] = useState(null);
@@ -1217,6 +1306,11 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
                 </Field>
               </div>
             </div>
+            <Field label="Office">
+              <select value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} style={inputStyle}>
+                {OFFICES.map((o) => <option key={o}>{o}</option>)}
+              </select>
+            </Field>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <Button type="submit" variant="teal" small>Save Changes</Button>
               {saved && <Pill tone="green">Saved</Pill>}
@@ -1452,7 +1546,7 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
 /* ADMIN AREA                                                             */
 /* ---------------------------------------------------------------------- */
 function AdminOverview({ supportTickets }) {
-  const roleCounts = ["admin", "hr", "manager", "employee"].map((r) => ({ role: r, count: EMPLOYEES.filter((e) => e.role === r).length }));
+  const roleCounts = ["it_support", "admin", "hr", "manager", "employee"].map((r) => ({ role: r, count: EMPLOYEES.filter((e) => e.role === r).length }));
   const openTickets = supportTickets.filter((t) => t.status !== "Resolved").length;
   return (
     <div>
@@ -1813,6 +1907,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState("role"); // "role" | "selfService" | "settings"
   const [hrTab, setHrTab] = useState("dashboard");
   const [adminTab, setAdminTab] = useState("overview");
+  const [itSupportTab, setItSupportTab] = useState("support");
   const [leaveRequests, setLeaveRequests] = useState(INITIAL_LEAVE_REQUESTS);
   const [supportTickets, setSupportTickets] = useState([]);
   const [payrollStage, setPayrollStage] = useState("DRAFT");
@@ -1845,6 +1940,7 @@ export default function App() {
       id, name: form.name, role: form.role, level, dept: form.dept,
       position: form.position || (form.role === "hr" ? "HR Officer" : form.role === "admin" ? "System Administrator" : "Employee"),
       salary, manager: null, start: "2026-09-10", email: form.email, phone: form.phone, password: form.password,
+      office: form.office || OFFICES[0],
     };
     setEmployeesState((es) => [...es, newEmp]);
     setBalancesState((bs) => ({ ...bs, [id]: { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 } }));
@@ -1880,6 +1976,9 @@ export default function App() {
     } : r)));
   const addLeaveRequest = (r) => setLeaveRequests((rs) => [r, ...rs]);
   const addSupportTicket = (t) => setSupportTickets((ts) => [t, ...ts]);
+  const [supportAvailability, setSupportAvailability] = useState("");
+  const updateSupportTicket = (id, status, response) =>
+    setSupportTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, response } : t)));
   const advanceStage = () => { const i = STAGES.indexOf(payrollStage); if (i < STAGES.length - 1) setPayrollStage(STAGES[i + 1]); };
 
   const hrNav = [
@@ -1891,7 +1990,12 @@ export default function App() {
     { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
     { id: "support", label: "Support Tickets", icon: LifeBuoy },
   ];
-  const roleTitle = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee" }[role];
+  const itSupportNav = [
+    { id: "support", label: "Support Tickets", icon: LifeBuoy }, { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
+    { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
+  ];
+  const roleTitle = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" }[role];
 
   const goRoleTab = (setter, id) => { setter(id); setViewMode("role"); };
 
@@ -1945,6 +2049,15 @@ export default function App() {
           </>
         )}
 
+        {viewMode === "role" && role === "it_support" && (
+          <>
+            <div style={{ fontSize: 10.5, color: "#8F8280", fontWeight: 700, letterSpacing: 0.4, padding: "10px 6px 8px" }}>IT SUPPORT</div>
+            {itSupportNav.map((n) => (
+              <button key={n.id} onClick={() => goRoleTab(setItSupportTab, n.id)} style={{ display: "flex", alignItems: "center", gap: 8, background: itSupportTab === n.id ? "rgba(255,255,255,0.08)" : "transparent", border: "none", color: itSupportTab === n.id ? "#fff" : "#C9BFBC", padding: "8px 10px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 2 }}><n.icon size={15} /> {n.label}</button>
+            ))}
+          </>
+        )}
+
         {viewMode === "role" && role === "manager" && <div style={{ fontSize: 12, color: "#C9BFBC", padding: "10px 6px" }}>Viewing your team's dashboard.</div>}
 
         <div style={{ marginTop: "auto", paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
@@ -1963,7 +2076,7 @@ export default function App() {
       {/* CONTENT */}
       <div style={{ flex: 1, padding: "26px 30px", overflowY: "auto", maxHeight: 720 }}>
         {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} onBack={() => setViewMode("role")} />}
-        {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={() => setViewMode("role")} isAdminView={false} />}
+        {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={() => setViewMode("role")} isAdminView={false} availability={supportAvailability} onSetAvailability={setSupportAvailability} onUpdateTicket={updateSupportTicket} />}
 
         {viewMode === "selfService" && role !== "employee" && (
           <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />
@@ -1978,7 +2091,13 @@ export default function App() {
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels />}
         {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} />}
-        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} />}
+        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} availability={supportAvailability} onSetAvailability={setSupportAvailability} onUpdateTicket={updateSupportTicket} />}
+
+        {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} availability={supportAvailability} onSetAvailability={setSupportAvailability} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} />}
 
         {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
 

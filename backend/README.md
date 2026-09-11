@@ -89,6 +89,22 @@ To make it actually deliver mail, you need to supply:
    Gmail directly, you need an **App Password** (Google Account → Security
    → 2-Step Verification → App passwords), not your normal login password.
 
+   **Using Resend specifically**: Resend exposes an SMTP relay, so no code
+   changes are needed — just point the same env vars at it:
+   ```bash
+   export MAIL_HOST=smtp.resend.com
+   export MAIL_PORT=587
+   export MAIL_USERNAME=resend
+   export MAIL_PASSWORD=your-resend-api-key   # starts with re_ — set this
+                                                # only as an env var on
+                                                # wherever you deploy, never
+                                                # committed to the repo
+   ```
+   Resend's free tier only sends to your own verified email/domain until
+   you verify a sending domain — until `kandkmedia.co.za` (or whichever
+   domain you use) is verified in Resend's dashboard, mail to other
+   addresses will be rejected by Resend even with a valid key.
+
 2. **A place to actually run this backend continuously.** GitHub Pages
    (where the `frontend` prototype is deployed) only serves static files —
    it cannot run a Java process, so this backend needs real hosting. Any of
@@ -109,6 +125,30 @@ failure reason on that record instead of a successful send.
 running entirely on in-memory dummy data (see `frontend/README.md`).
 Wiring the frontend to call this live API instead of its local state is
 the next integration step once this backend is deployed somewhere real.
+
+## Automatic month-end payslip run
+
+`PayslipSchedulerService` runs once a day and, only on the configured
+trigger day, generates any still-missing draft payroll rows for the
+current period and walks every record through to `SENT` — which is what
+actually fires the real emails, same code path as HR manually advancing
+the pipeline. Configurable via env vars:
+
+```bash
+export PAYSLIP_AUTO_SEND=true          # set false to disable entirely
+export PAYSLIP_CRON_HOUR=18            # 24h, server time
+export PAYSLIP_CRON_MINUTE=0
+export PAYSLIP_SEND_ON=LAST_DAY_OF_MONTH   # or DAY_BEFORE_MONTH_END
+```
+
+Important behavior to know before relying on this: it does **not** wait
+for HR review. Whatever's still sitting in DRAFT on the trigger day goes
+out with zero overtime/bonus (since nobody entered any); anything HR has
+already progressed further gets carried through from wherever it is. If
+you want HR's variable-earnings review to always happen first, that
+review needs to be completed earlier in the month — the scheduler is a
+safety net that guarantees everyone gets paid on time, not a substitute
+for the review step.
 
 ## Payslip document security
 
@@ -181,17 +221,15 @@ apply/approve/reject with balance deduction and signed approval/decline
 letters (see above), a payroll draft calculation,
 the DRAFT → REVIEWED → APPROVED → FINALIZED → PUBLISHED → SENT pipeline,
 real PDF payslip generation (Apache PDFBox) with the security/verification
-features described above, and real email delivery with the PDF attached
-(triggered when a batch reaches SENT, or manually via resend) — see
-"Making payslip emails actually send" above for what's needed to switch it
-on.
+features described above, real email delivery with the PDF attached
+(triggered when a batch reaches SENT, or manually via resend), and an
+automatic scheduled month-end run that triggers it without HR needing to
+click anything — see "Making payslip emails actually send" and "Automatic
+month-end payslip run" above for what's needed to switch it on.
 
 Not yet implemented (see the original spec's Phase 5–8 for the intended
 shape, and "Payslip document security" above for the security-specific gaps):
 
-- A **scheduled** monthly job that triggers the send automatically at
-  month-end — right now sending only happens when HR manually advances
-  the pipeline to SENT, not on a timer
 - An email delivery **log** table (spec section 14) — success/failure is
   currently only stored on the `Payroll` row itself, one entry per employee
   per period, not a full audit history of attempts

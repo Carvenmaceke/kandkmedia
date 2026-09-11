@@ -42,6 +42,10 @@ app:
   # "Document Verified" webpage yet, so scanning it shows raw JSON for now.
   verification-base-url: ${VERIFICATION_BASE_URL:http://localhost:8080/api/public/verify}
   payslip-delivery:
-    auto-send: true
-    send-time: "18:00"
-    send-on: LAST_DAY_OF_MONTH
+    auto-send: ${PAYSLIP_AUTO_SEND:true}
+    # The job checks daily at this hour:minute (server time) whether today
+    # is the configured trigger day — see PayslipSchedulerService.
+    cron-hour: ${PAYSLIP_CRON_HOUR:18}
+    cron-minute: ${PAYSLIP_CRON_MINUTE:0}
+    # LAST_DAY_OF_MONTH or DAY_BEFORE_MONTH_END
+    send-on: ${PAYSLIP_SEND_ON:LAST_DAY_OF_MONTH}

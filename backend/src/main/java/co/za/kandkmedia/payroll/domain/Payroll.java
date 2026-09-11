@@ -66,6 +66,22 @@ public class Payroll {
 
     private LocalDateTime finalizedAt;
 
+    // --- Payslip document security (set once, at FINALIZED — see PayrollService) ---
+
+    /** Public-facing document ID, e.g. "PAY-2026-09-000005". Never the raw DB id. */
+    @Column(unique = true)
+    private String payslipId;
+
+    /** Short public code (e.g. "7F4K-92MX") someone can enter to verify the document. */
+    @Column(unique = true)
+    private String verificationCode;
+
+    /** SHA-256 hex digest of the generated PDF, so a modified copy can be detected. */
+    private String documentHash;
+
+    /** When the payslip document was generated/sealed — distinct from finalizedAt. */
+    private LocalDateTime documentGeneratedAt;
+
     @Builder.Default
     private boolean emailSent = false;
 

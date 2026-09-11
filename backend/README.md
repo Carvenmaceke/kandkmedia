@@ -110,18 +110,66 @@ running entirely on in-memory dummy data (see `frontend/README.md`).
 Wiring the frontend to call this live API instead of its local state is
 the next integration step once this backend is deployed somewhere real.
 
+## Payslip document security
+
+Each payslip PDF, once finalized, carries:
+
+- A unique **Payslip ID** (`PAY-2026-09-000005`) — never the raw database
+  row ID.
+- A public **Verification Code** (`7F4K-92MX`).
+- A **SHA-256 hash** of the generated PDF, so a modified copy can be
+  detected.
+- A **generation timestamp**.
+- A **QR code** encoding a link to the verification endpoint below.
+- Full employer identifying details (name, address, registration number)
+  alongside the employee's name, position, and pay period, per the
+  Department of Employment and Labour's payslip content guidance.
+- An "electronically generated, no physical signature required" notice —
+  worded to state that plainly without claiming a legal electronic
+  signature under the ECT Act, since none is actually implemented.
+
+All of these are generated **exactly once**, when a payroll row is
+finalized (`PayrollService.sealPayslip`, called from `advanceStage`) — not
+regenerated on every download, which is what makes the hash and ID
+trustworthy as an unmodified-since-issued check in the first place.
+
+**Verifying a payslip**: `GET /api/public/verify/{verificationCode}` is
+unauthenticated (anyone with the code can check it — that's the point) and
+returns only a masked employee name, employer, payslip ID, pay period, and
+a valid/not-found status — never salary figures or anything else sensitive
+from the payslip. This is a JSON API, not a webpage; scanning the QR code
+today shows raw JSON in a browser, not the polished "✅ Document Verified"
+page a real verification flow would want. Building that page is a small,
+separate frontend task, not yet done.
+
+**Not yet done, and worth knowing before this is exposed publicly:**
+- **Rate limiting on `/api/public/verify/**`** — it's unauthenticated by
+  design, which also means it's brute-forceable against the verification
+  code space without a rate limit in front of it. Flagged in the
+  controller's Javadoc too, not just here.
+- Other endpoints (`/api/hr/employees/{id}`, `/api/hr/payroll/{id}/...`)
+  still take the raw database ID in the URL — only the verification
+  endpoint was switched to an opaque public identifier so far. Widening
+  that to every endpoint is a real hardening task, not done yet.
+- MFA is not implemented. Adding TOTP-based 2FA is a meaningfully sized
+  feature on its own (secret generation, enrollment QR, verification step
+  at login) — flagged here rather than bolted on partially.
+- No audit log table, no database-level encryption at rest, no automated
+  key rotation for the JWT secret.
+
 ## What's implemented vs. still TODO
 
 Implemented: auth + JWT, employee/department/level/company data model, leave
 apply/approve/reject with balance deduction, a payroll draft calculation,
 the DRAFT → REVIEWED → APPROVED → FINALIZED → PUBLISHED → SENT pipeline,
-real PDF payslip generation (Apache PDFBox), and real email delivery with
-the PDF attached (triggered when a batch reaches SENT, or manually via
-resend) — see "Making payslip emails actually send" above for what's
-needed to switch it on.
+real PDF payslip generation (Apache PDFBox) with the security/verification
+features described above, and real email delivery with the PDF attached
+(triggered when a batch reaches SENT, or manually via resend) — see
+"Making payslip emails actually send" above for what's needed to switch it
+on.
 
 Not yet implemented (see the original spec's Phase 5–8 for the intended
-shape):
+shape, and "Payslip document security" above for the security-specific gaps):
 
 - A **scheduled** monthly job that triggers the send automatically at
   month-end — right now sending only happens when HR manually advances
@@ -129,13 +177,18 @@ shape):
 - An email delivery **log** table (spec section 14) — success/failure is
   currently only stored on the `Payroll` row itself, one entry per employee
   per period, not a full audit history of attempts
+- A human-facing payslip verification webpage (the QR currently resolves
+  to a JSON API response)
+- Rate limiting on the public verification endpoint
+- MFA
 - Notifications persistence (the frontend currently fakes these client-side)
 - Fine-grained request validation/DTOs for every admin write endpoint
 - Test suite
-- Audit logging, rate limiting, and other production hardening from
-  the spec's "Phase 8 — Production Improvements"
+- Audit logging, database encryption at rest, and other production
+  hardening from the spec's "Phase 8 — Production Improvements"
 
 The PAYE/UIF figures in `PayrollService` are simplified placeholders (flat
 15% / 1% capped) — the same illustrative numbers the frontend prototype
 uses — and need a real SARS-compliant tax table before this touches a real
+
 payslip.

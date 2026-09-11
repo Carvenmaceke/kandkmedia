@@ -37,6 +37,10 @@ app:
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
   # Only accounts with this email domain may sign up — mirrors the frontend's rule.
   allowed-email-domain: ${ALLOWED_EMAIL_DOMAIN:kandkmedia.co.za}
+  # Where the QR code on a payslip points. Currently resolves to the JSON
+  # verification API itself (see PublicController) — there's no human-facing
+  # "Document Verified" webpage yet, so scanning it shows raw JSON for now.
+  verification-base-url: ${VERIFICATION_BASE_URL:http://localhost:8080/api/public/verify}
   payslip-delivery:
     auto-send: true
     send-time: "18:00"

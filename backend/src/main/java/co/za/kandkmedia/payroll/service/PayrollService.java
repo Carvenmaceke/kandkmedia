@@ -30,6 +30,8 @@ public class PayrollService {
 
     private final PayrollRepository payrollRepository;
     private final EmailService emailService;
+    private final PayslipPdfService payslipPdfService;
+    private final PayslipSecurityService payslipSecurityService;
 
     public Payroll generateDraft(Employee employee, String payPeriod, BigDecimal overtime, BigDecimal bonus) {
         return payrollRepository.findByEmployeeIdAndPayPeriod(employee.getId(), payPeriod)
@@ -78,6 +80,7 @@ public class PayrollService {
                 payroll.setStatus(next);
                 if (next == PayrollStatus.FINALIZED) {
                     payroll.setFinalizedAt(LocalDateTime.now());
+                    sealPayslip(payroll);
                 }
                 if (next == PayrollStatus.SENT) {
                     movingToSent = true;
@@ -106,6 +109,22 @@ public class PayrollService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
         emailService.sendPayslip(payroll);
         return payrollRepository.save(payroll);
+    }
+
+    /**
+     * Assigns the payslip's permanent security identifiers and hashes the
+     * resulting PDF. Called exactly once, at the DRAFT→...→FINALIZED
+     * transition — these values are never regenerated afterwards, since a
+     * document ID / hash that could change wouldn't be trustworthy as a
+     * "this hasn't been altered" check.
+     */
+    private void sealPayslip(Payroll payroll) {
+        payroll.setPayslipId(payslipSecurityService.generatePayslipId(payroll));
+        payroll.setVerificationCode(payslipSecurityService.generateUniqueVerificationCode());
+        payroll.setDocumentGeneratedAt(LocalDateTime.now());
+
+        byte[] pdf = payslipPdfService.generate(payroll);
+        payroll.setDocumentHash(payslipSecurityService.sha256Hex(pdf));
     }
 
     private boolean isSeniorOrManager(Employee employee) {

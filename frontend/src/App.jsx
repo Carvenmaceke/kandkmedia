@@ -5,7 +5,7 @@ import {
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
-  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy,
+  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, MapPin,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -67,7 +67,8 @@ const SUPPORT_EMAIL = "itsupport@kandkmedia.co.za";
 // means "not connected yet" — the Support form will say so plainly rather
 // than pretending to send.
 const API_BASE_URL = "";
-const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payroll Question", "Leave Question", "Account / Access Issue", "Other"];
+const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payslip Issue", "Leave Application Issue", "Office IT Issue (hardware, network, equipment)", "Account / Access Issue", "Other"];
+const OFFICE_ISSUE_CATEGORY = "Office IT Issue (hardware, network, equipment)";
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 const OFFICES = ["Midrand", "Sandton"];
 const TICKET_STATUSES = ["Open", "In Progress", "Resolved"];
@@ -1066,9 +1067,16 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
   const [sending, setSending] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(null);
   const [detailTicket, setDetailTicket] = useState(null);
+  const [ticketFilter, setTicketFilter] = useState("All");
   const [availabilityDraft, setAvailabilityDraft] = useState(availability || "");
 
   const myTickets = tickets.filter((t) => t.empId === emp.id);
+  const sortedTickets = [...tickets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const filteredTickets = sortedTickets.filter((t) => {
+    if (ticketFilter === "Office IT Issues") return t.category === OFFICE_ISSUE_CATEGORY;
+    if (ticketFilter === "Other Issues") return t.category !== OFFICE_ISSUE_CATEGORY;
+    return true;
+  });
 
   const submit = async () => {
     if (!form.subject.trim() || !form.description.trim()) { setError("Please fill in a subject and description."); return; }
@@ -1161,6 +1169,11 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
                   Reporting a bug or outage? Set priority to <strong>Urgent</strong> if it's stopping you from working.
                 </div>
               )}
+              {form.category === OFFICE_ISSUE_CATEGORY && (
+                <div style={{ fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6 }}>
+                  On-site issue (hardware, network, printer, workstation, etc.) — make sure the Office below is correct so IT support knows where to go, and be specific about the equipment/location involved.
+                </div>
+              )}
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Subject</label>
                 <input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} style={{ ...inputStyle, marginTop: 5 }} placeholder="Brief summary of the issue" />
@@ -1184,7 +1197,9 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
                 <select value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>
                   {OFFICES.map((o) => <option key={o}>{o}</option>)}
                 </select>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>So IT support knows which office to go to.</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>
+                  {form.category === OFFICE_ISSUE_CATEGORY ? "Which office to go to for this — required for on-site issues." : "So IT support knows which office to go to."}
+                </div>
               </div>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Describe the problem</label>
@@ -1223,27 +1238,46 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
       )}
 
       {view === "all" && (
-        <Card style={{ overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Office", "Subject", "Category", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-            <tbody>
-              {tickets.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
-              {[...tickets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((t) => (
-                <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px" }}>{t.empName}</td>
-                  <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.office || "—"}</td>
-                  <td style={{ padding: "10px 14px" }}>{t.subject}</td>
-                  <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
-                  <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(t.priority)}>{t.priority}</Pill></td>
-                  <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(t.status)}>{t.status}</Pill></td>
-                  <td style={{ padding: "10px 14px" }}>
-                    <button onClick={() => setDetailTicket(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal, fontWeight: 600, fontSize: 12.5 }}>Manage</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            {["All", "Office IT Issues", "Other Issues"].map((f) => (
+              <button key={f} onClick={() => setTicketFilter(f)} style={{
+                background: ticketFilter === f ? T.navy : "#fff", color: ticketFilter === f ? "#fff" : T.muted,
+                border: `1px solid ${ticketFilter === f ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
+                fontSize: 12, fontWeight: 600, cursor: "pointer",
+              }}>{f}</button>
+            ))}
+          </div>
+          <Card style={{ overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Office", "Subject", "Category", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {filteredTickets.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests here.</td></tr>}
+                {filteredTickets.map((t) => {
+                  const isOfficeIssue = t.category === OFFICE_ISSUE_CATEGORY;
+                  return (
+                    <tr key={t.id} style={{ borderTop: `1px solid ${T.border}`, background: isOfficeIssue ? T.tealLight : "transparent" }}>
+                      <td style={{ padding: "10px 14px" }}>{t.empName}</td>
+                      <td style={{ padding: "10px 14px", fontWeight: 600 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          {isOfficeIssue && <MapPin size={13} color={T.teal} />}
+                          {t.office || "—"}
+                        </div>
+                      </td>
+                      <td style={{ padding: "10px 14px" }}>{t.subject}</td>
+                      <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
+                      <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(t.priority)}>{t.priority}</Pill></td>
+                      <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(t.status)}>{t.status}</Pill></td>
+                      <td style={{ padding: "10px 14px" }}>
+                        <button onClick={() => setDetailTicket(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal, fontWeight: 600, fontSize: 12.5 }}>Manage</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
+        </div>
       )}
 
       <TicketDetailModal ticket={detailTicket} onClose={() => setDetailTicket(null)}

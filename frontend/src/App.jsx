@@ -5,7 +5,7 @@ import {
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
-  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2,
+  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, Copy,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -60,6 +60,11 @@ const LEVELS = [
 ];
 
 const DEPARTMENTS = ["Digital Media", "Creative Services", "Publications", "Events Management", "Sales", "HR", "Admin"];
+
+const SUPPORT_EMAIL = "itsupport@kandkmedia.co.za";
+const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payroll Question", "Leave Question", "Account / Access Issue", "Other"];
+const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
+
 const LEAVE_TYPES = [
   "Annual Leave", "Sick Leave", "Family Responsibility Leave",
   "Study Leave", "Unpaid Leave", "Maternity Leave", "Parental Leave",
@@ -968,6 +973,164 @@ function SignupScreen({ onSignup, goLogin }) {
 /* ---------------------------------------------------------------------- */
 /* SETTINGS — edit my profile                                             */
 /* ---------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------- */
+/* SUPPORT CENTER — request help, routed to IT support                    */
+/* ---------------------------------------------------------------------- */
+function buildSupportMailto(ticket, emp) {
+  const subject = `[${ticket.priority}] ${ticket.category}: ${ticket.subject}`;
+  const body =
+    `Employee: ${emp.name} (${emp.id})\n` +
+    `Role: ${ROLE_LABEL[emp.role]}\n` +
+    `Department: ${emp.dept}\n` +
+    `Category: ${ticket.category}\n` +
+    `Priority: ${ticket.priority}\n\n` +
+    `${ticket.description}\n`;
+  return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
+  const [view, setView] = useState(isAdminView ? "all" : "new");
+  const [form, setForm] = useState({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
+  const [error, setError] = useState("");
+  const [justSubmitted, setJustSubmitted] = useState(null);
+
+  const myTickets = tickets.filter((t) => t.empId === emp.id);
+
+  const submit = () => {
+    if (!form.subject.trim() || !form.description.trim()) { setError("Please fill in a subject and description."); return; }
+    setError("");
+    const ticket = {
+      id: `TCK-${Math.floor(Math.random() * 9000 + 1000)}`,
+      empId: emp.id, empName: emp.name, subject: form.subject.trim(), category: form.category,
+      priority: form.priority, description: form.description.trim(), status: "Open",
+      createdAt: new Date().toISOString(),
+    };
+    onSubmit(ticket);
+    window.location.href = buildSupportMailto(ticket, emp);
+    setJustSubmitted(ticket);
+    setForm({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
+  };
+
+  const tabs = isAdminView
+    ? [{ id: "all", label: "All Support Tickets" }]
+    : [{ id: "new", label: "New Request" }, { id: "mine", label: "My Requests" }];
+
+  return (
+    <div>
+      {onBack && (
+        <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: T.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 14 }}>
+          <ArrowLeft size={15} /> Back
+        </button>
+      )}
+      <SectionTitle sub={`Requests are emailed directly to ${SUPPORT_EMAIL}`}>Help &amp; Support</SectionTitle>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => setView(t.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "8px 4px", fontSize: 13, fontWeight: 600, color: view === t.id ? T.navy : T.muted, borderBottom: view === t.id ? `2px solid ${T.teal}` : "2px solid transparent" }}>{t.label}</button>
+        ))}
+      </div>
+
+      {view === "new" && (
+        <Card style={{ padding: 22, maxWidth: 480 }}>
+          {justSubmitted ? (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.green, marginBottom: 10 }}>
+                <CheckCircle2 size={18} /> <span style={{ fontWeight: 700, fontSize: 14 }}>Request logged</span>
+              </div>
+              <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.7, marginBottom: 16 }}>
+                Your email app should have opened with the details pre-filled, addressed to <strong>{SUPPORT_EMAIL}</strong> — hit send from there to actually deliver it. If nothing opened (some browsers block this), use the buttons below instead.
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button variant="teal" small icon={Mail} onClick={() => { window.location.href = buildSupportMailto(justSubmitted, emp); }}>Open Email Again</Button>
+                <Button variant="ghost" small icon={Copy} onClick={() => { navigator.clipboard?.writeText(`To: ${SUPPORT_EMAIL}\nSubject: [${justSubmitted.priority}] ${justSubmitted.category}: ${justSubmitted.subject}\n\n${justSubmitted.description}`); }}>Copy Details</Button>
+                <Button variant="ghost" small onClick={() => setJustSubmitted(null)}>Submit Another</Button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {form.category === "System Malfunction / Bug" && (
+                <div style={{ fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6 }}>
+                  Reporting a bug or outage? Set priority to <strong>Urgent</strong> if it's stopping you from working.
+                </div>
+              )}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Subject</label>
+                <input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} style={{ ...inputStyle, marginTop: 5 }} placeholder="Brief summary of the issue" />
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Category</label>
+                  <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>
+                    {SUPPORT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Priority</label>
+                  <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>
+                    {SUPPORT_PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Describe the problem</label>
+                <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={5} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="What happened, what you expected, and when it started…" />
+              </div>
+              {error && (
+                <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5 }}>
+                  <AlertCircle size={14} /> {error}
+                </div>
+              )}
+              <Button variant="teal" icon={Mail} onClick={submit}>Send to IT Support</Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {view === "mine" && (
+        <Card style={{ overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Category", "Priority", "Status", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {myTickets.length === 0 && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {myTickets.map((t) => (
+                <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.subject}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={t.priority === "Urgent" ? "red" : t.priority === "High" ? "amber" : "muted"}>{t.priority}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={t.status === "Resolved" ? "green" : "teal"}>{t.status}</Pill></td>
+                  <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{new Date(t.createdAt).toLocaleDateString("en-ZA")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {view === "all" && (
+        <Card style={{ overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Subject", "Category", "Priority", "Status", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {tickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {[...tickets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((t) => (
+                <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 14px" }}>{t.empName}</td>
+                  <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.subject}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={t.priority === "Urgent" ? "red" : t.priority === "High" ? "amber" : "muted"}>{t.priority}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={t.status === "Resolved" ? "green" : "teal"}>{t.status}</Pill></td>
+                  <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{new Date(t.createdAt).toLocaleDateString("en-ZA")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+
 function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
   const [form, setForm] = useState({ name: emp.name, email: emp.email, phone: emp.phone || "", position: emp.position, dept: emp.dept });
   const [saved, setSaved] = useState(false);
@@ -1255,8 +1418,9 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
 /* ---------------------------------------------------------------------- */
 /* ADMIN AREA                                                             */
 /* ---------------------------------------------------------------------- */
-function AdminOverview() {
+function AdminOverview({ supportTickets }) {
   const roleCounts = ["admin", "hr", "manager", "employee"].map((r) => ({ role: r, count: EMPLOYEES.filter((e) => e.role === r).length }));
+  const openTickets = supportTickets.filter((t) => t.status !== "Resolved").length;
   return (
     <div>
       <SectionTitle sub="System-level status for the whole platform">System Overview</SectionTitle>
@@ -1264,7 +1428,7 @@ function AdminOverview() {
         <StatCard icon={Users} label="User Accounts" value={EMPLOYEES.length} />
         <StatCard icon={Building2} label="Departments" value={DEPARTMENTS.length} />
         <StatCard icon={SlidersHorizontal} label="Employee Levels" value={LEVELS.length} />
-        <StatCard icon={ShieldCheck} label="System Status" value="OK" tone={T.green} />
+        <StatCard icon={LifeBuoy} label="Open Support Tickets" value={openTickets} tone={openTickets > 0 ? T.amber : T.green} />
       </div>
       <Card style={{ padding: 18 }}>
         <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Accounts by Role</div>
@@ -1617,6 +1781,7 @@ export default function App() {
   const [hrTab, setHrTab] = useState("dashboard");
   const [adminTab, setAdminTab] = useState("overview");
   const [leaveRequests, setLeaveRequests] = useState(INITIAL_LEAVE_REQUESTS);
+  const [supportTickets, setSupportTickets] = useState([]);
   const [payrollStage, setPayrollStage] = useState("DRAFT");
   const [profileEmp, setProfileEmp] = useState(null);
   const [payslipView, setPayslipView] = useState(null);
@@ -1681,6 +1846,7 @@ export default function App() {
       decisionReason: approve ? null : reason,
     } : r)));
   const addLeaveRequest = (r) => setLeaveRequests((rs) => [r, ...rs]);
+  const addSupportTicket = (t) => setSupportTickets((ts) => [t, ...ts]);
   const advanceStage = () => { const i = STAGES.indexOf(payrollStage); if (i < STAGES.length - 1) setPayrollStage(STAGES[i + 1]); };
 
   const hrNav = [
@@ -1690,6 +1856,7 @@ export default function App() {
   const adminNav = [
     { id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
     { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
+    { id: "support", label: "Support Tickets", icon: LifeBuoy },
   ];
   const roleTitle = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee" }[role];
 
@@ -1748,6 +1915,9 @@ export default function App() {
         {viewMode === "role" && role === "manager" && <div style={{ fontSize: 12, color: "#C9BFBC", padding: "10px 6px" }}>Viewing your team's dashboard.</div>}
 
         <div style={{ marginTop: "auto", paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+          <button onClick={() => setViewMode("support")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "support" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "support" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
+            <LifeBuoy size={14} /> Support
+          </button>
           <button onClick={() => setViewMode("settings")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "settings" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "settings" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
             <SettingsIcon size={14} /> Settings
           </button>
@@ -1760,6 +1930,7 @@ export default function App() {
       {/* CONTENT */}
       <div style={{ flex: 1, padding: "26px 30px", overflowY: "auto", maxHeight: 720 }}>
         {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} onBack={() => setViewMode("role")} />}
+        {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={() => setViewMode("role")} isAdminView={false} />}
 
         {viewMode === "selfService" && role !== "employee" && (
           <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />
@@ -1770,10 +1941,11 @@ export default function App() {
         {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} />}
         {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
 
-        {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview />}
+        {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview supportTickets={supportTickets} />}
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels />}
         {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} />}
+        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} />}
 
         {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
 

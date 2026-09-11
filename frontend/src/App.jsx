@@ -5,7 +5,7 @@ import {
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
-  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2,
+  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -64,6 +64,11 @@ const LEAVE_TYPES = [
   "Annual Leave", "Sick Leave", "Family Responsibility Leave",
   "Study Leave", "Unpaid Leave", "Maternity Leave", "Parental Leave",
 ];
+
+// Leave types that require supporting proof (a medical certificate, exam
+// timetable, etc.) before HR/a manager can responsibly decide the request.
+const PROOF_REQUIRED_TYPES = ["Sick Leave", "Maternity Leave", "Parental Leave", "Family Responsibility Leave", "Study Leave"];
+const MAX_PROOF_FILE_BYTES = 4 * 1024 * 1024; // 4MB
 
 // role: "admin" | "hr" | "manager" | "employee"
 // `EMPLOYEES` and `LEAVE_BALANCES` are `let`, not `const` — the App component
@@ -299,6 +304,78 @@ function SignaturePad({ value, onChange, height = 130 }) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* PROOF-OF-LEAVE FILE ATTACHMENT                                         */
+/* ---------------------------------------------------------------------- */
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = dataUrl.split(",");
+  const mimeMatch = header.match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+function viewProofDocument(file) {
+  if (!file || !file.dataUrl) return;
+  try {
+    const blob = dataUrlToBlob(file.dataUrl);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    console.error("Could not open proof document:", e);
+  }
+}
+
+const fileSizeLabel = (bytes) => bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)}KB` : `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+
+function ProofUpload({ value, onChange, required }) {
+  const inputRef = useRef(null);
+  const [error, setError] = useState("");
+
+  const handleFile = (file) => {
+    if (!file) return;
+    const okType = file.type === "application/pdf" || file.type.startsWith("image/");
+    if (!okType) { setError("Only PDF or image files are accepted."); return; }
+    if (file.size > MAX_PROOF_FILE_BYTES) { setError(`File is too large (max ${fileSizeLabel(MAX_PROOF_FILE_BYTES)}).`); return; }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => onChange({ name: file.name, type: file.type, size: file.size, dataUrl: reader.result });
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div>
+      <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>
+        Proof of Leave {required && <span style={{ color: T.red }}>*</span>}
+      </label>
+      {!value ? (
+        <div onClick={() => inputRef.current.click()} style={{
+          marginTop: 5, border: `1.5px dashed ${T.border}`, borderRadius: 8, padding: "16px 14px",
+          textAlign: "center", cursor: "pointer", background: T.bg,
+        }}>
+          <Paperclip size={16} color={T.muted} style={{ marginBottom: 4 }} />
+          <div style={{ fontSize: 12.5, color: T.muted }}>Click to attach a PDF or image (max {fileSizeLabel(MAX_PROOF_FILE_BYTES)})</div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 5, display: "flex", alignItems: "center", justifyContent: "space-between", border: `1px solid ${T.border}`, borderRadius: 8, padding: "9px 12px", background: T.tealLight }}>
+          <button type="button" onClick={() => viewProofDocument(value)} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+            <FileCheck2 size={15} color={T.teal} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value.name}</span>
+            <span style={{ fontSize: 11, color: T.muted, flexShrink: 0 }}>({fileSizeLabel(value.size)})</span>
+          </button>
+          <button type="button" onClick={() => onChange(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, flexShrink: 0 }}><X size={14} /></button>
+        </div>
+      )}
+      <input ref={inputRef} type="file" accept="application/pdf,image/*" style={{ display: "none" }}
+        onChange={(e) => handleFile(e.target.files[0])} />
+      {error && <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
+
 /* PDF GENERATION — builds an actual downloadable payslip PDF client-side */
 /* ---------------------------------------------------------------------- */
 function downloadPayslipPdf(emp, month, figures) {
@@ -479,6 +556,7 @@ function downloadLeaveLetter(request, applicant) {
   detailRow("Dates:", `${request.start} to ${request.end}`);
   detailRow("Days Requested:", request.days);
   detailRow("Applicant's Reason:", request.reason || "—");
+  if (request.proofFileName) detailRow("Supporting Document:", request.proofFileName);
 
   y += 6;
   doc.setFillColor(approved ? 233 : 251, approved ? 245 : 235, approved ? 238 : 233);
@@ -632,6 +710,21 @@ function DecisionModal({ target, decider, onClose, onConfirm }) {
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
         </div>
+
+        {request.proofFileDataUrl ? (
+          <button type="button" onClick={() => viewProofDocument({ name: request.proofFileName, dataUrl: request.proofFileDataUrl })} style={{
+            marginTop: 12, display: "flex", alignItems: "center", gap: 8, width: "100%", background: T.tealLight,
+            border: "none", borderRadius: 8, padding: "10px 12px", cursor: "pointer", textAlign: "left",
+          }}>
+            <FileCheck2 size={15} color={T.teal} />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: T.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{request.proofFileName}</span>
+            <span style={{ fontSize: 11.5, color: T.teal, fontWeight: 600, flexShrink: 0 }}>View</span>
+          </button>
+        ) : PROOF_REQUIRED_TYPES.includes(request.type) && (
+          <div style={{ marginTop: 12, display: "flex", gap: 6, alignItems: "center", color: T.amber, background: T.amberBg, padding: "8px 10px", borderRadius: 6, fontSize: 12 }}>
+            <AlertCircle size={13} /> No supporting document was attached for this {request.type.toLowerCase()} request.
+          </div>
+        )}
 
         {!approve && (
           <div style={{ marginTop: 16 }}>
@@ -1127,7 +1220,12 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
               return (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>{e.name}</td>
-                  <td style={{ padding: "10px 14px", color: T.muted }}>{r.type}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {r.type}
+                      {r.proofFileDataUrl && <FileCheck2 size={13} color={T.teal} style={{ cursor: "pointer", flexShrink: 0 }} onClick={() => viewProofDocument({ name: r.proofFileName, dataUrl: r.proofFileDataUrl })} />}
+                    </div>
+                  </td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{r.start} → {r.end}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono }}>{r.days}</td>
                   <td style={{ padding: "10px 14px", color: T.muted }}>{r.reason}</td>
@@ -1322,7 +1420,12 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
               return (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>{e.name}</td>
-                  <td style={{ padding: "10px 14px", color: T.muted }}>{r.type}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {r.type}
+                      {r.proofFileDataUrl && <FileCheck2 size={13} color={T.teal} style={{ cursor: "pointer", flexShrink: 0 }} onClick={() => viewProofDocument({ name: r.proofFileName, dataUrl: r.proofFileDataUrl })} />}
+                    </div>
+                  </td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{r.start} → {r.end}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono }}>{r.days}</td>
                   <td style={{ padding: "10px 14px" }}><StatusPill status={r.status} /></td>
@@ -1353,24 +1456,27 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
 /* ---------------------------------------------------------------------- */
 function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslipView }) {
   const [tab, setTab] = useState("dashboard");
-  const [form, setForm] = useState({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null });
+  const [form, setForm] = useState({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null, proofFile: null });
   const [formError, setFormError] = useState("");
   const balances = LEAVE_BALANCES[emp.id] || { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 };
   const myRequests = leaveRequests.filter((r) => r.emp === emp.id);
   const myHistory = history[emp.id] || [];
 
   const days = (s, e) => { if (!s || !e) return 0; const d = (new Date(e) - new Date(s)) / 86400000 + 1; return d > 0 ? Math.round(d) : 0; };
+  const proofRequired = PROOF_REQUIRED_TYPES.includes(form.type);
 
   const submit = () => {
     if (!form.start || !form.end || !form.reason) { setFormError("Please fill in the dates and reason."); return; }
+    if (proofRequired && !form.proofFile) { setFormError(`${form.type} requires supporting proof — please attach a PDF or image.`); return; }
     if (!form.signature) { setFormError("Please sign the application before submitting."); return; }
     setFormError("");
     addLeaveRequest({
       id: `LR-${Math.floor(rand(myRequests.length + 500) * 900 + 100)}`, emp: emp.id, type: form.type, start: form.start, end: form.end,
       days: days(form.start, form.end), reason: form.reason, status: "Pending",
       employeeSignature: form.signature, employeeSignedAt: new Date().toISOString(),
+      proofFileName: form.proofFile?.name || null, proofFileType: form.proofFile?.type || null, proofFileDataUrl: form.proofFile?.dataUrl || null,
     });
-    setForm({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null });
+    setForm({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null, proofFile: null });
     setTab("leaveHistory");
   };
 
@@ -1439,7 +1545,8 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Leave Type</label>
-              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>{LEAVE_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, proofFile: null })} style={{ ...inputStyle, marginTop: 5 }}>{LEAVE_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+              {proofRequired && <div style={{ marginTop: 5 }}><Pill tone="amber">Proof required for this leave type</Pill></div>}
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <div style={{ flex: 1 }}><label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Start Date</label><input type="date" value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} style={{ ...inputStyle, marginTop: 5 }} /></div>
@@ -1450,6 +1557,7 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
               <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} rows={3} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} />
             </div>
             <div style={{ fontSize: 12.5, color: T.muted }}>Days requested: <strong style={{ fontFamily: mono }}>{days(form.start, form.end)}</strong></div>
+            <ProofUpload value={form.proofFile} onChange={(f) => setForm({ ...form, proofFile: f })} required={proofRequired} />
             <SignaturePad value={form.signature} onChange={(sig) => setForm({ ...form, signature: sig })} />
             {emp.role !== "employee" && (
               <div style={{ fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6 }}>This request will go to HR for approval, the same as any other employee's leave application.</div>
@@ -1472,7 +1580,12 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
               {myRequests.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No leave history yet.</td></tr>}
               {myRequests.map((r) => (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px" }}>{r.type}</td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {r.type}
+                      {r.proofFileDataUrl && <FileCheck2 size={13} color={T.teal} style={{ cursor: "pointer", flexShrink: 0 }} onClick={() => viewProofDocument({ name: r.proofFileName, dataUrl: r.proofFileDataUrl })} />}
+                    </div>
+                  </td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{r.start} → {r.end}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono }}>{r.days}</td>
                   <td style={{ padding: "10px 14px", color: T.muted }}>{r.reason}</td>

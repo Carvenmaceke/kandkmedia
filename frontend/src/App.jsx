@@ -67,8 +67,8 @@ const SUPPORT_EMAIL = "itsupport@kandkmedia.co.za";
 // means "not connected yet" — the Support form will say so plainly rather
 // than pretending to send.
 const API_BASE_URL = "";
-const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payslip Issue", "Leave Application Issue", "Office IT Issue (hardware, network, equipment)", "Account / Access Issue", "Other"];
-const OFFICE_ISSUE_CATEGORY = "Office IT Issue (hardware, network, equipment)";
+const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payslip Issue", "Leave Application Issue", "Account / Access Issue", "Other"];
+const OFFICE_ISSUE_TYPES = ["Hardware / Equipment", "Network / WiFi", "Printer / Scanner", "Workstation / Computer", "Other"];
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 const OFFICES = ["Midrand", "Sandton"];
 const TICKET_STATUSES = ["Open", "In Progress", "Resolved"];
@@ -998,17 +998,17 @@ function SignupScreen({ onSignup, goLogin }) {
 /** Calls the real backend directly — no email client, no mailto:. Returns
  *  { ok, reason } rather than throwing, so the UI can show a precise,
  *  honest message for each failure mode instead of a generic error. */
-async function sendSupportRequestToServer(ticket, emp) {
+async function sendRequestToServer(path, ticket, emp) {
   if (!API_BASE_URL) {
     return { ok: false, reason: "not-connected" };
   }
   try {
-    const res = await fetch(`${API_BASE_URL}/api/public/support`, {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         employeeName: emp.name, employeeCode: emp.id, employeeEmail: emp.email,
-        role: ROLE_LABEL[emp.role], department: emp.dept,
+        role: ROLE_LABEL[emp.role], department: emp.dept, office: ticket.office || emp.office,
         subject: ticket.subject, category: ticket.category, priority: ticket.priority,
         description: ticket.description,
       }),
@@ -1060,23 +1060,16 @@ function TicketDetailModal({ ticket, onClose, onSave }) {
   );
 }
 
-function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availability, onSetAvailability, onUpdateTicket }) {
+function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTicket }) {
   const [view, setView] = useState(isAdminView ? "all" : "new");
-  const [form, setForm] = useState({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "", office: emp.office || OFFICES[0] });
+  const [form, setForm] = useState({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(null);
   const [detailTicket, setDetailTicket] = useState(null);
-  const [ticketFilter, setTicketFilter] = useState("All");
-  const [availabilityDraft, setAvailabilityDraft] = useState(availability || "");
 
   const myTickets = tickets.filter((t) => t.empId === emp.id);
   const sortedTickets = [...tickets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const filteredTickets = sortedTickets.filter((t) => {
-    if (ticketFilter === "Office IT Issues") return t.category === OFFICE_ISSUE_CATEGORY;
-    if (ticketFilter === "Other Issues") return t.category !== OFFICE_ISSUE_CATEGORY;
-    return true;
-  });
 
   const submit = async () => {
     if (!form.subject.trim() || !form.description.trim()) { setError("Please fill in a subject and description."); return; }
@@ -1085,10 +1078,10 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
     const ticket = {
       id: `TCK-${Math.floor(Math.random() * 9000 + 1000)}`,
       empId: emp.id, empName: emp.name, subject: form.subject.trim(), category: form.category,
-      priority: form.priority, description: form.description.trim(), status: "Open", office: form.office,
+      priority: form.priority, description: form.description.trim(), status: "Open",
       createdAt: new Date().toISOString(),
     };
-    const result = await sendSupportRequestToServer(ticket, emp);
+    const result = await sendRequestToServer("/api/public/support", ticket, emp);
     setSending(false);
 
     if (!result.ok) {
@@ -1103,7 +1096,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
 
     onSubmit(ticket);
     setJustSubmitted(ticket);
-    setForm({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "", office: emp.office || OFFICES[0] });
+    setForm({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
   };
 
   const tabs = isAdminView
@@ -1120,24 +1113,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
           <ArrowLeft size={15} /> Back
         </button>
       )}
-      <SectionTitle sub={`Requests are sent directly to ${SUPPORT_EMAIL}`}>Help &amp; Support</SectionTitle>
-
-      {isAdminView && (
-        <Card style={{ padding: 16, marginBottom: 20 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: T.muted, marginBottom: 8 }}>Your Availability (shown to employees before they submit a request)</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={availabilityDraft} onChange={(e) => setAvailabilityDraft(e.target.value)} style={{ ...inputStyle, flex: 1 }} placeholder="e.g. At the Midrand office until 1pm, then Sandton" />
-            <Button variant="teal" small onClick={() => onSetAvailability(availabilityDraft)}>Save</Button>
-          </div>
-        </Card>
-      )}
-
-      {!isAdminView && availability && (
-        <Card style={{ padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "center", gap: 8, background: T.tealLight }}>
-          <LifeBuoy size={14} color={T.teal} />
-          <span style={{ fontSize: 12.5, color: T.text }}><strong>IT Support availability:</strong> {availability}</span>
-        </Card>
-      )}
+      <SectionTitle sub={`For issues within the system itself — payslips, leave, bugs. Sent directly to ${SUPPORT_EMAIL}.`}>Support</SectionTitle>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
         {tabs.map((t) => (
@@ -1153,7 +1129,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
                 <CheckCircle2 size={18} /> <span style={{ fontWeight: 700, fontSize: 14 }}>Sent</span>
               </div>
               <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.7, marginBottom: 16 }}>
-                Your request was sent directly to <strong>{SUPPORT_EMAIL}</strong> — no email app needed. You'll be contacted there if IT support needs more details.
+                Your request was sent directly to <strong>{SUPPORT_EMAIL}</strong> — no email app needed. You'll be contacted there if more details are needed.
               </div>
               <Button variant="ghost" small onClick={() => setJustSubmitted(null)}>Submit Another</Button>
             </div>
@@ -1164,16 +1140,9 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
                   <AlertCircle size={13} /> Not connected to the support server yet — sending will fail until the backend is deployed.
                 </div>
               )}
-              {form.category === "System Malfunction / Bug" && (
-                <div style={{ fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6 }}>
-                  Reporting a bug or outage? Set priority to <strong>Urgent</strong> if it's stopping you from working.
-                </div>
-              )}
-              {form.category === OFFICE_ISSUE_CATEGORY && (
-                <div style={{ fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6 }}>
-                  On-site issue (hardware, network, printer, workstation, etc.) — make sure the Office below is correct so IT support knows where to go, and be specific about the equipment/location involved.
-                </div>
-              )}
+              <div style={{ fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6 }}>
+                For things you're running into <strong>within this system</strong> — a payslip that looks wrong, trouble with a leave application, a bug, or an account/access problem. Have a physical issue at your office instead (hardware, network, printer)? Use <strong>Office Issues</strong> in the sidebar instead.
+              </div>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Subject</label>
                 <input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} style={{ ...inputStyle, marginTop: 5 }} placeholder="Brief summary of the issue" />
@@ -1193,15 +1162,6 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
                 </div>
               </div>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Office</label>
-                <select value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>
-                  {OFFICES.map((o) => <option key={o}>{o}</option>)}
-                </select>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>
-                  {form.category === OFFICE_ISSUE_CATEGORY ? "Which office to go to for this — required for on-site issues." : "So IT support knows which office to go to."}
-                </div>
-              </div>
-              <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Describe the problem</label>
                 <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={5} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="What happened, what you expected, and when it started…" />
               </div>
@@ -1210,7 +1170,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
                   <AlertCircle size={14} /> {error}
                 </div>
               )}
-              <Button variant="teal" icon={Mail} disabled={sending} onClick={submit}>{sending ? "Sending…" : "Send to IT Support"}</Button>
+              <Button variant="teal" icon={Mail} disabled={sending} onClick={submit}>{sending ? "Sending…" : "Send to Support"}</Button>
             </div>
           )}
         </Card>
@@ -1219,13 +1179,13 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
       {view === "mine" && (
         <Card style={{ overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Office", "Priority", "Status", "Response", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Category", "Priority", "Status", "Response", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
               {myTickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
               {myTickets.map((t) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.subject}</td>
-                  <td style={{ padding: "10px 14px", color: T.muted }}>{t.office || "—"}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
                   <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(t.priority)}>{t.priority}</Pill></td>
                   <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(t.status)}>{t.status}</Pill></td>
                   <td style={{ padding: "10px 14px", color: T.muted, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.response || "—"}</td>
@@ -1238,46 +1198,26 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
       )}
 
       {view === "all" && (
-        <div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {["All", "Office IT Issues", "Other Issues"].map((f) => (
-              <button key={f} onClick={() => setTicketFilter(f)} style={{
-                background: ticketFilter === f ? T.navy : "#fff", color: ticketFilter === f ? "#fff" : T.muted,
-                border: `1px solid ${ticketFilter === f ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
-                fontSize: 12, fontWeight: 600, cursor: "pointer",
-              }}>{f}</button>
-            ))}
-          </div>
-          <Card style={{ overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Office", "Subject", "Category", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-              <tbody>
-                {filteredTickets.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests here.</td></tr>}
-                {filteredTickets.map((t) => {
-                  const isOfficeIssue = t.category === OFFICE_ISSUE_CATEGORY;
-                  return (
-                    <tr key={t.id} style={{ borderTop: `1px solid ${T.border}`, background: isOfficeIssue ? T.tealLight : "transparent" }}>
-                      <td style={{ padding: "10px 14px" }}>{t.empName}</td>
-                      <td style={{ padding: "10px 14px", fontWeight: 600 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          {isOfficeIssue && <MapPin size={13} color={T.teal} />}
-                          {t.office || "—"}
-                        </div>
-                      </td>
-                      <td style={{ padding: "10px 14px" }}>{t.subject}</td>
-                      <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
-                      <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(t.priority)}>{t.priority}</Pill></td>
-                      <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(t.status)}>{t.status}</Pill></td>
-                      <td style={{ padding: "10px 14px" }}>
-                        <button onClick={() => setDetailTicket(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal, fontWeight: 600, fontSize: 12.5 }}>Manage</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </Card>
-        </div>
+        <Card style={{ overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Subject", "Category", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {sortedTickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {sortedTickets.map((t) => (
+                <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 14px" }}>{t.empName}</td>
+                  <td style={{ padding: "10px 14px" }}>{t.subject}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>{t.category}</td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(t.priority)}>{t.priority}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(t.status)}>{t.status}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <button onClick={() => setDetailTicket(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal, fontWeight: 600, fontSize: 12.5 }}>Manage</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
       )}
 
       <TicketDetailModal ticket={detailTicket} onClose={() => setDetailTicket(null)}
@@ -1286,6 +1226,201 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, availabili
   );
 }
 
+/* ---------------------------------------------------------------------- */
+/* OFFICE ISSUES — separate feature: on-site hardware/network/equipment   */
+/* issues at a specific office (Midrand/Sandton), managed by IT Support   */
+/* ---------------------------------------------------------------------- */
+function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availability, onSetAvailability, onUpdateIssue }) {
+  const [view, setView] = useState(isAdminView ? "all" : "new");
+  const [form, setForm] = useState({ subject: "", type: OFFICE_ISSUE_TYPES[0], priority: "Medium", description: "", office: emp.office || OFFICES[0] });
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+  const [justSubmitted, setJustSubmitted] = useState(null);
+  const [detailIssue, setDetailIssue] = useState(null);
+  const [availabilityDraft, setAvailabilityDraft] = useState(availability || "");
+
+  const myIssues = issues.filter((i) => i.empId === emp.id);
+  const sortedIssues = [...issues].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const submit = async () => {
+    if (!form.subject.trim() || !form.description.trim()) { setError("Please fill in a subject and description."); return; }
+    setError("");
+    setSending(true);
+    const issue = {
+      id: `OFF-${Math.floor(Math.random() * 9000 + 1000)}`,
+      empId: emp.id, empName: emp.name, subject: form.subject.trim(), category: form.type,
+      priority: form.priority, description: form.description.trim(), status: "Open", office: form.office,
+      createdAt: new Date().toISOString(),
+    };
+    const result = await sendRequestToServer("/api/public/office-issues", issue, emp);
+    setSending(false);
+
+    if (!result.ok) {
+      const messages = {
+        "not-connected": "This app isn't connected to the support server yet, so nothing was sent. (The backend needs to be deployed and its URL set in the frontend — see backend/README.md.)",
+        "server-error": "The server received this but rejected it — please try again in a moment.",
+        "network-error": "Couldn't reach the server — check your connection and try again.",
+      };
+      setError(messages[result.reason] || "Something went wrong sending this request.");
+      return;
+    }
+
+    onSubmit(issue);
+    setJustSubmitted(issue);
+    setForm({ subject: "", type: OFFICE_ISSUE_TYPES[0], priority: "Medium", description: "", office: emp.office || OFFICES[0] });
+  };
+
+  const tabs = isAdminView
+    ? [{ id: "all", label: "All Office Issues" }]
+    : [{ id: "new", label: "Report an Issue" }, { id: "mine", label: "My Reports" }];
+
+  const statusTone = (s) => s === "Resolved" ? "green" : s === "In Progress" ? "amber" : "teal";
+  const priorityTone = (p) => p === "Urgent" ? "red" : p === "High" ? "amber" : "muted";
+
+  return (
+    <div>
+      {onBack && (
+        <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: T.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 14 }}>
+          <ArrowLeft size={15} /> Back
+        </button>
+      )}
+      <SectionTitle sub="For physical/on-site issues at your office — hardware, network, printers, equipment">Office Issues</SectionTitle>
+
+      {isAdminView && (
+        <Card style={{ padding: 16, marginBottom: 20 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: T.muted, marginBottom: 8 }}>Your Availability (shown to employees before they report an issue)</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={availabilityDraft} onChange={(e) => setAvailabilityDraft(e.target.value)} style={{ ...inputStyle, flex: 1 }} placeholder="e.g. At the Midrand office until 1pm, then Sandton" />
+            <Button variant="teal" small onClick={() => onSetAvailability(availabilityDraft)}>Save</Button>
+          </div>
+        </Card>
+      )}
+
+      {!isAdminView && availability && (
+        <Card style={{ padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "center", gap: 8, background: T.tealLight }}>
+          <MapPin size={14} color={T.teal} />
+          <span style={{ fontSize: 12.5, color: T.text }}><strong>IT Support availability:</strong> {availability}</span>
+        </Card>
+      )}
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => setView(t.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "8px 4px", fontSize: 13, fontWeight: 600, color: view === t.id ? T.navy : T.muted, borderBottom: view === t.id ? `2px solid ${T.teal}` : "2px solid transparent" }}>{t.label}</button>
+        ))}
+      </div>
+
+      {view === "new" && (
+        <Card style={{ padding: 22, maxWidth: 480 }}>
+          {justSubmitted ? (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.green, marginBottom: 10 }}>
+                <CheckCircle2 size={18} /> <span style={{ fontWeight: 700, fontSize: 14 }}>Sent</span>
+              </div>
+              <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.7, marginBottom: 16 }}>
+                Your report was sent directly to IT support. Check "My Reports" for updates and to see when they'll be at your office.
+              </div>
+              <Button variant="ghost" small onClick={() => setJustSubmitted(null)}>Report Another</Button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {!API_BASE_URL && (
+                <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.amber, background: T.amberBg, padding: "8px 10px", borderRadius: 6, fontSize: 12 }}>
+                  <AlertCircle size={13} /> Not connected to the support server yet — sending will fail until the backend is deployed.
+                </div>
+              )}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Subject</label>
+                <input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} style={{ ...inputStyle, marginTop: 5 }} placeholder="Brief summary of the issue" />
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Issue Type</label>
+                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>
+                    {OFFICE_ISSUE_TYPES.map((t) => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Priority</label>
+                  <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>
+                    {SUPPORT_PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Office</label>
+                <select value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} style={{ ...inputStyle, marginTop: 5 }}>
+                  {OFFICES.map((o) => <option key={o}>{o}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>So IT support knows which office to go to.</div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Describe the problem</label>
+                <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={5} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="What's the equipment/location, and what's happening?" />
+              </div>
+              {error && (
+                <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5 }}>
+                  <AlertCircle size={14} /> {error}
+                </div>
+              )}
+              <Button variant="teal" icon={MapPin} disabled={sending} onClick={submit}>{sending ? "Sending…" : "Report to IT Support"}</Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {view === "mine" && (
+        <Card style={{ overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Type", "Office", "Priority", "Status", "Response", "Reported"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {myIssues.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No office issues reported yet.</td></tr>}
+              {myIssues.map((i) => (
+                <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 14px", fontWeight: 600 }}>{i.subject}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>{i.category}</td>
+                  <td style={{ padding: "10px 14px" }}>{i.office || "—"}</td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(i.priority)}>{i.priority}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(i.status)}>{i.status}</Pill></td>
+                  <td style={{ padding: "10px 14px", color: T.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.response || "—"}</td>
+                  <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{new Date(i.createdAt).toLocaleDateString("en-ZA")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {view === "all" && (
+        <Card style={{ overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Office", "Subject", "Type", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {sortedIssues.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No office issues reported yet.</td></tr>}
+              {sortedIssues.map((i) => (
+                <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 14px" }}>{i.empName}</td>
+                  <td style={{ padding: "10px 14px", fontWeight: 600 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}><MapPin size={13} color={T.teal} />{i.office || "—"}</div>
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>{i.subject}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>{i.category}</td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={priorityTone(i.priority)}>{i.priority}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}><Pill tone={statusTone(i.status)}>{i.status}</Pill></td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <button onClick={() => setDetailIssue(i)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal, fontWeight: 600, fontSize: 12.5 }}>Manage</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      <TicketDetailModal ticket={detailIssue} onClose={() => setDetailIssue(null)}
+        onSave={(id, status, response) => { onUpdateIssue(id, status, response); setDetailIssue(null); }} />
+    </div>
+  );
+}
 
 function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
   const [form, setForm] = useState({ name: emp.name, email: emp.email, phone: emp.phone || "", position: emp.position, dept: emp.dept, office: emp.office || OFFICES[0] });
@@ -1579,17 +1714,18 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
 /* ---------------------------------------------------------------------- */
 /* ADMIN AREA                                                             */
 /* ---------------------------------------------------------------------- */
-function AdminOverview({ supportTickets }) {
+function AdminOverview({ supportTickets, officeIssues }) {
   const roleCounts = ["it_support", "admin", "hr", "manager", "employee"].map((r) => ({ role: r, count: EMPLOYEES.filter((e) => e.role === r).length }));
   const openTickets = supportTickets.filter((t) => t.status !== "Resolved").length;
+  const openOfficeIssues = officeIssues.filter((i) => i.status !== "Resolved").length;
   return (
     <div>
       <SectionTitle sub="System-level status for the whole platform">System Overview</SectionTitle>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
         <StatCard icon={Users} label="User Accounts" value={EMPLOYEES.length} />
         <StatCard icon={Building2} label="Departments" value={DEPARTMENTS.length} />
-        <StatCard icon={SlidersHorizontal} label="Employee Levels" value={LEVELS.length} />
         <StatCard icon={LifeBuoy} label="Open Support Tickets" value={openTickets} tone={openTickets > 0 ? T.amber : T.green} />
+        <StatCard icon={MapPin} label="Open Office Issues" value={openOfficeIssues} tone={openOfficeIssues > 0 ? T.amber : T.green} />
       </div>
       <Card style={{ padding: 18 }}>
         <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Accounts by Role</div>
@@ -1941,10 +2077,11 @@ export default function App() {
   const [viewMode, setViewMode] = useState("role"); // "role" | "selfService" | "settings"
   const [hrTab, setHrTab] = useState("dashboard");
   const [adminTab, setAdminTab] = useState("overview");
-  const [itSupportTab, setItSupportTab] = useState("support");
+  const [itSupportTab, setItSupportTab] = useState("officeIssues");
   const [leaveRequests, setLeaveRequests] = useState(INITIAL_LEAVE_REQUESTS);
   const [supportTickets, setSupportTickets] = useState([]);
-  const [supportAvailability, setSupportAvailability] = useState("");
+  const [officeIssues, setOfficeIssues] = useState([]);
+  const [officeAvailability, setOfficeAvailability] = useState("");
   const [payrollStage, setPayrollStage] = useState("DRAFT");
   const [profileEmp, setProfileEmp] = useState(null);
   const [payslipView, setPayslipView] = useState(null);
@@ -2013,6 +2150,9 @@ export default function App() {
   const addSupportTicket = (t) => setSupportTickets((ts) => [t, ...ts]);
   const updateSupportTicket = (id, status, response) =>
     setSupportTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, response } : t)));
+  const addOfficeIssue = (i) => setOfficeIssues((is) => [i, ...is]);
+  const updateOfficeIssue = (id, status, response) =>
+    setOfficeIssues((is) => is.map((i) => (i.id === id ? { ...i, status, response } : i)));
   const advanceStage = () => { const i = STAGES.indexOf(payrollStage); if (i < STAGES.length - 1) setPayrollStage(STAGES[i + 1]); };
 
   const hrNav = [
@@ -2022,10 +2162,11 @@ export default function App() {
   const adminNav = [
     { id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
     { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
-    { id: "support", label: "Support Tickets", icon: LifeBuoy },
+    { id: "support", label: "Support Tickets", icon: LifeBuoy }, { id: "officeIssues", label: "Office Issues", icon: MapPin },
   ];
   const itSupportNav = [
-    { id: "support", label: "Support Tickets", icon: LifeBuoy }, { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "officeIssues", label: "Office Issues", icon: MapPin }, { id: "support", label: "Support Tickets", icon: LifeBuoy },
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
     { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
   ];
@@ -2098,6 +2239,9 @@ export default function App() {
           <button onClick={() => setViewMode("support")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "support" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "support" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
             <LifeBuoy size={14} /> Support
           </button>
+          <button onClick={() => setViewMode("officeIssues")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "officeIssues" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "officeIssues" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
+            <MapPin size={14} /> Office Issues
+          </button>
           <button onClick={() => setViewMode("settings")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "settings" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "settings" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
             <SettingsIcon size={14} /> Settings
           </button>
@@ -2110,7 +2254,8 @@ export default function App() {
       {/* CONTENT */}
       <div style={{ flex: 1, padding: "26px 30px", overflowY: "auto", maxHeight: 720 }}>
         {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} onBack={() => setViewMode("role")} />}
-        {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={() => setViewMode("role")} isAdminView={false} availability={supportAvailability} onSetAvailability={setSupportAvailability} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={() => setViewMode("role")} isAdminView={false} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} onBack={() => setViewMode("role")} isAdminView={false} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
         {viewMode === "selfService" && role !== "employee" && (
           <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />
@@ -2121,14 +2266,16 @@ export default function App() {
         {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} />}
         {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
 
-        {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview supportTickets={supportTickets} />}
+        {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels />}
         {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} />}
-        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} availability={supportAvailability} onSetAvailability={setSupportAvailability} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "role" && role === "admin" && adminTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
-        {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} availability={supportAvailability} onSetAvailability={setSupportAvailability} onUpdateTicket={updateSupportTicket} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} />}

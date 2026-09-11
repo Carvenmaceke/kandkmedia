@@ -21,14 +21,18 @@ Spring Boot + MySQL system.
 - **Admin** — system overview, company profile & payslip delivery settings,
   employee levels & departments, and user accounts.
 - **IT Support** — a separate role (full system access, same screens as
-  Admin) that defaults to a Support Tickets view: manage every submitted
-  request, change its status (Open/In Progress/Resolved), write a response
-  back to the employee, and set an availability note employees see before
-  submitting ("At Midrand until 1pm, then Sandton").
+  Admin) that defaults to an Office Issues view.
 - **Manager** — team view with leave approvals for direct reports.
-- **Help & Support** — every role can submit a support request (subject,
-  category, priority, description, and which office — Midrand or Sandton —
-  they're at) that's sent directly server-side, no email client involved.
+- **Support** — every role can submit a request about something **within
+  the system itself** (a payslip that looks wrong, a leave application
+  problem, a bug, an account/access issue) — sent directly server-side, no
+  email client involved.
+- **Office Issues** — a completely separate feature from Support, for
+  **physical, on-site problems** at Midrand or Sandton (hardware, network,
+  printers, equipment). IT Support/Admin get their own management view:
+  change status (Open/In Progress/Resolved), write a response, and set an
+  availability note ("At Midrand until 1pm, then Sandton") shown to
+  employees before they report an issue.
 - **Settings** — every user can edit their own profile, change their
   password, and set notification preferences.
 - Anyone in HR, Admin, IT Support, or a Manager role can also **switch to

@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import jsPDF from "jspdf";
 import {
   Users, Banknote, CalendarDays, FileText, Bell, CheckCircle2, XCircle,
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
-  Lock, Mail, Phone as PhoneIcon, AlertCircle,
+  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -212,6 +212,93 @@ function Field({ label, children }) {
 const inputStyle = { width: "100%", padding: "9px 10px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13.5, fontFamily: sans, boxSizing: "border-box" };
 
 /* ---------------------------------------------------------------------- */
+/* SIGNATURE PAD — draw-to-sign, captured as a PNG data URL               */
+/* ---------------------------------------------------------------------- */
+function SignaturePad({ value, onChange, height = 130 }) {
+  const canvasRef = useRef(null);
+  const drawing = useRef(false);
+  const lastPos = useRef(null);
+  const hasStroke = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = T.text;
+    if (value) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      img.src = value;
+      hasStroke.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const getPos = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  };
+
+  const start = (e) => {
+    e.preventDefault();
+    drawing.current = true;
+    lastPos.current = getPos(e);
+  };
+  const move = (e) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext("2d");
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastPos.current.x, lastPos.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    lastPos.current = pos;
+    hasStroke.current = true;
+  };
+  const end = () => {
+    if (!drawing.current) return;
+    drawing.current = false;
+    onChange(hasStroke.current ? canvasRef.current.toDataURL("image/png") : null);
+  };
+  const clear = () => {
+    const canvas = canvasRef.current;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    hasStroke.current = false;
+    onChange(null);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+        <PenLine size={13} color={T.muted} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Signature</span>
+      </div>
+      <canvas
+        ref={canvasRef}
+        width={500}
+        height={height * 2}
+        style={{ width: "100%", height, border: `1px solid ${T.border}`, borderRadius: 6, background: "#fff", touchAction: "none", cursor: "crosshair", display: "block" }}
+        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+      />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+        <span style={{ fontSize: 11, color: T.muted }}>Draw your signature above</span>
+        <button type="button" onClick={clear} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: T.muted, fontSize: 11.5, cursor: "pointer", fontWeight: 600 }}>
+          <Trash2 size={12} /> Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
 /* PDF GENERATION — builds an actual downloadable payslip PDF client-side */
 /* ---------------------------------------------------------------------- */
 function downloadPayslipPdf(emp, month, figures) {
@@ -326,6 +413,139 @@ function triggerPdfDownload(doc, filename) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* LEAVE DECISION LETTER — signed approval/decline document               */
+/* ---------------------------------------------------------------------- */
+function downloadLeaveLetter(request, applicant) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 42;
+  let y;
+
+  const approved = request.status === "Approved";
+
+  // Header band
+  doc.setFillColor(23, 17, 15);
+  doc.rect(0, 0, pageWidth, 92, "F");
+  doc.setFillColor(216, 31, 44);
+  doc.rect(marginX, 26, 40, 3, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text(COMPANY.name, marginX, 50);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(201, 191, 188);
+  const addrLines = doc.splitTextToSize(COMPANY.address, 320);
+  doc.text(addrLines, marginX, 64);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  const title = "LEAVE REQUEST " + (approved ? "APPROVAL" : "DECLINE") + " LETTER";
+  doc.text(title, pageWidth - marginX - doc.getTextWidth(title), 50);
+
+  y = 130;
+  doc.setTextColor(20, 20, 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.text(`Date: ${new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })}`, marginX, y);
+  y += 26;
+
+  doc.setFont("helvetica", "bold");
+  doc.text(`Dear ${applicant.name},`, marginX, y);
+  y += 22;
+
+  doc.setFont("helvetica", "normal");
+  const bodyText = approved
+    ? `This letter confirms that your ${request.type} request has been APPROVED.`
+    : `This letter confirms that your ${request.type} request has been DECLINED.`;
+  const bodyLines = doc.splitTextToSize(bodyText, pageWidth - marginX * 2);
+  doc.text(bodyLines, marginX, y);
+  y += bodyLines.length * 14 + 16;
+
+  const detailRow = (label, value) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(90, 82, 80);
+    doc.text(label, marginX, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(20, 20, 20);
+    doc.text(String(value), marginX + 140, y);
+    y += 17;
+  };
+
+  detailRow("Employee:", `${applicant.name} (${applicant.id})`);
+  detailRow("Leave Type:", request.type);
+  detailRow("Dates:", `${request.start} to ${request.end}`);
+  detailRow("Days Requested:", request.days);
+  detailRow("Applicant's Reason:", request.reason || "—");
+
+  y += 6;
+  doc.setFillColor(approved ? 233 : 251, approved ? 245 : 235, approved ? 238 : 233);
+  doc.roundedRect(marginX, y - 14, pageWidth - marginX * 2, 26, 4, 4, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(approved ? 47 : 140, approved ? 122 : 42, approved ? 85 : 46);
+  doc.text(`Status: ${request.status}`, marginX + 12, y + 4);
+  y += 40;
+
+  if (!approved && request.decisionReason) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(90, 82, 80);
+    doc.text("Reason for decline:", marginX, y);
+    y += 15;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(20, 20, 20);
+    const reasonLines = doc.splitTextToSize(request.decisionReason, pageWidth - marginX * 2);
+    doc.text(reasonLines, marginX, y);
+    y += reasonLines.length * 14 + 10;
+  }
+
+  y += 30;
+
+  // Signature blocks — employee (applicant) left, decider right
+  const sigBoxWidth = (pageWidth - marginX * 2 - 30) / 2;
+  const sigImgHeight = 50;
+
+  const drawSignatureBlock = (x, label, signatureDataUrl, nameLine, dateLine) => {
+    if (signatureDataUrl) {
+      try {
+        doc.addImage(signatureDataUrl, "PNG", x, y, sigBoxWidth, sigImgHeight);
+      } catch (e) {
+        // Corrupt/unsupported image data — fall through to just the line and label.
+      }
+    }
+    doc.setDrawColor(140, 130, 128);
+    doc.setLineWidth(0.75);
+    doc.line(x, y + sigImgHeight + 6, x + sigBoxWidth, y + sigImgHeight + 6);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(20, 20, 20);
+    doc.text(nameLine, x, y + sigImgHeight + 20);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 110, 108);
+    doc.text(label, x, y + sigImgHeight + 32);
+    if (dateLine) doc.text(dateLine, x, y + sigImgHeight + 44);
+  };
+
+  drawSignatureBlock(marginX, "Applicant", request.employeeSignature, applicant.name,
+    request.employeeSignedAt ? `Signed: ${new Date(request.employeeSignedAt).toLocaleDateString("en-ZA")}` : "");
+  drawSignatureBlock(marginX + sigBoxWidth + 30, `${approved ? "Approved" : "Declined"} by`, request.deciderSignature,
+    request.deciderName || "—", request.deciderSignedAt ? `Signed: ${new Date(request.deciderSignedAt).toLocaleDateString("en-ZA")}` : "");
+
+  y += sigImgHeight + 70;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(140, 130, 128);
+  doc.text("This document was electronically generated and signed within the K and K Media Payroll System.", marginX, y);
+
+  const filename = `Leave-${request.status}-${request.id}-${applicant.id}.pdf`;
+  triggerPdfDownload(doc, filename);
+}
+
+/* ---------------------------------------------------------------------- */
 /* PAYSLIP DOCUMENT                                                       */
 /* ---------------------------------------------------------------------- */
 function Payslip({ emp, month, figures, onClose }) {
@@ -383,6 +603,66 @@ function Payslip({ emp, month, figures, onClose }) {
     </div>
   );
 }
+
+/* ---------------------------------------------------------------------- */
+/* DECISION MODAL — decider signs off on approving/declining leave        */
+/* ---------------------------------------------------------------------- */
+function DecisionModal({ target, decider, onClose, onConfirm }) {
+  const [signature, setSignature] = useState(null);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+
+  if (!target) return null;
+  const { request, intent } = target;
+  const approve = intent === "approve";
+
+  const confirm = () => {
+    if (!signature) { setError("Please sign before confirming."); return; }
+    if (!approve && !reason.trim()) { setError("Please state a reason for declining."); return; }
+    onConfirm(request.id, approve, signature, approve ? null : reason.trim());
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.5)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ background: T.surface, width: 440, maxWidth: "100%", borderRadius: 10, padding: 26, boxShadow: "0 20px 60px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{approve ? "Approve" : "Decline"} leave request</div>
+            <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{empById(request.emp)?.name} · {request.type} · {request.start} to {request.end}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
+        </div>
+
+        {!approve && (
+          <div style={{ marginTop: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Reason for declining</label>
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+              style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="Explain why this request is being declined…" />
+          </div>
+        )}
+
+        <div style={{ marginTop: 16 }}>
+          <SignaturePad value={signature} onChange={setSignature} height={110} />
+          <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>
+            Signing as <strong>{decider.name}</strong> ({ROLE_LABEL[decider.role]}). This signature and your decision will appear on the letter sent to {empById(request.emp)?.name}.
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginTop: 14 }}>
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <Button variant={approve ? "teal" : "danger"} onClick={confirm}>{approve ? "Confirm Approval" : "Confirm Decline"}</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function ProfileDrawer({ emp, onClose }) {
   if (!emp) return null;
@@ -833,7 +1113,8 @@ function HrPayroll({ payrollStage, setPayslipView }) {
   );
 }
 
-function HrLeave({ leaveRequests, updateStatus }) {
+function HrLeave({ leaveRequests, decider, onDecide }) {
+  const [target, setTarget] = useState(null);
   return (
     <div>
       <SectionTitle sub="Organization-wide visibility over leave applications">Leave Requests</SectionTitle>
@@ -854,10 +1135,12 @@ function HrLeave({ leaveRequests, updateStatus }) {
                   <td style={{ padding: "10px 14px" }}>
                     {r.status === "Pending" ? (
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => updateStatus(r.id, "Approved")} style={{ background: "none", border: "none", cursor: "pointer" }}><CheckCircle2 size={17} color={T.green} /></button>
-                        <button onClick={() => updateStatus(r.id, "Rejected")} style={{ background: "none", border: "none", cursor: "pointer" }}><XCircle size={17} color={T.red} /></button>
+                        <button onClick={() => setTarget({ request: r, intent: "approve" })} style={{ background: "none", border: "none", cursor: "pointer" }} title="Approve"><CheckCircle2 size={17} color={T.green} /></button>
+                        <button onClick={() => setTarget({ request: r, intent: "reject" })} style={{ background: "none", border: "none", cursor: "pointer" }} title="Decline"><XCircle size={17} color={T.red} /></button>
                       </div>
-                    ) : <span style={{ color: T.muted, fontSize: 12 }}>—</span>}
+                    ) : (
+                      <button onClick={() => downloadLeaveLetter(r, e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Download signed letter"><Download size={16} /></button>
+                    )}
                   </td>
                 </tr>
               );
@@ -865,6 +1148,8 @@ function HrLeave({ leaveRequests, updateStatus }) {
           </tbody>
         </table>
       </Card>
+      <DecisionModal target={target} decider={decider} onClose={() => setTarget(null)}
+        onConfirm={(id, approve, sig, reason) => { onDecide(id, approve, sig, reason); setTarget(null); }} />
     </div>
   );
 }
@@ -997,7 +1282,8 @@ function AdminUsers({ currentUserId }) {
 /* ---------------------------------------------------------------------- */
 /* MANAGER VIEW                                                           */
 /* ---------------------------------------------------------------------- */
-function ManagerView({ manager, leaveRequests, updateStatus, allEmployees }) {
+function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
+  const [target, setTarget] = useState(null);
   const team = allEmployees.filter((e) => e.manager === manager.id);
   const teamIds = team.map((e) => e.id);
   const teamRequests = leaveRequests.filter((r) => teamIds.includes(r.emp));
@@ -1041,11 +1327,13 @@ function ManagerView({ manager, leaveRequests, updateStatus, allEmployees }) {
                   <td style={{ padding: "10px 14px", fontFamily: mono }}>{r.days}</td>
                   <td style={{ padding: "10px 14px" }}><StatusPill status={r.status} /></td>
                   <td style={{ padding: "10px 14px" }}>
-                    {r.status === "Pending" && (
+                    {r.status === "Pending" ? (
                       <div style={{ display: "flex", gap: 6 }}>
-                        <Button variant="success" small icon={CheckCircle2} onClick={() => updateStatus(r.id, "Approved")}>Approve</Button>
-                        <Button variant="danger" small icon={XCircle} onClick={() => updateStatus(r.id, "Rejected")}>Reject</Button>
+                        <Button variant="success" small icon={CheckCircle2} onClick={() => setTarget({ request: r, intent: "approve" })}>Approve</Button>
+                        <Button variant="danger" small icon={XCircle} onClick={() => setTarget({ request: r, intent: "reject" })}>Reject</Button>
                       </div>
+                    ) : (
+                      <button onClick={() => downloadLeaveLetter(r, e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Download signed letter"><Download size={16} /></button>
                     )}
                   </td>
                 </tr>
@@ -1054,6 +1342,8 @@ function ManagerView({ manager, leaveRequests, updateStatus, allEmployees }) {
           </tbody>
         </table>
       </Card>
+      <DecisionModal target={target} decider={manager} onClose={() => setTarget(null)}
+        onConfirm={(id, approve, sig, reason) => { onDecide(id, approve, sig, reason); setTarget(null); }} />
     </div>
   );
 }
@@ -1063,7 +1353,8 @@ function ManagerView({ manager, leaveRequests, updateStatus, allEmployees }) {
 /* ---------------------------------------------------------------------- */
 function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslipView }) {
   const [tab, setTab] = useState("dashboard");
-  const [form, setForm] = useState({ type: LEAVE_TYPES[0], start: "", end: "", reason: "" });
+  const [form, setForm] = useState({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null });
+  const [formError, setFormError] = useState("");
   const balances = LEAVE_BALANCES[emp.id] || { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 };
   const myRequests = leaveRequests.filter((r) => r.emp === emp.id);
   const myHistory = history[emp.id] || [];
@@ -1071,9 +1362,15 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
   const days = (s, e) => { if (!s || !e) return 0; const d = (new Date(e) - new Date(s)) / 86400000 + 1; return d > 0 ? Math.round(d) : 0; };
 
   const submit = () => {
-    if (!form.start || !form.end || !form.reason) return;
-    addLeaveRequest({ id: `LR-${Math.floor(rand(myRequests.length + 500) * 900 + 100)}`, emp: emp.id, type: form.type, start: form.start, end: form.end, days: days(form.start, form.end), reason: form.reason, status: "Pending" });
-    setForm({ type: LEAVE_TYPES[0], start: "", end: "", reason: "" });
+    if (!form.start || !form.end || !form.reason) { setFormError("Please fill in the dates and reason."); return; }
+    if (!form.signature) { setFormError("Please sign the application before submitting."); return; }
+    setFormError("");
+    addLeaveRequest({
+      id: `LR-${Math.floor(rand(myRequests.length + 500) * 900 + 100)}`, emp: emp.id, type: form.type, start: form.start, end: form.end,
+      days: days(form.start, form.end), reason: form.reason, status: "Pending",
+      employeeSignature: form.signature, employeeSignedAt: new Date().toISOString(),
+    });
+    setForm({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null });
     setTab("leaveHistory");
   };
 
@@ -1153,8 +1450,14 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
               <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} rows={3} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} />
             </div>
             <div style={{ fontSize: 12.5, color: T.muted }}>Days requested: <strong style={{ fontFamily: mono }}>{days(form.start, form.end)}</strong></div>
+            <SignaturePad value={form.signature} onChange={(sig) => setForm({ ...form, signature: sig })} />
             {emp.role !== "employee" && (
               <div style={{ fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6 }}>This request will go to HR for approval, the same as any other employee's leave application.</div>
+            )}
+            {formError && (
+              <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5 }}>
+                <AlertCircle size={14} /> {formError}
+              </div>
             )}
             <Button variant="teal" onClick={submit}>Submit Application</Button>
           </div>
@@ -1164,9 +1467,9 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
       {tab === "leaveHistory" && (
         <Card style={{ overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Type", "Dates", "Days", "Reason", "Status"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Type", "Dates", "Days", "Reason", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {myRequests.length === 0 && <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: T.muted }}>No leave history yet.</td></tr>}
+              {myRequests.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No leave history yet.</td></tr>}
               {myRequests.map((r) => (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>{r.type}</td>
@@ -1174,6 +1477,11 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
                   <td style={{ padding: "10px 14px", fontFamily: mono }}>{r.days}</td>
                   <td style={{ padding: "10px 14px", color: T.muted }}>{r.reason}</td>
                   <td style={{ padding: "10px 14px" }}><StatusPill status={r.status} /></td>
+                  <td style={{ padding: "10px 14px" }}>
+                    {r.status !== "Pending" && (
+                      <button onClick={() => downloadLeaveLetter(r, emp)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Download signed letter"><Download size={16} /></button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1249,7 +1557,16 @@ export default function App() {
   const loginEmp = employeesState.find((e) => e.id === currentUserId);
   const role = loginEmp.role;
 
-  const updateStatus = (id, status) => setLeaveRequests((rs) => rs.map((r) => (r.id === id ? { ...r, status } : r)));
+  const decideLeave = (id, approve, signature, reason) =>
+    setLeaveRequests((rs) => rs.map((r) => (r.id === id ? {
+      ...r,
+      status: approve ? "Approved" : "Rejected",
+      deciderId: loginEmp.id,
+      deciderName: loginEmp.name,
+      deciderSignature: signature,
+      deciderSignedAt: new Date().toISOString(),
+      decisionReason: approve ? null : reason,
+    } : r)));
   const addLeaveRequest = (r) => setLeaveRequests((rs) => [r, ...rs]);
   const advanceStage = () => { const i = STAGES.indexOf(payrollStage); if (i < STAGES.length - 1) setPayrollStage(STAGES[i + 1]); };
 
@@ -1338,14 +1655,14 @@ export default function App() {
         {viewMode === "role" && role === "hr" && hrTab === "dashboard" && <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} />}
         {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} />}
-        {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} updateStatus={updateStatus} />}
+        {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
 
         {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview />}
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels />}
         {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} />}
 
-        {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} updateStatus={updateStatus} allEmployees={employeesState} />}
+        {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
 
         {viewMode === "role" && role === "employee" && <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} />}
       </div>

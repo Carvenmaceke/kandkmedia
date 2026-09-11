@@ -4,10 +4,12 @@ import co.za.kandkmedia.payroll.domain.AppUser;
 import co.za.kandkmedia.payroll.domain.Company;
 import co.za.kandkmedia.payroll.domain.Department;
 import co.za.kandkmedia.payroll.domain.EmployeeLevel;
+import co.za.kandkmedia.payroll.domain.SupportTicket;
 import co.za.kandkmedia.payroll.repository.AppUserRepository;
 import co.za.kandkmedia.payroll.repository.CompanyRepository;
 import co.za.kandkmedia.payroll.repository.DepartmentRepository;
 import co.za.kandkmedia.payroll.repository.EmployeeLevelRepository;
+import co.za.kandkmedia.payroll.service.SupportService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -25,6 +27,7 @@ public class AdminController {
     private final DepartmentRepository departmentRepository;
     private final EmployeeLevelRepository levelRepository;
     private final AppUserRepository userRepository;
+    private final SupportService supportService;
 
     @GetMapping("/company")
     public Company company() {
@@ -73,5 +76,15 @@ public class AdminController {
     @GetMapping("/users")
     public List<AppUser> users() {
         return userRepository.findAll();
+    }
+
+    @GetMapping("/support")
+    public List<SupportTicket> supportTickets() {
+        return supportService.all();
+    }
+
+    @PutMapping("/support/{id}/resolve")
+    public SupportTicket resolveSupportTicket(@PathVariable Long id) {
+        return supportService.resolve(id);
     }
 }

@@ -41,6 +41,7 @@ app:
   # verification API itself (see PublicController) — there's no human-facing
   # "Document Verified" webpage yet, so scanning it shows raw JSON for now.
   verification-base-url: ${VERIFICATION_BASE_URL:http://localhost:8080/api/public/verify}
+  support-email: ${SUPPORT_EMAIL:itsupport@kandkmedia.co.za}
   payslip-delivery:
     auto-send: ${PAYSLIP_AUTO_SEND:true}
     # The job checks daily at this hour:minute (server time) whether today

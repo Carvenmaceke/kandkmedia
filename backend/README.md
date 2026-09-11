@@ -150,6 +150,37 @@ review needs to be completed earlier in the month — the scheduler is a
 safety net that guarantees everyone gets paid on time, not a substitute
 for the review step.
 
+## Help & Support requests
+
+`POST /api/public/support` sends a support request directly, server-side —
+no `mailto:`, no email client. The frontend's Support form calls this
+directly and shows exactly what happened (sent / not connected / server
+rejected it / network failure) rather than assuming success.
+
+It's deliberately public (no JWT) because the frontend prototype has no
+real authenticated session to attach — submitter identity rides along in
+the request body instead. If this backend later gets real frontend-driven
+login, moving this behind `/api/me/support` and deriving the submitter
+from the authenticated user would be the natural hardening step; noted in
+the TODO list below rather than done now.
+
+Every ticket is saved (`SupportTicket`, status `OPEN`/`RESOLVED`) before
+the email send is even attempted, so a bad mail config never loses the
+submission — same catch-and-record pattern as the other email methods,
+via `SupportTicket.emailSent` / `emailFailureReason`. Admin can see every
+ticket and mark them resolved at `GET /api/admin/support` and
+`PUT /api/admin/support/{id}/resolve`.
+
+Sent to `${SUPPORT_EMAIL:itsupport@kandkmedia.co.za}` — override via the
+`SUPPORT_EMAIL` env var. Needs the same SMTP setup as payslip emails (see
+"Making payslip emails actually send" above) to actually deliver.
+
+**To connect the deployed frontend to this**: set `API_BASE_URL` near the
+top of `frontend/src/App.jsx` to wherever this backend ends up running
+(e.g. `https://api.kandkmedia.co.za`), then rebuild and redeploy the
+frontend. It's empty by default — the Support form says plainly that it
+isn't connected yet rather than pretending a click did something.
+
 ## Payslip document security
 
 Each payslip PDF, once finalized, carries:
@@ -222,14 +253,21 @@ letters (see above), a payroll draft calculation,
 the DRAFT → REVIEWED → APPROVED → FINALIZED → PUBLISHED → SENT pipeline,
 real PDF payslip generation (Apache PDFBox) with the security/verification
 features described above, real email delivery with the PDF attached
-(triggered when a batch reaches SENT, or manually via resend), and an
+(triggered when a batch reaches SENT, or manually via resend), an
 automatic scheduled month-end run that triggers it without HR needing to
-click anything — see "Making payslip emails actually send" and "Automatic
-month-end payslip run" above for what's needed to switch it on.
+click anything, and a direct (no email client) Help & Support request
+endpoint — see "Making payslip emails actually send", "Automatic
+month-end payslip run", and "Help & Support requests" above for what's
+needed to switch each on.
 
 Not yet implemented (see the original spec's Phase 5–8 for the intended
 shape, and "Payslip document security" above for the security-specific gaps):
 
+- Moving `/api/public/support` behind real authentication once the
+  frontend has a genuine login flow talking to this backend — it's public
+  for now because the frontend prototype has no real session to attach
+- Rate limiting on `/api/public/support` (same brute-force concern as the
+  verification endpoint below — it's public and unauthenticated)
 - An email delivery **log** table (spec section 14) — success/failure is
   currently only stored on the `Payroll` row itself, one entry per employee
   per period, not a full audit history of attempts

@@ -5,7 +5,7 @@ import {
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
-  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, Copy,
+  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -62,6 +62,11 @@ const LEVELS = [
 const DEPARTMENTS = ["Digital Media", "Creative Services", "Publications", "Events Management", "Sales", "HR", "Admin"];
 
 const SUPPORT_EMAIL = "itsupport@kandkmedia.co.za";
+// Set this once the real backend (see /backend in this repo) is deployed
+// somewhere reachable, e.g. "https://api.kandkmedia.co.za". Left empty
+// means "not connected yet" — the Support form will say so plainly rather
+// than pretending to send.
+const API_BASE_URL = "";
 const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payroll Question", "Leave Question", "Account / Access Issue", "Other"];
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 
@@ -976,37 +981,64 @@ function SignupScreen({ onSignup, goLogin }) {
 /* ---------------------------------------------------------------------- */
 /* SUPPORT CENTER — request help, routed to IT support                    */
 /* ---------------------------------------------------------------------- */
-function buildSupportMailto(ticket, emp) {
-  const subject = `[${ticket.priority}] ${ticket.category}: ${ticket.subject}`;
-  const body =
-    `Employee: ${emp.name} (${emp.id})\n` +
-    `Role: ${ROLE_LABEL[emp.role]}\n` +
-    `Department: ${emp.dept}\n` +
-    `Category: ${ticket.category}\n` +
-    `Priority: ${ticket.priority}\n\n` +
-    `${ticket.description}\n`;
-  return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+/** Calls the real backend directly — no email client, no mailto:. Returns
+ *  { ok, reason } rather than throwing, so the UI can show a precise,
+ *  honest message for each failure mode instead of a generic error. */
+async function sendSupportRequestToServer(ticket, emp) {
+  if (!API_BASE_URL) {
+    return { ok: false, reason: "not-connected" };
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/public/support`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeName: emp.name, employeeCode: emp.id, employeeEmail: emp.email,
+        role: ROLE_LABEL[emp.role], department: emp.dept,
+        subject: ticket.subject, category: ticket.category, priority: ticket.priority,
+        description: ticket.description,
+      }),
+    });
+    if (!res.ok) return { ok: false, reason: "server-error" };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: "network-error" };
+  }
 }
 
 function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
   const [view, setView] = useState(isAdminView ? "all" : "new");
   const [form, setForm] = useState({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
   const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(null);
 
   const myTickets = tickets.filter((t) => t.empId === emp.id);
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.subject.trim() || !form.description.trim()) { setError("Please fill in a subject and description."); return; }
     setError("");
+    setSending(true);
     const ticket = {
       id: `TCK-${Math.floor(Math.random() * 9000 + 1000)}`,
       empId: emp.id, empName: emp.name, subject: form.subject.trim(), category: form.category,
       priority: form.priority, description: form.description.trim(), status: "Open",
       createdAt: new Date().toISOString(),
     };
+    const result = await sendSupportRequestToServer(ticket, emp);
+    setSending(false);
+
+    if (!result.ok) {
+      const messages = {
+        "not-connected": "This app isn't connected to the support server yet, so nothing was sent. (The backend needs to be deployed and its URL set in the frontend — see backend/README.md.)",
+        "server-error": "The support server received this but rejected it — please try again in a moment.",
+        "network-error": "Couldn't reach the support server — check your connection and try again.",
+      };
+      setError(messages[result.reason] || "Something went wrong sending this request.");
+      return;
+    }
+
     onSubmit(ticket);
-    window.location.href = buildSupportMailto(ticket, emp);
     setJustSubmitted(ticket);
     setForm({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
   };
@@ -1035,19 +1067,20 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
           {justSubmitted ? (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.green, marginBottom: 10 }}>
-                <CheckCircle2 size={18} /> <span style={{ fontWeight: 700, fontSize: 14 }}>Request logged</span>
+                <CheckCircle2 size={18} /> <span style={{ fontWeight: 700, fontSize: 14 }}>Sent</span>
               </div>
               <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.7, marginBottom: 16 }}>
-                Your email app should have opened with the details pre-filled, addressed to <strong>{SUPPORT_EMAIL}</strong> — hit send from there to actually deliver it. If nothing opened (some browsers block this), use the buttons below instead.
+                Your request was sent directly to <strong>{SUPPORT_EMAIL}</strong> — no email app needed. You'll be contacted there if IT support needs more details.
               </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Button variant="teal" small icon={Mail} onClick={() => { window.location.href = buildSupportMailto(justSubmitted, emp); }}>Open Email Again</Button>
-                <Button variant="ghost" small icon={Copy} onClick={() => { navigator.clipboard?.writeText(`To: ${SUPPORT_EMAIL}\nSubject: [${justSubmitted.priority}] ${justSubmitted.category}: ${justSubmitted.subject}\n\n${justSubmitted.description}`); }}>Copy Details</Button>
-                <Button variant="ghost" small onClick={() => setJustSubmitted(null)}>Submit Another</Button>
-              </div>
+              <Button variant="ghost" small onClick={() => setJustSubmitted(null)}>Submit Another</Button>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {!API_BASE_URL && (
+                <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.amber, background: T.amberBg, padding: "8px 10px", borderRadius: 6, fontSize: 12 }}>
+                  <AlertCircle size={13} /> Not connected to the support server yet — sending will fail until the backend is deployed.
+                </div>
+              )}
               {form.category === "System Malfunction / Bug" && (
                 <div style={{ fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6 }}>
                   Reporting a bug or outage? Set priority to <strong>Urgent</strong> if it's stopping you from working.
@@ -1080,7 +1113,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView }) {
                   <AlertCircle size={14} /> {error}
                 </div>
               )}
-              <Button variant="teal" icon={Mail} onClick={submit}>Send to IT Support</Button>
+              <Button variant="teal" icon={Mail} disabled={sending} onClick={submit}>{sending ? "Sending…" : "Send to IT Support"}</Button>
             </div>
           )}
         </Card>

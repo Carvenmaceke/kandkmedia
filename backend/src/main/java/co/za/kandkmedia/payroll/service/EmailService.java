@@ -33,6 +33,9 @@ public class EmailService {
     @Value("${spring.mail.username:payroll@kandkmedia.co.za}")
     private String fromAddress;
 
+    @Value("${app.support-email:itsupport@kandkmedia.co.za}")
+    private String supportEmail;
+
     /**
      * Generates the payslip PDF and emails it to the employee. Returns true
      * and stamps emailSent/emailSentAt on success; on failure, returns false
@@ -111,5 +114,50 @@ public class EmailService {
             request.setLetterEmailFailureReason(e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Sends a support ticket straight to the support inbox — this is the
+     * "press Send, nothing opens" path: the browser calls the backend, the
+     * backend sends the mail server-side. No mailto:, no user email client
+     * involved. Same catch-and-record-the-failure pattern as the other
+     * send methods.
+     */
+    public boolean sendSupportRequest(co.za.kandkmedia.payroll.domain.SupportTicket ticket) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
+            helper.setFrom(fromAddress);
+            helper.setTo(supportEmail);
+            if (ticket.getEmployeeEmail() != null && !ticket.getEmployeeEmail().isBlank()) {
+                helper.setReplyTo(ticket.getEmployeeEmail());
+            }
+            helper.setSubject("[" + nullToDash(ticket.getPriority()) + "] " + nullToDash(ticket.getCategory()) + ": " + ticket.getSubject());
+            String body =
+                    "Employee: " + ticket.getEmployeeName() + " (" + nullToDash(ticket.getEmployeeCode()) + ")\n" +
+                    "Role: " + nullToDash(ticket.getRole()) + "\n" +
+                    "Department: " + nullToDash(ticket.getDepartment()) + "\n" +
+                    "Category: " + nullToDash(ticket.getCategory()) + "\n" +
+                    "Priority: " + nullToDash(ticket.getPriority()) + "\n\n" +
+                    ticket.getDescription() + "\n\n" +
+                    "Ticket ID: " + ticket.getId();
+            helper.setText(body);
+
+            mailSender.send(message);
+
+            ticket.setEmailSent(true);
+            ticket.setEmailFailureReason(null);
+            return true;
+
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send support request {} ({})", ticket.getId(), ticket.getEmployeeCode(), e);
+            ticket.setEmailSent(false);
+            ticket.setEmailFailureReason(e.getMessage());
+            return false;
+        }
+    }
+
+    private String nullToDash(String s) {
+        return s == null || s.isBlank() ? "-" : s;
     }
 }

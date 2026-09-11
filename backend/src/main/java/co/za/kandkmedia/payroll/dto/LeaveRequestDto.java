@@ -20,4 +20,8 @@ public class LeaveRequestDto {
     private LocalDate endDate;
 
     private String reason;
+
+    /** PNG data URL from the frontend's signature pad — required, same as the UI enforces. */
+    @NotBlank(message = "Please sign the application before submitting.")
+    private String signature;
 }

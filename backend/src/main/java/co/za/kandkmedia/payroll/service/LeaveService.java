@@ -18,6 +18,7 @@ public class LeaveService {
     private final LeaveRequestRepository leaveRequestRepository;
     private final LeaveTypeRepository leaveTypeRepository;
     private final LeaveBalanceRepository leaveBalanceRepository;
+    private final EmailService emailService;
 
     public LeaveRequest apply(Employee employee, LeaveRequestDto dto) {
         LeaveType type = leaveTypeRepository.findByNameIgnoreCase(dto.getLeaveType())
@@ -36,6 +37,8 @@ public class LeaveService {
                 .daysRequested(days)
                 .reason(dto.getReason())
                 .status(LeaveStatus.PENDING)
+                .employeeSignature(dto.getSignature())
+                .employeeSignedAt(java.time.LocalDateTime.now())
                 .build();
 
         return leaveRequestRepository.save(request);
@@ -53,16 +56,29 @@ public class LeaveService {
         return leaveRequestRepository.findAllByOrderByStartDateDesc();
     }
 
-    public LeaveRequest decide(Long requestId, boolean approve, Employee decidedBy) {
+    /**
+     * Records the decider's signature (and, for a decline, their reason),
+     * then generates and emails the signed letter to the applicant.
+     * sendLeaveLetter() catches its own mail errors and records them on the
+     * row rather than throwing, so a bad mail config never blocks the
+     * decision itself from being saved.
+     */
+    public LeaveRequest decide(Long requestId, boolean approve, Employee decidedBy, String signature, String reason) {
         LeaveRequest request = leaveRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Leave request not found."));
 
         if (request.getStatus() != LeaveStatus.PENDING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This request has already been decided.");
         }
+        if (!approve && (reason == null || reason.isBlank())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please provide a reason for declining.");
+        }
 
         request.setStatus(approve ? LeaveStatus.APPROVED : LeaveStatus.REJECTED);
         request.setDecidedBy(decidedBy);
+        request.setDeciderSignature(signature);
+        request.setDeciderSignedAt(java.time.LocalDateTime.now());
+        request.setDecisionReason(approve ? null : reason);
 
         if (approve) {
             leaveBalanceRepository.findByEmployeeIdAndLeaveTypeId(
@@ -74,6 +90,8 @@ public class LeaveService {
                     });
         }
 
-        return leaveRequestRepository.save(request);
+        LeaveRequest saved = leaveRequestRepository.save(request);
+        emailService.sendLeaveLetter(saved);
+        return leaveRequestRepository.save(saved);
     }
 }

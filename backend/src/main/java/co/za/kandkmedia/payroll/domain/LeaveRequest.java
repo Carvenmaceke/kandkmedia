@@ -45,4 +45,23 @@ public class LeaveRequest {
     @ManyToOne
     @JoinColumn(name = "decided_by_id")
     private Employee decidedBy;
+
+    // --- Signatures — both stored as PNG data URLs (base64), same format
+    // the frontend's canvas signature pad produces. ---
+
+    @Lob
+    private String employeeSignature;
+    private java.time.LocalDateTime employeeSignedAt;
+
+    @Lob
+    private String deciderSignature;
+    private java.time.LocalDateTime deciderSignedAt;
+
+    /** Required when declined; null when approved. */
+    @Lob
+    private String decisionReason;
+
+    @Builder.Default
+    private boolean letterEmailSent = false;
+    private String letterEmailFailureReason;
 }

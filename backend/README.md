@@ -157,10 +157,28 @@ separate frontend task, not yet done.
 - No audit log table, no database-level encryption at rest, no automated
   key rotation for the JWT secret.
 
+## Signed leave approval/decline letters
+
+Same pattern as payslips: applying for leave requires a signature
+(`LeaveRequestDto.signature`, a PNG data URL from the frontend's canvas
+signature pad — rejected by validation if missing). Approving or declining
+(`PUT /api/manager/team-leave/{id}/approve|reject`, or the equivalent
+`/api/hr/leave/{id}/...` routes) requires a `LeaveDecisionDto` body with the
+decider's own signature; declining additionally requires a non-blank
+`reason`, enforced in `LeaveService.decide`.
+
+Once decided, `LeaveLetterPdfService` generates a signed approval/decline
+letter (Apache PDFBox) with both signature images embedded, and
+`EmailService.sendLeaveLetter` emails it to the applicant — same
+catch-and-record-the-failure behavior as payslip emails
+(`letterEmailSent` / `letterEmailFailureReason` on the `LeaveRequest` row),
+and needs the same SMTP setup described above to actually deliver.
+
 ## What's implemented vs. still TODO
 
 Implemented: auth + JWT, employee/department/level/company data model, leave
-apply/approve/reject with balance deduction, a payroll draft calculation,
+apply/approve/reject with balance deduction and signed approval/decline
+letters (see above), a payroll draft calculation,
 the DRAFT → REVIEWED → APPROVED → FINALIZED → PUBLISHED → SENT pipeline,
 real PDF payslip generation (Apache PDFBox) with the security/verification
 features described above, and real email delivery with the PDF attached

@@ -2,7 +2,9 @@ package co.za.kandkmedia.payroll.controller;
 
 import co.za.kandkmedia.payroll.domain.AppUser;
 import co.za.kandkmedia.payroll.domain.LeaveRequest;
+import co.za.kandkmedia.payroll.dto.LeaveDecisionDto;
 import co.za.kandkmedia.payroll.service.LeaveService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -22,12 +24,12 @@ public class ManagerController {
     }
 
     @PutMapping("/team-leave/{id}/approve")
-    public LeaveRequest approve(@PathVariable Long id, @AuthenticationPrincipal AppUser user) {
-        return leaveService.decide(id, true, user.getEmployee());
+    public LeaveRequest approve(@PathVariable Long id, @Valid @RequestBody LeaveDecisionDto decision, @AuthenticationPrincipal AppUser user) {
+        return leaveService.decide(id, true, user.getEmployee(), decision.getSignature(), null);
     }
 
     @PutMapping("/team-leave/{id}/reject")
-    public LeaveRequest reject(@PathVariable Long id, @AuthenticationPrincipal AppUser user) {
-        return leaveService.decide(id, false, user.getEmployee());
+    public LeaveRequest reject(@PathVariable Long id, @Valid @RequestBody LeaveDecisionDto decision, @AuthenticationPrincipal AppUser user) {
+        return leaveService.decide(id, false, user.getEmployee(), decision.getSignature(), decision.getReason());
     }
 }

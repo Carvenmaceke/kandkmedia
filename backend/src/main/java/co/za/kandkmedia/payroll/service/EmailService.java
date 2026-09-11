@@ -28,6 +28,7 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
     private final PayslipPdfService payslipPdfService;
+    private final LeaveLetterPdfService leaveLetterPdfService;
 
     @Value("${spring.mail.username:payroll@kandkmedia.co.za}")
     private String fromAddress;
@@ -67,6 +68,47 @@ public class EmailService {
             log.error("Failed to send payslip email for {} ({})", employee.getEmployeeCode(), payroll.getPayPeriod(), e);
             payroll.setEmailSent(false);
             payroll.setEmailFailureReason(e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Generates the signed leave decision letter and emails it to the
+     * applicant. Same success/failure contract as sendPayslip — stamps
+     * letterEmailSent/letterEmailFailureReason on the LeaveRequest rather
+     * than throwing, so a bad mail config doesn't block the decision itself
+     * from being recorded.
+     */
+    public boolean sendLeaveLetter(co.za.kandkmedia.payroll.domain.LeaveRequest request) {
+        Employee employee = request.getEmployee();
+        boolean approved = request.getStatus() == co.za.kandkmedia.payroll.domain.LeaveStatus.APPROVED;
+        try {
+            byte[] pdf = leaveLetterPdfService.generate(request);
+
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(fromAddress);
+            helper.setTo(employee.getEmail());
+            helper.setSubject("Your " + request.getLeaveType().getName() + " request has been " + (approved ? "approved" : "declined"));
+            String body = "Hi " + employee.getFirstName() + ",\n\n" +
+                    "Your " + request.getLeaveType().getName() + " request (" + request.getStartDate() + " to " + request.getEndDate() + ") has been " +
+                    (approved ? "approved." : "declined.") +
+                    (!approved && request.getDecisionReason() != null ? "\n\nReason: " + request.getDecisionReason() : "") +
+                    "\n\nThe signed letter is attached.\n\nRegards,\nK and K Media";
+            helper.setText(body);
+            String filename = "Leave-" + request.getStatus() + "-" + request.getId() + "-" + employee.getEmployeeCode() + ".pdf";
+            helper.addAttachment(filename, new org.springframework.core.io.ByteArrayResource(pdf));
+
+            mailSender.send(message);
+
+            request.setLetterEmailSent(true);
+            request.setLetterEmailFailureReason(null);
+            return true;
+
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send leave decision letter for request {} ({})", request.getId(), employee.getEmployeeCode(), e);
+            request.setLetterEmailSent(false);
+            request.setLetterEmailFailureReason(e.getMessage());
             return false;
         }
     }

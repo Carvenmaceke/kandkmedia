@@ -5,9 +5,11 @@ import co.za.kandkmedia.payroll.domain.Employee;
 import co.za.kandkmedia.payroll.domain.LeaveRequest;
 import co.za.kandkmedia.payroll.domain.Payroll;
 import co.za.kandkmedia.payroll.dto.LeaveRequestDto;
+import co.za.kandkmedia.payroll.dto.EmployeeProfileDto;
 import co.za.kandkmedia.payroll.repository.LeaveBalanceRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
+import co.za.kandkmedia.payroll.service.EmployeeProfileService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -30,10 +32,16 @@ public class MeController {
     private final LeaveService leaveService;
     private final LeaveBalanceRepository leaveBalanceRepository;
     private final PayrollRepository payrollRepository;
+    private final EmployeeProfileService employeeProfileService;
 
     @GetMapping
     public Employee myProfile(@AuthenticationPrincipal AppUser user) {
         return employeeOf(user);
+    }
+
+    @PutMapping("/profile")
+    public Employee updateMyProfile(@AuthenticationPrincipal AppUser user, @RequestBody EmployeeProfileDto dto) {
+        return employeeProfileService.updateProfile(employeeOf(user).getId(), dto);
     }
 
     @GetMapping("/leave")

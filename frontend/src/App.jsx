@@ -121,50 +121,22 @@ const LEAVE_TYPES = [
 const PROOF_REQUIRED_TYPES = ["Sick Leave", "Maternity Leave", "Parental Leave", "Family Responsibility Leave", "Study Leave"];
 const MAX_PROOF_FILE_BYTES = 4 * 1024 * 1024; // 4MB
 
-// role: "admin" | "hr" | "manager" | "employee"
+// role: "admin" | "hr" | "manager" | "employee" | "it_support"
 // `EMPLOYEES` and `LEAVE_BALANCES` are `let`, not `const` — the App component
 // syncs them from React state each render, so every screen always reads the
 // latest signed-up users / edited profiles without a big prop-drilling pass.
-let EMPLOYEES = [
-  { id: "EMP-00009", name: "Karabo Mahlangu", role: "admin", level: "Manager", position: "System Administrator", dept: "Admin", salary: 46000, manager: null, start: "2016-04-18", email: "karabo.mahlangu@kandkmedia.co.za", phone: "082 111 2233", office: "Midrand" },
-  { id: "EMP-00010", name: "Lindiwe Zulu", role: "hr", level: "Manager", position: "HR Manager", dept: "HR", salary: 41000, manager: null, start: "2015-10-02", email: "lindiwe.zulu@kandkmedia.co.za", phone: "082 222 3344", office: "Midrand" },
-  { id: "EMP-00005", name: "Thabo Nkosi", role: "manager", level: "Manager", position: "Digital Media Manager", dept: "Digital Media", salary: 45000, manager: null, email: "thabo.nkosi@kandkmedia.co.za", start: "2018-05-11", phone: "082 333 4455", office: "Midrand" },
-  { id: "EMP-00007", name: "Grace Sithole", role: "manager", level: "Manager", position: "Creative & Events Manager", dept: "Creative Services", salary: 43000, manager: null, start: "2017-09-04", email: "grace.sithole@kandkmedia.co.za", phone: "082 444 5566", office: "Sandton" },
-  { id: "EMP-00001", name: "John Doe", role: "employee", level: "Junior", position: "Web Developer", dept: "Digital Media", salary: 13500, manager: "EMP-00005", start: "2023-03-01", email: "john.doe@kandkmedia.co.za", phone: "082 555 6677", office: "Midrand" },
-  { id: "EMP-00002", name: "Amahle Dlamini", role: "employee", level: "Mid-Level", position: "Social Media Manager", dept: "Digital Media", salary: 21000, manager: "EMP-00005", start: "2022-07-14", email: "amahle.dlamini@kandkmedia.co.za", phone: "082 666 7788", office: "Midrand" },
-  { id: "EMP-00003", name: "Pieter van der Merwe", role: "employee", level: "Senior", position: "Senior Videographer", dept: "Creative Services", salary: 34000, manager: "EMP-00007", start: "2019-01-20", email: "pieter.vdmerwe@kandkmedia.co.za", phone: "082 777 8899", office: "Sandton" },
-  { id: "EMP-00004", name: "Naledi Mokoena", role: "employee", level: "Intern", position: "Digital Media Intern", dept: "Digital Media", salary: 4500, manager: "EMP-00005", start: "2026-02-03", email: "naledi.mokoena@kandkmedia.co.za", phone: "082 888 9900", office: "Midrand" },
-  { id: "EMP-00006", name: "Sarah Botha", role: "employee", level: "Junior", position: "Copywriter", dept: "Publications", salary: 12500, manager: "EMP-00007", start: "2024-01-09", email: "sarah.botha@kandkmedia.co.za", phone: "082 999 0011", office: "Sandton" },
-  { id: "EMP-00008", name: "Michael Chen", role: "employee", level: "Mid-Level", position: "Sales Executive", dept: "Sales", salary: 19500, manager: "EMP-00007", start: "2021-11-22", email: "michael.chen@kandkmedia.co.za", phone: "083 111 2200", office: "Sandton" },
-  { id: "EMP-00011", name: "Support Desk", role: "employee", level: "Junior", position: "Support Coordinator", dept: "Admin", salary: 12000, manager: null, start: "2023-01-01", email: "support@kandkmedia.co.za", phone: "083 222 3300", office: "Midrand" },
-  { id: "EMP-00012", name: "Carven Maceke", role: "it_support", level: "Manager", position: "IT Support & System Owner", dept: "Admin", salary: 50000, manager: null, start: "2015-01-01", email: "carven.maceke@kandkmedia.co.za", phone: "060 795 0837", office: "Midrand" },
-];
+//
+// Starts empty — this is a live system now, not a demo. The first account
+// created via Sign Up becomes the first real employee; everyone else signs
+// up the same way or is added by HR.
+let EMPLOYEES = [];
 
 const ROLE_LABEL = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" };
 const ROLE_TONE = { admin: "purple", hr: "teal", manager: "amber", employee: "muted", it_support: "indigo" };
 
-let LEAVE_BALANCES = {
-  "EMP-00001": { "Annual Leave": 12, "Sick Leave": 8, "Family Responsibility Leave": 3 },
-  "EMP-00002": { "Annual Leave": 9, "Sick Leave": 10, "Family Responsibility Leave": 3 },
-  "EMP-00003": { "Annual Leave": 15, "Sick Leave": 9, "Family Responsibility Leave": 2 },
-  "EMP-00004": { "Annual Leave": 5, "Sick Leave": 6, "Family Responsibility Leave": 3 },
-  "EMP-00005": { "Annual Leave": 18, "Sick Leave": 10, "Family Responsibility Leave": 3 },
-  "EMP-00006": { "Annual Leave": 11, "Sick Leave": 7, "Family Responsibility Leave": 1 },
-  "EMP-00007": { "Annual Leave": 16, "Sick Leave": 10, "Family Responsibility Leave": 3 },
-  "EMP-00008": { "Annual Leave": 8, "Sick Leave": 5, "Family Responsibility Leave": 2 },
-  "EMP-00011": { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 },
-  "EMP-00012": { "Annual Leave": 20, "Sick Leave": 10, "Family Responsibility Leave": 3 },
-  "EMP-00009": { "Annual Leave": 20, "Sick Leave": 10, "Family Responsibility Leave": 3 },
-  "EMP-00010": { "Annual Leave": 17, "Sick Leave": 10, "Family Responsibility Leave": 3 },
-};
+let LEAVE_BALANCES = {};
 
-const INITIAL_LEAVE_REQUESTS = [
-  { id: "LR-101", emp: "EMP-00001", type: "Annual Leave", start: "2026-09-15", end: "2026-09-19", days: 5, reason: "Family commitment", status: "Pending" },
-  { id: "LR-102", emp: "EMP-00006", type: "Sick Leave", start: "2026-09-08", end: "2026-09-08", days: 1, reason: "Flu", status: "Approved" },
-  { id: "LR-103", emp: "EMP-00008", type: "Annual Leave", start: "2026-09-22", end: "2026-09-24", days: 3, reason: "Personal travel", status: "Pending" },
-  { id: "LR-104", emp: "EMP-00004", type: "Study Leave", start: "2026-09-11", end: "2026-09-11", days: 1, reason: "Exam", status: "Rejected" },
-  { id: "LR-105", emp: "EMP-00002", type: "Family Responsibility Leave", start: "2026-09-29", end: "2026-09-30", days: 2, reason: "Child's school event", status: "Pending" },
-];
+const INITIAL_LEAVE_REQUESTS = [];
 
 const PAST_MONTHS = ["June 2026", "July 2026", "August 2026"];
 const CURRENT_MONTH = "September 2026";
@@ -195,6 +167,7 @@ function buildHistory(seedEmployees) {
 const rand = (seed) => { const x = Math.sin(seed) * 10000; return x - Math.floor(x); };
 function empById(id) { return EMPLOYEES.find((e) => e.id === id); }
 function nextEmployeeId() {
+  if (EMPLOYEES.length === 0) return "EMP-00001";
   const max = Math.max(...EMPLOYEES.map((e) => parseInt(e.id.split("-")[1], 10)));
   return `EMP-${String(max + 1).padStart(5, "0")}`;
 }
@@ -899,14 +872,6 @@ function LoginScreen({ onLogin, goSignup }) {
       <div style={{ marginTop: 16, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
         Don't have an account? <button onClick={goSignup} style={{ background: "none", border: "none", color: T.teal, fontWeight: 700, cursor: "pointer", fontSize: 12.5, padding: 0 }}>Sign up</button>
       </div>
-      <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${T.border}`, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
-        Demo accounts (password: <span style={{ fontFamily: mono }}>{DEFAULT_PASSWORD}</span>):<br />
-        IT Support (full access) — carven.maceke@kandkmedia.co.za<br />
-        HR — lindiwe.zulu@kandkmedia.co.za<br />
-        Admin — karabo.mahlangu@kandkmedia.co.za<br />
-        Manager — thabo.nkosi@kandkmedia.co.za<br />
-        Employee — john.doe@kandkmedia.co.za
-      </div>
     </AuthShell>
   );
 }
@@ -964,10 +929,10 @@ function SignupScreen({ onSignup, goLogin }) {
         </div>
 
         <Field label="I am signing up as">
-          <div style={{ display: "flex", gap: 8 }}>
-            {["employee", "hr", "admin"].map((r) => (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {["employee", "hr", "admin", "it_support"].map((r) => (
               <button type="button" key={r} onClick={() => setForm({ ...form, role: r })} style={{
-                flex: 1, padding: "9px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, fontWeight: 700,
+                flex: "1 1 100px", padding: "9px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, fontWeight: 700,
                 border: `1px solid ${form.role === r ? T.teal : T.border}`,
                 background: form.role === r ? T.tealLight : "#fff", color: form.role === r ? T.teal : T.muted,
               }}>{ROLE_LABEL[r]}</button>
@@ -977,6 +942,7 @@ function SignupScreen({ onSignup, goLogin }) {
             {form.role === "employee" && "You'll see your own profile, payslips and leave — nothing else."}
             {form.role === "hr" && "You'll manage employees, payroll and leave for the whole company."}
             {form.role === "admin" && "You'll manage company settings, employee levels/departments and user accounts."}
+            {form.role === "it_support" && "Full system access plus the Support Tickets and Office Issues management views."}
           </div>
         </Field>
 
@@ -1460,6 +1426,102 @@ function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availab
   );
 }
 
+const PERSONAL_INFO_GROUPS = [
+  {
+    title: "Personal Information",
+    fields: [
+      ["title", "Title"], ["initials", "Initials"], ["secondName", "Second Name"],
+      ["dateOfBirth", "Date of Birth", "date"], ["idNumber", "Identity Number"],
+      ["passportNumber", "Passport Number"], ["passportCountry", "Passport Country"],
+      ["race", "Race"], ["relationshipStatus", "Relationship Status"],
+      ["contactTelephone", "Contact Telephone"], ["contactCellphone", "Contact Cellphone"],
+      ["emergencyContactName", "Emergency Contact Name"],
+      ["emergencyContactTelephone", "Emergency Contact Telephone"],
+      ["emergencyContactCellphone", "Emergency Contact Cellphone"],
+    ],
+  },
+  {
+    title: "Tax",
+    fields: [["taxOffice", "Tax Office"], ["incomeTaxNumber", "Income Tax Number"]],
+  },
+  {
+    title: "Banking Details",
+    fields: [
+      ["bankAccountType", "Type of Account"], ["bankBranchCode", "Branch Code"],
+      ["bankName", "Bank Name"], ["bankBranchName", "Branch Name"],
+      ["bankAccountNumber", "Bank Account Number"], ["bankAccountHolder", "Account Holder"],
+      ["bankAccountRelationship", "Account Relationship"],
+    ],
+  },
+  {
+    title: "Residential Address",
+    fields: [
+      ["resUnitNumber", "Unit Number"], ["resComplexName", "Complex Name"],
+      ["resStreetNumber", "Street Number"], ["resStreetName", "Street Name"],
+      ["resSuburb", "Suburb"], ["resCity", "City"], ["resPostalCode", "Postal Code"],
+    ],
+  },
+  {
+    title: "Postal Address",
+    fields: [
+      ["postalService", "Postal Service"], ["postalNumber", "Postal Number"],
+      ["postStreetNumber", "Street Number"], ["postStreetName", "Street Name"],
+      ["postSuburb", "Suburb"], ["postCity", "City"], ["postPostalCode", "Postal Code"],
+    ],
+  },
+];
+
+function PersonalInfoSection({ emp, onSave }) {
+  const initial = {};
+  PERSONAL_INFO_GROUPS.forEach((g) => g.fields.forEach(([key]) => { initial[key] = emp[key] || ""; }));
+  const [form, setForm] = useState(initial);
+  const [saved, setSaved] = useState(false);
+  const [openGroup, setOpenGroup] = useState(PERSONAL_INFO_GROUPS[0].title);
+
+  const submit = (e) => {
+    e.preventDefault();
+    onSave(form);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <Card style={{ padding: 20 }}>
+      <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Personal & Payroll Information</div>
+      <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>
+        Used for tax, banking, and emergency contact purposes. Fill in as much as you have on hand — you can always come back and finish the rest later.
+      </div>
+      <form onSubmit={submit}>
+        {PERSONAL_INFO_GROUPS.map((group) => (
+          <div key={group.title} style={{ marginBottom: 8, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <button type="button" onClick={() => setOpenGroup(openGroup === group.title ? null : group.title)} style={{
+              width: "100%", textAlign: "left", background: T.bg, border: "none", padding: "10px 14px",
+              fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+              {group.title}
+              <ChevronRight size={14} style={{ transform: openGroup === group.title ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+            </button>
+            {openGroup === group.title && (
+              <div style={{ padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {group.fields.map(([key, label, type]) => (
+                  <div key={key}>
+                    <label style={{ fontSize: 11.5, fontWeight: 700, color: T.muted }}>{label}</label>
+                    <input type={type || "text"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
+          <Button type="submit" variant="teal" small>Save Information</Button>
+          {saved && <Pill tone="green">Saved</Pill>}
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
   const [form, setForm] = useState({ name: emp.name, email: emp.email, phone: emp.phone || "", position: emp.position, dept: emp.dept, office: emp.office || OFFICES[0] });
   const [saved, setSaved] = useState(false);
@@ -1559,6 +1621,10 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
             ))}
           </Card>
         </div>
+      </div>
+
+      <div style={{ marginTop: 20 }}>
+        <PersonalInfoSection emp={emp} onSave={onSaveProfile} />
       </div>
     </div>
   );
@@ -2378,7 +2444,7 @@ export default function App() {
     const salary = LEVELS.find((l) => l.name === level)?.default || 12000;
     const newEmp = {
       id, name: form.name, role: form.role, level, dept: form.dept,
-      position: form.position || (form.role === "hr" ? "HR Officer" : form.role === "admin" ? "System Administrator" : "Employee"),
+      position: form.position || (form.role === "hr" ? "HR Officer" : form.role === "admin" ? "System Administrator" : form.role === "it_support" ? "IT Support" : "Employee"),
       salary, manager: null, start: "2026-09-10", email: form.email, phone: form.phone, password: form.password,
       office: form.office || OFFICES[0],
     };

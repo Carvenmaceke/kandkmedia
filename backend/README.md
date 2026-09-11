@@ -2,7 +2,12 @@
 
 Spring Boot + MySQL implementation of the Employee Payroll, Payslip and
 Leave Management System, matching the roles and workflow used in the
-[`frontend`](../frontend) prototype.
+[`frontend`](../frontend).
+
+This is a real system now, not a demo — `DataSeeder` only creates
+structural reference data (the company profile, departments, salary
+levels, leave types); there are no seeded people or user accounts. The
+first real account is created via Sign Up.
 
 ## Stack
 
@@ -32,15 +37,30 @@ Leave Management System, matching the roles and workflow used in the
    ```
 
 On first run, `DataSeeder` populates the company profile, departments,
-employee levels, leave types, and the same demo accounts the frontend
-prototype uses (password `password123` for all of them):
+employee levels, and leave types — no people, no user accounts. Sign up
+via `POST /api/auth/signup` to create the first real account (any role
+except Manager, which is assigned internally by HR/Admin/IT Support
+after the fact).
 
-| Role     | Email                              |
-|----------|-------------------------------------|
-| HR       | lindiwe.zulu@kandkmedia.co.za       |
-| Admin    | karabo.mahlangu@kandkmedia.co.za    |
-| Manager  | thabo.nkosi@kandkmedia.co.za        |
-| Employee | john.doe@kandkmedia.co.za           |
+## Using a managed MySQL provider (e.g. Aiven)
+
+Managed MySQL providers give you a connection string like:
+
+```
+mysql://<user>:<password>@<host>:<port>/<database>?ssl-mode=REQUIRED
+```
+
+Spring needs the JDBC form instead — same pieces, different shape:
+
+```bash
+export DB_URL="jdbc:mysql://<host>:<port>/<database>?sslMode=REQUIRED"
+export DB_USERNAME=<user>
+export DB_PASSWORD=<password>
+```
+
+Set these as actual environment variables on wherever you deploy this
+(Render, Railway, Fly.io, etc.) — never commit real credentials into
+`application.yml` or anywhere else in this repo, since it's public.
 
 ## Auth
 
@@ -56,14 +76,20 @@ as a chosen role — a manager is promoted by HR, not self-selected.
 | Prefix           | Who can call it                  | What's there                                   |
 |-------------------|-----------------------------------|-------------------------------------------------|
 | `/api/auth/**`     | Anyone                            | signup, login                                   |
-| `/api/me/**`       | Any authenticated user            | own profile, leave, leave balance, payslips     |
-| `/api/manager/**`  | MANAGER, HR, ADMIN                 | team leave requests, approve/reject             |
-| `/api/hr/**`       | HR, ADMIN                          | employee list, payroll pipeline, all leave      |
-| `/api/admin/**`    | ADMIN                              | company profile, departments, levels, users     |
+| `/api/me/**`       | Any authenticated user            | own profile (`GET`/`PUT /profile`), leave, leave balance, payslips |
+| `/api/manager/**`  | MANAGER, HR, ADMIN, IT_SUPPORT      | team leave requests, approve/reject             |
+| `/api/hr/**`       | HR, ADMIN, IT_SUPPORT               | employee list, `PUT /employees/{id}/profile`, payroll pipeline, all leave |
+| `/api/admin/**`    | ADMIN, IT_SUPPORT                   | company profile, departments, levels, users     |
 
 `/api/me/**` is what backs the frontend's "switch to my profile" — HR,
-Admin and Manager accounts hit the exact same self-service endpoints an
-Employee-role account does.
+Admin, Manager and IT Support accounts hit the exact same self-service
+endpoints an Employee-role account does.
+
+`PUT /api/me/profile` and `PUT /api/hr/employees/{id}/profile` both take an
+`EmployeeProfileDto` — the full onboarding field set (personal info, tax,
+banking, residential/postal address) added to `Employee`. Every field is
+optional; only non-null ones are applied, so filling in a profile section
+at a time never wipes out fields entered earlier.
 
 ## Making payslip emails actually send
 
@@ -247,9 +273,12 @@ and needs the same SMTP setup described above to actually deliver.
 
 ## What's implemented vs. still TODO
 
-Implemented: auth + JWT, employee/department/level/company data model, leave
-apply/approve/reject with balance deduction and signed approval/decline
-letters (see above), a payroll draft calculation,
+Implemented: auth + JWT (including IT_SUPPORT, added to match the
+frontend's role), the full onboarding field set on `Employee` (personal
+info, tax, banking, residential/postal address — see `EmployeeProfileDto`),
+employee/department/level/company data model — all editable in-app, no
+seeded people, leave apply/approve/reject with balance deduction and
+signed approval/decline letters (see above), a payroll draft calculation,
 the DRAFT → REVIEWED → APPROVED → FINALIZED → PUBLISHED → SENT pipeline,
 real PDF payslip generation (Apache PDFBox) with the security/verification
 features described above, real email delivery with the PDF attached
@@ -260,12 +289,21 @@ endpoint — see "Making payslip emails actually send", "Automatic
 month-end payslip run", and "Help & Support requests" above for what's
 needed to switch each on.
 
+**The single biggest gap**: the frontend does not call any of this yet —
+it's still running entirely on in-memory React state (see
+`frontend/README.md`). Every backend endpoint described in this file
+works and compiles, but nothing on the frontend has been wired to
+actually call them. That wiring, plus deploying this backend somewhere
+it can run continuously with a real database connected, are the two
+things standing between this and an actually-working live system.
+
 Not yet implemented (see the original spec's Phase 5–8 for the intended
 shape, and "Payslip document security" above for the security-specific gaps):
 
-- Moving `/api/public/support` behind real authentication once the
-  frontend has a genuine login flow talking to this backend — it's public
-  for now because the frontend prototype has no real session to attach
+- Moving `/api/public/support` and `/api/public/office-issues` behind
+  real authentication once the frontend actually has a session to attach
+  — public for now because the frontend has no real login flow talking
+  to this backend yet
 - Rate limiting on `/api/public/support` (same brute-force concern as the
   verification endpoint below — it's public and unauthenticated)
 - An email delivery **log** table (spec section 14) — success/failure is

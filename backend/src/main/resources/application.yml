@@ -6,6 +6,11 @@ spring:
     name: kandkmedia-payroll-system
 
   datasource:
+    # Aiven (and most managed MySQL) requires SSL — include sslMode=REQUIRED
+    # in DB_URL, e.g.:
+    #   jdbc:mysql://<host>:<port>/<database>?sslMode=REQUIRED
+    # Set DB_URL/DB_USERNAME/DB_PASSWORD as environment variables wherever
+    # this runs — never hardcode real credentials here.
     url: ${DB_URL:jdbc:mysql://localhost:3306/kandkmedia_payroll?createDatabaseIfNotExist=true}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}

@@ -27,6 +27,7 @@ public class HrController {
     private final LeaveService leaveService;
     private final PayrollService payrollService;
     private final PayrollRepository payrollRepository;
+    private final co.za.kandkmedia.payroll.service.EmployeeProfileService employeeProfileService;
 
     @GetMapping("/employees")
     public List<Employee> employees() {
@@ -37,6 +38,11 @@ public class HrController {
     public Employee employee(@PathVariable Long id) {
         return employeeRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found."));
+    }
+
+    @PutMapping("/employees/{id}/profile")
+    public Employee updateEmployeeProfile(@PathVariable Long id, @RequestBody co.za.kandkmedia.payroll.dto.EmployeeProfileDto dto) {
+        return employeeProfileService.updateProfile(id, dto);
     }
 
     @GetMapping("/leave")

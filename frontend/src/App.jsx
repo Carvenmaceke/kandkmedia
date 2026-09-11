@@ -1910,6 +1910,7 @@ export default function App() {
   const [itSupportTab, setItSupportTab] = useState("support");
   const [leaveRequests, setLeaveRequests] = useState(INITIAL_LEAVE_REQUESTS);
   const [supportTickets, setSupportTickets] = useState([]);
+  const [supportAvailability, setSupportAvailability] = useState("");
   const [payrollStage, setPayrollStage] = useState("DRAFT");
   const [profileEmp, setProfileEmp] = useState(null);
   const [payslipView, setPayslipView] = useState(null);
@@ -1976,7 +1977,6 @@ export default function App() {
     } : r)));
   const addLeaveRequest = (r) => setLeaveRequests((rs) => [r, ...rs]);
   const addSupportTicket = (t) => setSupportTickets((ts) => [t, ...ts]);
-  const [supportAvailability, setSupportAvailability] = useState("");
   const updateSupportTicket = (id, status, response) =>
     setSupportTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, response } : t)));
   const advanceStage = () => { const i = STAGES.indexOf(payrollStage); if (i < STAGES.length - 1) setPayrollStage(STAGES[i + 1]); };

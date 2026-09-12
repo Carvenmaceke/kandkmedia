@@ -131,58 +131,63 @@ drawer.
 
 ## Making payslip emails actually send
 
-This isn't a stub — `EmailService` uses Spring's real `JavaMailSender` to
-build the payslip PDF (via `PayslipPdfService`, Apache PDFBox) and send it
-as an attachment. It sends automatically for every employee the moment HR
-advances a payroll batch to the `SENT` stage
-(`POST /api/hr/payroll/advance`), and can be retried per-employee via
-`POST /api/hr/payroll/{id}/resend-email`.
+This isn't a stub — `EmailService` sends via **Resend's HTTPS API**
+(`https://api.resend.com/emails`), building the payslip PDF via
+`PayslipPdfService` (Apache PDFBox) and attaching it as base64. It sends
+automatically for every employee the moment HR advances a payroll batch to
+the `SENT` stage (`POST /api/hr/payroll/advance`), and can be retried
+per-employee via `POST /api/hr/payroll/{id}/resend-email`.
+
+**Why HTTPS and not SMTP**: this used to go through Spring's `JavaMailSender`
+over raw SMTP, but Render (and many other hosts) block outbound SMTP ports
+(25/465/587) as an anti-spam measure. That surfaced as
+`MailConnectException: Couldn't connect to host... Connection timed out` —
+which looks like a credentials problem but isn't; it's the platform
+refusing the TCP connection outright. HTTPS (443) is never blocked this
+way, so the API is the reliable path regardless of host.
 
 To make it actually deliver mail, you need to supply:
 
-1. **Real SMTP credentials**, set as environment variables:
+1. **A Resend API key**, set as an environment variable. It's reused from
+   the same `MAIL_PASSWORD` variable the old SMTP setup used — no new
+   variable name needed:
    ```bash
-   export MAIL_HOST=smtp.gmail.com      # or your provider's SMTP host
-   export MAIL_PORT=587
-   export MAIL_USERNAME=your-sending-address@kandkmedia.co.za
-   export MAIL_PASSWORD=your-app-password
-   ```
-   If you don't have a company mailbox with SMTP access yet, a free
-   transactional-email provider (e.g. Mailgun, Resend, Brevo/Sendinblue)
-   works too — swap the host/port for whatever they give you. If you use
-   Gmail directly, you need an **App Password** (Google Account → Security
-   → 2-Step Verification → App passwords), not your normal login password.
-
-   **Using Resend specifically**: Resend exposes an SMTP relay, so no code
-   changes are needed — just point the same env vars at it:
-   ```bash
-   export MAIL_HOST=smtp.resend.com
-   export MAIL_PORT=587
-   export MAIL_USERNAME=resend
    export MAIL_PASSWORD=your-resend-api-key   # starts with re_ — set this
                                                 # only as an env var on
                                                 # wherever you deploy, never
                                                 # committed to the repo
    ```
-   Resend's free tier only sends to your own verified email/domain until
-   you verify a sending domain — until `kandkmedia.co.za` (or whichever
-   domain you use) is verified in Resend's dashboard, mail to other
-   addresses will be rejected by Resend even with a valid key.
+   `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME` are no longer used by
+   `EmailService` (they were SMTP-specific) — only `MAIL_PASSWORD` (the
+   Resend key) and `MAIL_FROM` (see below) matter now.
 
-2. **A place to actually run this backend continuously.** GitHub Pages
+2. **A "From" address**, via `MAIL_FROM` (see `app.mail-from` in
+   `application.yml`):
+   ```bash
+   export MAIL_FROM=payroll@kandkmedia.co.za
+   ```
+   Resend requires the sending domain to be **verified** in their
+   dashboard before it'll deliver from that address to arbitrary
+   recipients — until `kandkmedia.co.za` (or whichever domain) is verified,
+   use Resend's own test domain instead (no verification needed):
+   ```bash
+   export MAIL_FROM=onboarding@resend.dev
+   ```
+
+3. **A place to actually run this backend continuously.** GitHub Pages
    (where the `frontend` prototype is deployed) only serves static files —
    it cannot run a Java process, so this backend needs real hosting. Any of
    these have a free tier that works for testing: Render, Railway, Fly.io,
    or a small VPS. You'd also need a reachable MySQL instance (Railway,
    PlanetScale, or a managed MySQL add-on on whichever host you pick).
 
-3. Set `JWT_SECRET`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` as covered above,
-   alongside the mail vars, wherever you deploy it.
+4. Set `JWT_SECRET`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` as covered above,
+   alongside `MAIL_PASSWORD`/`MAIL_FROM`, wherever you deploy it.
 
-Until both of those exist, `mailSender.send(...)` will throw a connection
-error, which `EmailService` catches and records on the `Payroll` row's
-`emailFailureReason` field rather than crashing the request — so the rest
-of the app keeps working even with mail unconfigured, you'll just see the
+Until those exist, sending fails gracefully — the HTTP error is caught and
+recorded on the `Payroll` row's `emailFailureReason` field rather than
+crashing the request — so the rest of the app keeps working even with mail
+unconfigured, you'll just see the
 failure reason on that record instead of a successful send.
 
 **The frontend prototype does not call any of this yet** — it's still

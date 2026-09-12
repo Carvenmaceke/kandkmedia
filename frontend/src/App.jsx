@@ -69,7 +69,7 @@ const SUPPORT_EMAIL = "itsupport@kandkmedia.co.za";
 // somewhere reachable, e.g. "https://api.kandkmedia.co.za". Left empty
 // means "not connected yet" — the Support form will say so plainly rather
 // than pretending to send.
-const API_BASE_URL = "";
+const API_BASE_URL = "https://kandkmedia.onrender.com";
 const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payslip Issue", "Leave Application Issue", "Account / Access Issue", "Other"];
 const OFFICE_ISSUE_TYPES = ["Hardware / Equipment", "Network / WiFi", "Printer / Scanner", "Workstation / Computer", "Other"];
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];

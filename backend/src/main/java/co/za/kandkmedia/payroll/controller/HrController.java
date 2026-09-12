@@ -6,6 +6,7 @@ import co.za.kandkmedia.payroll.domain.LeaveRequest;
 import co.za.kandkmedia.payroll.domain.Payroll;
 import co.za.kandkmedia.payroll.dto.LeaveDecisionDto;
 import co.za.kandkmedia.payroll.repository.EmployeeRepository;
+import co.za.kandkmedia.payroll.repository.AppUserRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
 import co.za.kandkmedia.payroll.service.PayrollService;
@@ -32,11 +33,29 @@ public class HrController {
     private final PayrollService payrollService;
     private final PayrollRepository payrollRepository;
     private final co.za.kandkmedia.payroll.service.EmployeeProfileService employeeProfileService;
+    private final AppUserRepository appUserRepository;
     private final OnboardingDocumentPdfService onboardingDocumentPdfService;
 
     @GetMapping("/employees")
     public List<Employee> employees() {
         return employeeRepository.findAll();
+    }
+
+    /**
+     * Role lives on AppUser, not Employee — GET /api/hr/employees alone
+     * can't tell you anyone's role. This exists so HR (who has no access to
+     * /api/admin/users, unlike Admin/IT_Support/Master) has *some* way to
+     * see roles for the people they manage, e.g. picking a manager to
+     * assign someone to.
+     */
+    @GetMapping("/employee-roles")
+    public java.util.Map<String, String> employeeRoles() {
+        return appUserRepository.findAll().stream()
+                .filter(u -> u.getEmployee() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        u -> u.getEmployee().getEmployeeCode(),
+                        u -> u.getRole().name(),
+                        (a, b) -> a));
     }
 
     @GetMapping("/employees/{id}")

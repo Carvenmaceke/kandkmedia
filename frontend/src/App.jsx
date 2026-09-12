@@ -936,9 +936,10 @@ function DecisionModal({ target, decider, onClose, onConfirm }) {
 }
 
 
-function ProfileDrawer({ emp, onClose }) {
+function ProfileDrawer({ emp, onClose, onUpdateManager }) {
   if (!emp) return null;
   const mgr = emp.manager ? empById(emp.manager) : null;
+  const managers = EMPLOYEES.filter((e) => e.role === "manager" && e.id !== emp.id);
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.45)", zIndex: 40, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
       <div style={{ width: 340, background: T.surface, height: "100%", padding: 24, boxSizing: "border-box" }} onClick={(e) => e.stopPropagation()}>
@@ -950,12 +951,23 @@ function ProfileDrawer({ emp, onClose }) {
         <div style={{ fontSize: 12.5, color: T.muted, fontFamily: mono }}>{emp.id}</div>
         <div style={{ marginTop: 6, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
-          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Reports To", mgr ? mgr.name : (emp.managerName || "—")], ["Employment Type", emp.employmentType || "—"], ["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]].map(([k, v]) => (
+          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Employment Type", emp.employmentType || "—"], ["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]].map(([k, v]) => (
             <div key={k}>
               <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{k}</div>
               <div style={{ marginTop: 2 }}>{v}</div>
             </div>
           ))}
+          <div>
+            <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>Reports To</div>
+            {onUpdateManager ? (
+              <select value={emp.manager || ""} onChange={(e) => onUpdateManager(emp.id, e.target.value)} style={{ ...inputStyle, marginTop: 4, padding: "6px 8px" }}>
+                <option value="">— No manager assigned —</option>
+                {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            ) : (
+              <div style={{ marginTop: 2 }}>{mgr ? mgr.name : (emp.managerName || "—")}</div>
+            )}
+          </div>
         </div>
         <div style={{ marginTop: 20 }}>
           <Button variant="ghost" small icon={FileCheck2} onClick={() => downloadOnboardingDocument(emp)}>Download Onboarding Document</Button>
@@ -2947,13 +2959,27 @@ export default function App() {
         try {
           const list = await apiFetch("/api/hr/employees");
           const mappedList = list.map(mapBackendEmployee);
+          let roleByCode = {};
+          try { roleByCode = await apiFetch("/api/hr/employee-roles"); } catch (e) { /* non-fatal — roles just won't display for others */ }
+          const withRoles = mappedList.map((m) => (roleByCode[m.id] ? { ...m, role: roleByCode[m.id].toLowerCase() } : m));
           setEmployeesState((es) => {
             const byId = new Map(es.map((e) => [e.id, e]));
-            mappedList.forEach((m) => byId.set(m.id, m));
+            withRoles.forEach((m) => byId.set(m.id, m));
             return Array.from(byId.values());
           });
           fetchPayrollForPeriod(mappedList);
         } catch (e) { /* non-fatal — HR/Admin screens fall back to whatever's already known locally */ }
+      }
+      if (mapped.role === "manager") {
+        try {
+          const team = await apiFetch("/api/manager/team");
+          const mappedTeam = team.map(mapBackendEmployee);
+          setEmployeesState((es) => {
+            const byId = new Map(es.map((e) => [e.id, e]));
+            mappedTeam.forEach((m) => byId.set(m.id, m));
+            return Array.from(byId.values());
+          });
+        } catch (e) { /* non-fatal — team screen falls back to whatever's already known locally */ }
       }
       if (mapped.role === "master") {
         await refreshAppUsers();
@@ -3060,6 +3086,21 @@ export default function App() {
     }
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, salary: newSalary } : e)));
   };
+  const updateEmployeeManager = async (employeeId, managerId) => {
+    if (API_BASE_URL) {
+      const target = employeesState.find((e) => e.id === employeeId);
+      if (target && target._dbId) {
+        try {
+          await apiFetch(`/api/hr/employees/${target._dbId}/profile`, { method: "PUT", body: JSON.stringify({ managerEmployeeCode: managerId || "" }) });
+        } catch (e) {
+          alert(`Couldn't update the manager: ${e.message}`);
+          return;
+        }
+      }
+    }
+    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, manager: managerId || null } : e)));
+    setProfileEmp((pe) => (pe && pe.id === employeeId ? { ...pe, manager: managerId || null } : pe));
+  };
   const updateEmployeeRole = async (employeeId, newRole) => {
     if (API_BASE_URL) {
       const appUserId = appUserIdByEmployeeCode[employeeId];
@@ -3151,7 +3192,7 @@ export default function App() {
   ];
   const masterNav = [
     { id: "users", label: "User Accounts", icon: ShieldCheck }, { id: "employees", label: "Employees", icon: Users },
-    { id: "payroll", label: "Payroll", icon: Banknote },
+    { id: "payroll", label: "Payroll", icon: Banknote }, { id: "leave", label: "Leave", icon: CalendarDays },
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
     { id: "levels", label: "Levels & Departments", icon: Building2 },
@@ -3299,6 +3340,7 @@ export default function App() {
         {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} />}
         {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} />}
         {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
+        {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
@@ -3318,7 +3360,7 @@ export default function App() {
         )}
       </div>
 
-      {profileEmp && <ProfileDrawer emp={profileEmp} onClose={() => setProfileEmp(null)} />}
+      {profileEmp && <ProfileDrawer emp={profileEmp} onClose={() => setProfileEmp(null)} onUpdateManager={updateEmployeeManager} />}
       {payslipView && <Payslip {...payslipView} onClose={() => setPayslipView(null)} />}
     </div>
   );

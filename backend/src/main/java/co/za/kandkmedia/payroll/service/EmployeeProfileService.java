@@ -74,6 +74,15 @@ public class EmployeeProfileService {
         if (dto.getEmploymentType() != null) e.setEmploymentType(dto.getEmploymentType());
         if (dto.getRateType() != null) e.setRateType(dto.getRateType());
         if (dto.getSalary() != null) e.setSalary(dto.getSalary());
+        if (dto.getManagerEmployeeCode() != null) {
+            if (dto.getManagerEmployeeCode().isBlank()) {
+                e.setManager(null);
+            } else {
+                Employee manager = employeeRepository.findByEmployeeCode(dto.getManagerEmployeeCode())
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "No employee found with code " + dto.getManagerEmployeeCode()));
+                e.setManager(manager);
+            }
+        }
 
         return employeeRepository.save(e);
     }

@@ -2961,7 +2961,15 @@ export default function App() {
           const mappedList = list.map(mapBackendEmployee);
           let roleByCode = {};
           try { roleByCode = await apiFetch("/api/hr/employee-roles"); } catch (e) { /* non-fatal — roles just won't display for others */ }
-          const withRoles = mappedList.map((m) => (roleByCode[m.id] ? { ...m, role: roleByCode[m.id].toLowerCase() } : m));
+          const withRoles = mappedList.map((m) => {
+            // Never let this bulk fetch override the current user's own
+            // role — mapped.role came straight from the login response
+            // and is always authoritative. Employee objects from this
+            // endpoint have no role field at all, so anything else here
+            // is a best-effort fill-in for *other* people only.
+            if (m.id === mapped.id) return { ...m, role: mapped.role };
+            return roleByCode[m.id] ? { ...m, role: roleByCode[m.id].toLowerCase() } : m;
+          });
           setEmployeesState((es) => {
             const byId = new Map(es.map((e) => [e.id, e]));
             withRoles.forEach((m) => byId.set(m.id, m));

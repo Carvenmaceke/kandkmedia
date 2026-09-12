@@ -84,8 +84,15 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // Tighten this to the real deployed frontend origin(s) in production.
-        config.setAllowedOriginPatterns(List.of("http://localhost:*", "https://*.kandkmedia.co.za"));
+        // The frontend is currently deployed on GitHub Pages and Netlify —
+        // both patterns are needed until/unless it moves to a
+        // kandkmedia.co.za custom domain.
+        config.setAllowedOriginPatterns(List.of(
+                "http://localhost:*",
+                "https://*.kandkmedia.co.za",
+                "https://carvenmaceke.github.io",
+                "https://*.netlify.app"
+        ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

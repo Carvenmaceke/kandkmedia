@@ -1,5 +1,7 @@
 server:
-  port: 8080
+  # Render (and most hosts) inject PORT at runtime and expect the app to
+  # bind to it — falls back to 8080 for local development.
+  port: ${PORT:8080}
 
 spring:
   application:

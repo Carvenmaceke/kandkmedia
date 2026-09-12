@@ -62,7 +62,7 @@ let LEVELS = [
   { name: "Manager", default: 42000, min: 38000, max: 55000 },
 ];
 
-const DEPARTMENTS = ["Digital Media", "Creative Services", "Publications", "Events Management", "Sales", "HR", "Admin"];
+const DEPARTMENTS = ["Digital Media", "Creative Services", "Publications", "Events Management", "Sales", "HR", "Admin", "IT"];
 
 const SUPPORT_EMAIL = "itsupport@kandkmedia.co.za";
 // Set this once the real backend (see /backend in this repo) is deployed
@@ -121,6 +121,22 @@ const LEAVE_TYPES = [
 const PROOF_REQUIRED_TYPES = ["Sick Leave", "Maternity Leave", "Parental Leave", "Family Responsibility Leave", "Study Leave"];
 const MAX_PROOF_FILE_BYTES = 4 * 1024 * 1024; // 4MB
 
+// Annual Leave, Sick Leave and Maternity Leave text below is taken directly
+// from K and K Media's own appointment letter terms. Family Responsibility
+// and Parental Leave reflect the standard entitlements under the Basic
+// Conditions of Employment Act (BCEA) — actual terms can still vary by
+// individual contract, so this is guidance, not a substitute for reading
+// your own letter of appointment.
+const LEAVE_POLICY = {
+  "Annual Leave": "15 consecutive days on full pay per leave cycle (12 months from your start date). Taken at a time mutually agreed with your manager.",
+  "Sick Leave": "Per BCEA Section 22: 30 days on full pay every 36-month cycle from your start date. In your first 6 months, it accrues at a rate of 1 day for every 26 days worked, rather than being available all at once.",
+  "Family Responsibility Leave": "Standard BCEA entitlement: 3 days per annual cycle (after 4 months of service) for the birth, illness, or death of an immediate family member.",
+  "Study Leave": "Not set by law — granted at management's discretion, typically for exams or approved courses. Attach your exam timetable or course confirmation.",
+  "Unpaid Leave": "Time off without pay, for anything not covered by another leave type. Subject to your manager's approval.",
+  "Maternity Leave": "4 months, unpaid. Must start no later than 1 month before your expected due date, and you're required to give your employer 1 month's written notice before it begins.",
+  "Parental Leave": "Standard BCEA entitlement: 10 consecutive days, unpaid, for a parent who isn't taking maternity leave.",
+};
+
 // role: "admin" | "hr" | "manager" | "employee" | "it_support"
 // `EMPLOYEES` and `LEAVE_BALANCES` are `let`, not `const` — the App component
 // syncs them from React state each render, so every screen always reads the
@@ -136,14 +152,14 @@ const MAX_PROOF_FILE_BYTES = 4 * 1024 * 1024; // 4MB
 // real account, not sample data, and without it nobody could log in to
 // assign roles to anyone else.
 let EMPLOYEES = [
-  { id: "EMP-00001", name: "Carven Maceke", role: "master", level: null, position: "Owner / System Master", dept: "Admin", salary: 0, manager: null, start: "2015-01-01", email: "carven.maceke@kandkmedia.co.za", phone: "0607950837", office: "Midrand", agreedToTerms: true, termsAgreedAt: new Date().toISOString() },
+  { id: "EMP-00001", name: "Carven Maceke", role: "master", level: null, position: "Jnr IT Specialist", dept: "IT", salary: 6500, manager: null, managerName: "Matuma Letsoalo (Executive Chairman)", employmentType: "12-month renewable contract", start: "2026-08-01", email: "carven.maceke@kandkmedia.co.za", phone: "0607950837", office: "Sandton", agreedToTerms: true, termsAgreedAt: new Date().toISOString() },
 ];
 
 const ROLE_LABEL = { master: "Master", admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" };
 const ROLE_TONE = { master: "red", admin: "purple", hr: "teal", manager: "amber", employee: "muted", it_support: "indigo" };
 
 let LEAVE_BALANCES = {
-  "EMP-00001": { "Annual Leave": 20, "Sick Leave": 10, "Family Responsibility Leave": 3 },
+  "EMP-00001": { "Annual Leave": 15, "Sick Leave": 0, "Family Responsibility Leave": 3 },
 };
 
 const INITIAL_LEAVE_REQUESTS = [];
@@ -201,8 +217,8 @@ function StatusPill({ status }) {
   const tone = status === "Approved" ? "green" : status === "Rejected" ? "red" : "amber";
   return <Pill tone={tone}>{status}</Pill>;
 }
-function Card({ children, style }) {
-  return <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, ...style }}>{children}</div>;
+function Card({ children, style, ...rest }) {
+  return <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, ...style }} {...rest}>{children}</div>;
 }
 function SectionTitle({ children, sub }) {
   return (
@@ -215,15 +231,16 @@ function SectionTitle({ children, sub }) {
     </div>
   );
 }
-function StatCard({ icon: Icon, label, value, tone }) {
+function StatCard({ icon: Icon, label, value, tone, title }) {
   const c = tone || T.navy;
   return (
-    <Card style={{ padding: "16px 18px", flex: 1, minWidth: 150 }}>
+    <Card style={{ padding: "16px 18px", flex: 1, minWidth: 150 }} title={title}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
         <div style={{ width: 30, height: 30, borderRadius: 6, background: T.tealLight, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={16} color={T.teal} /></div>
         <span style={{ fontSize: 12.5, color: T.muted, fontWeight: 600 }}>{label}</span>
       </div>
       <div style={{ fontFamily: mono, fontSize: 26, fontWeight: 600, color: c }}>{value}</div>
+      {title && <div style={{ fontSize: 10.5, color: T.muted, marginTop: 6, lineHeight: 1.4 }}>{title}</div>}
     </Card>
   );
 }
@@ -933,7 +950,7 @@ function ProfileDrawer({ emp, onClose }) {
         <div style={{ fontSize: 12.5, color: T.muted, fontFamily: mono }}>{emp.id}</div>
         <div style={{ marginTop: 6, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
-          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Reports To", mgr ? mgr.name : "—"], ["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]].map(([k, v]) => (
+          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Reports To", mgr ? mgr.name : (emp.managerName || "—")], ["Employment Type", emp.employmentType || "—"], ["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]].map(([k, v]) => (
             <div key={k}>
               <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{k}</div>
               <div style={{ marginTop: 2 }}>{v}</div>
@@ -2517,7 +2534,7 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
       {tab === "dashboard" && (
         <div>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-            {Object.entries(balances).map(([k, v]) => <StatCard key={k} icon={CalendarDays} label={k} value={`${v}d`} />)}
+            {Object.entries(balances).map(([k, v]) => <StatCard key={k} icon={CalendarDays} label={k} value={`${v}d`} title={LEAVE_POLICY[k]} />)}
           </div>
           <Card style={{ padding: 18 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}><Bell size={15} color={T.teal} /><span style={{ fontWeight: 650, fontSize: 13.5 }}>Notifications</span></div>
@@ -2564,6 +2581,11 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslip
             <div>
               <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Leave Type</label>
               <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, proofFile: null })} style={{ ...inputStyle, marginTop: 5 }}>{LEAVE_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+              {LEAVE_POLICY[form.type] && (
+                <div style={{ marginTop: 6, fontSize: 11.5, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 6, lineHeight: 1.5 }}>
+                  {LEAVE_POLICY[form.type]}
+                </div>
+              )}
               {proofRequired && <div style={{ marginTop: 5 }}><Pill tone="amber">Proof required for this leave type</Pill></div>}
             </div>
             <div style={{ display: "flex", gap: 10 }}>

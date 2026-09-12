@@ -106,6 +106,15 @@ public class Employee {
 
     private LocalDate startDate; // "Commencement Date" on the form
 
+    // --- Signup consent + signature, used to generate the HR-downloadable
+    // onboarding document (see OnboardingDocumentPdfService) ---
+    @Builder.Default
+    private boolean agreedToTerms = false;
+    private java.time.LocalDateTime termsAgreedAt;
+
+    @Lob
+    private String onboardingSignature; // PNG data URL from the signup signature pad
+
     @ManyToOne
     @JoinColumn(name = "manager_id")
     private Employee manager;

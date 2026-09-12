@@ -28,7 +28,6 @@ public class AuthService {
     private final AppUserRepository userRepository;
     private final EmployeeRepository employeeRepository;
     private final DepartmentRepository departmentRepository;
-    private final EmployeeLevelRepository levelRepository;
     private final LeaveBalanceRepository leaveBalanceRepository;
     private final LeaveTypeRepository leaveTypeRepository;
     private final PasswordEncoder passwordEncoder;
@@ -59,7 +58,7 @@ public class AuthService {
                     "Please provide either an Identity Number or a Passport Number.");
         }
 
-        EmployeeLevel level = resolveLevel(req);
+        EmployeeLevel level = null; // levels no longer drive salary — HR sets it per employee after signup
         Department department = req.getDepartment() == null ? null
                 : departmentRepository.findByNameIgnoreCase(req.getDepartment()).orElse(null);
 
@@ -113,8 +112,11 @@ public class AuthService {
                 .position(req.getPosition())
                 .department(department)
                 .level(level)
-                .salary(level != null ? level.getDefaultSalary() : BigDecimal.ZERO)
+                .salary(BigDecimal.ZERO)
                 .startDate(LocalDate.now())
+                .agreedToTerms(Boolean.TRUE.equals(req.getAgreedToTerms()))
+                .termsAgreedAt(java.time.LocalDateTime.now())
+                .onboardingSignature(req.getSignature())
                 .build();
         employee = employeeRepository.save(employee);
 
@@ -158,15 +160,6 @@ public class AuthService {
                 .fullName(employee != null ? employee.getFullName() : user.getEmail())
                 .email(user.getEmail())
                 .build();
-    }
-
-    private EmployeeLevel resolveLevel(SignupRequest req) {
-        // HR/Admin accounts default to the "Manager" salary band, same as the
-        // frontend prototype — they're admin staff, not on the IC leveling ladder.
-        String levelName = req.getRole() == Role.EMPLOYEE
-                ? (req.getLevel() != null ? req.getLevel() : "Junior")
-                : "Manager";
-        return levelRepository.findByNameIgnoreCase(levelName).orElse(null);
     }
 
     private void seedDefaultLeaveBalances(Employee employee) {

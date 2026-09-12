@@ -91,6 +91,22 @@ banking, residential/postal address) added to `Employee`. Every field is
 optional; only non-null ones are applied, so filling in a profile section
 at a time never wipes out fields entered earlier.
 
+**Signup itself now requires most of that same onboarding info up front**
+(not deferred to a profile edit afterward) — see the `@NotBlank` fields on
+`SignupRequest`. It also requires `agreedToTerms: true` and a `signature`
+(a PNG data URL from a signature pad), matching the frontend's
+draw-to-sign requirement. Employee Level is no longer part of signup at
+all — every new account starts with `salary: 0`; HR sets the real salary
+per employee afterward via `PUT /api/hr/employees/{id}/profile` (or the
+frontend's "click the salary to edit" flow), and that's what's used the
+next time payroll is generated for them.
+
+`GET /api/hr/employees/{id}/onboarding-document` returns a PDF (Apache
+PDFBox, see `OnboardingDocumentPdfService`) containing everything the
+employee entered at signup, plus their signature — this is what backs the
+frontend's "Download Onboarding Document" button in the employee profile
+drawer.
+
 ## Making payslip emails actually send
 
 This isn't a stub — `EmailService` uses Spring's real `JavaMailSender` to

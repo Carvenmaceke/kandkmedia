@@ -651,6 +651,131 @@ function downloadLeaveLetter(request, applicant) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* ONBOARDING DOCUMENT — HR-downloadable record of everything an employee */
+/* entered at signup, plus the signature they gave consenting to it       */
+/* ---------------------------------------------------------------------- */
+function downloadOnboardingDocument(employee) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 42;
+  let y;
+
+  const newPageIfNeeded = (needed) => {
+    if (y - needed < 50) {
+      doc.addPage();
+      y = pageHeight - 50;
+    }
+  };
+
+  // Header
+  doc.setFillColor(23, 17, 15);
+  doc.rect(0, 0, pageWidth, 90, "F");
+  doc.setFillColor(216, 31, 44);
+  doc.rect(marginX, 26, 40, 3, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text(COMPANY.name, marginX, 50);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(201, 191, 188);
+  doc.text(COMPANY.address, marginX, 64);
+  const title = "EMPLOYEE ONBOARDING RECORD";
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  doc.text(title, pageWidth - marginX - doc.getTextWidth(title), 50);
+
+  y = 128;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(20, 20, 20);
+  doc.text(employee.name, marginX, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(90, 82, 80);
+  y += 16;
+  doc.text(`${employee.id} · ${employee.position || "—"} · ${employee.dept || "—"} · ${employee.office || "—"}`, marginX, y);
+  y += 26;
+
+  const row = (label, value) => {
+    newPageIfNeeded(30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(90, 82, 80);
+    doc.text(label, marginX, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(20, 20, 20);
+    const lines = doc.splitTextToSize(String(value || "—"), pageWidth - marginX * 2 - 150);
+    doc.text(lines, marginX + 150, y);
+    y += Math.max(15, lines.length * 12 + 3);
+  };
+
+  const sectionHeader = (label) => {
+    newPageIfNeeded(30);
+    y += 6;
+    doc.setFillColor(251, 234, 234);
+    doc.rect(marginX, y - 12, pageWidth - marginX * 2, 18, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(216, 31, 44);
+    doc.text(label.toUpperCase(), marginX + 6, y);
+    y += 20;
+  };
+
+  PERSONAL_INFO_GROUPS.forEach((group) => {
+    sectionHeader(group.title);
+    group.fields.forEach(([key, label]) => row(label, employee[key]));
+  });
+
+  sectionHeader("Employment");
+  row("Department", employee.dept);
+  row("Position", employee.position);
+  row("Office", employee.office);
+  row("Start Date", employee.start);
+
+  newPageIfNeeded(140);
+  y += 20;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(90, 82, 80);
+  const declaration = "I declare that the information provided in this document is true and correct, and I consent to K and K Media (Pty) Ltd processing this personal information for payroll and HR administration purposes.";
+  const declLines = doc.splitTextToSize(declaration, pageWidth - marginX * 2);
+  doc.text(declLines, marginX, y);
+  y += declLines.length * 13 + 24;
+
+  const sigWidth = 200;
+  const sigHeight = 50;
+  if (employee.onboardingSignature) {
+    try {
+      doc.addImage(employee.onboardingSignature, "PNG", marginX, y, sigWidth, sigHeight);
+    } catch (e) {
+      // corrupt/unsupported signature image — fall through to just the line
+    }
+  }
+  doc.setDrawColor(140, 130, 128);
+  doc.setLineWidth(0.75);
+  doc.line(marginX, y + sigHeight + 6, marginX + sigWidth, y + sigHeight + 6);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(20, 20, 20);
+  doc.text(employee.name, marginX, y + sigHeight + 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(120, 110, 108);
+  doc.text(employee.termsAgreedAt ? `Signed: ${new Date(employee.termsAgreedAt).toLocaleDateString("en-ZA")}` : "Not yet signed", marginX, y + sigHeight + 32);
+
+  y += sigHeight + 60;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(140, 130, 128);
+  doc.text("This document was generated from information the employee entered and signed at sign-up.", marginX, y);
+
+  triggerPdfDownload(doc, `Onboarding-${employee.id}-${employee.name.replace(/\s+/g, "-")}.pdf`);
+}
+
+/* ---------------------------------------------------------------------- */
 /* PAYSLIP DOCUMENT                                                       */
 /* ---------------------------------------------------------------------- */
 function Payslip({ emp, month, figures, onClose }) {
@@ -796,14 +921,17 @@ function ProfileDrawer({ emp, onClose }) {
         </div>
         <div style={{ marginTop: 14, fontSize: 17, fontWeight: 700 }}>{emp.name}</div>
         <div style={{ fontSize: 12.5, color: T.muted, fontFamily: mono }}>{emp.id}</div>
-        <div style={{ marginTop: 6, display: "flex", gap: 6 }}><Pill tone="teal">{emp.level}</Pill><RolePill role={emp.role} /></div>
+        <div style={{ marginTop: 6, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
-          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Reports To", mgr ? mgr.name : "—"], ["Salary", money(emp.salary)]].map(([k, v]) => (
+          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Reports To", mgr ? mgr.name : "—"], ["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]].map(([k, v]) => (
             <div key={k}>
               <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{k}</div>
               <div style={{ marginTop: 2 }}>{v}</div>
             </div>
           ))}
+        </div>
+        <div style={{ marginTop: 20 }}>
+          <Button variant="ghost" small icon={FileCheck2} onClick={() => downloadOnboardingDocument(emp)}>Download Onboarding Document</Button>
         </div>
       </div>
     </div>
@@ -882,10 +1010,12 @@ function SignupScreen({ onSignup, goLogin }) {
 
   const [form, setForm] = useState({
     name: "", email: "", phone: "", password: "", confirm: "",
-    role: "employee", dept: DEPARTMENTS[0], position: "", level: "Junior", office: OFFICES[0],
+    role: "employee", dept: DEPARTMENTS[0], position: "", office: OFFICES[0], signature: null,
     ...blankInfo,
   });
   const [sameAsResidential, setSameAsResidential] = useState(true);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState(PERSONAL_INFO_GROUPS[0].title);
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -912,6 +1042,8 @@ function SignupScreen({ onSignup, goLogin }) {
         }
       }
     }
+    if (!agreedToTerms) { setError("Please agree to the Terms & Conditions to continue."); return; }
+    if (!form.signature) { setError("Please sign before creating your account."); return; }
 
     setError("");
     const finalForm = sameAsResidential
@@ -994,17 +1126,6 @@ function SignupScreen({ onSignup, goLogin }) {
           <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Which office you're based at — used to route IT support requests to the right location.</div>
         </Field>
 
-        {form.role === "employee" && (
-          <Field label="Employee Level">
-            <select value={form.level} onChange={set("level")} style={inputStyle}>
-              {LEVELS.map((l) => <option key={l.name}>{l.name}</option>)}
-            </select>
-            <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>
-              Starting salary (default for this level): {money(LEVELS.find((l) => l.name === form.level).default)} — HR can adjust this later.
-            </div>
-          </Field>
-        )}
-
         <div style={{ fontSize: 12.5, fontWeight: 700, color: T.muted, margin: "18px 0 8px", paddingTop: 14, borderTop: `1px solid ${T.border}` }}>
           Onboarding Information
         </div>
@@ -1041,6 +1162,35 @@ function SignupScreen({ onSignup, goLogin }) {
         ))}
         <div style={{ fontSize: 10.5, color: T.muted, marginBottom: 14 }}>
           Provide either an Identity Number or a Passport Number + Country under Personal Information.
+        </div>
+
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, marginBottom: 14, overflow: "hidden" }}>
+          <button type="button" onClick={() => setTermsOpen(!termsOpen)} style={{
+            width: "100%", textAlign: "left", background: T.bg, border: "none", padding: "10px 14px",
+            fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            Terms & Conditions
+            <ChevronRight size={14} style={{ transform: termsOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+          </button>
+          {termsOpen && (
+            <div style={{ padding: 14, fontSize: 11.5, color: T.muted, lineHeight: 1.7, maxHeight: 180, overflowY: "auto" }}>
+              <p><strong>Consent to processing of personal information.</strong> By signing up, you consent to {COMPANY.name} collecting, storing and processing the personal information you provide here (including identity/passport details, tax information, banking details, and residential/postal address) for payroll, tax, HR administration, and leave management purposes, in accordance with the Protection of Personal Information Act (POPIA).</p>
+              <p><strong>Accuracy declaration.</strong> You declare that the information you have provided is true and correct to the best of your knowledge, and agree to notify HR promptly of any changes.</p>
+              <p><strong>Use of banking details.</strong> Your banking details will be used solely for the purpose of paying your salary and will not be shared outside the company except as required by law (e.g. SARS, UIF).</p>
+              <p><strong>Signature.</strong> The signature you provide below will appear on the onboarding document HR keeps on file for this account, alongside the information above.</p>
+              <p style={{ marginTop: 10, fontStyle: "italic" }}>This is placeholder wording pending review by K and K Media's own legal/HR team — it has not been reviewed by a lawyer and should be replaced with the company's actual approved terms before relying on it.</p>
+            </div>
+          )}
+        </div>
+
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, marginBottom: 14, cursor: "pointer" }}>
+          <input type="checkbox" checked={agreedToTerms} onChange={(e) => setAgreedToTerms(e.target.checked)} style={{ marginTop: 2 }} />
+          <span>I agree to the Terms &amp; Conditions above and consent to {COMPANY.name} processing this personal information for payroll and HR purposes.</span>
+        </label>
+
+        <SignaturePad value={form.signature} onChange={(sig) => setForm({ ...form, signature: sig })} />
+        <div style={{ fontSize: 10.5, color: T.muted, margin: "6px 0 14px" }}>
+          This signature will appear on the onboarding document HR can download for your account.
         </div>
 
         {error && (
@@ -1780,13 +1930,13 @@ function EditSalaryModal({ employee, onClose, onSave }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Edit Salary</div>
-            <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{employee.name} · {employee.level}</div>
+            <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{employee.name}{employee.position && ` · ${employee.position}`}</div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
         </div>
         <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Monthly Salary (R)</label>
         <input type="number" value={value} onChange={(e) => setValue(e.target.value)} style={{ ...inputStyle, marginTop: 5 }} />
-        <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>This overrides the {employee.level} level default just for {employee.name} — used the next time their payroll is generated.</div>
+        <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>This is used the next time {employee.name}'s payroll is generated.</div>
         <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
           <Button variant="teal" onClick={submit}>Save</Button>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -1819,11 +1969,11 @@ function HrEmployees({ onOpenProfile, onUpdateSalary }) {
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
                 <td style={{ padding: "10px 14px", fontWeight: 600 }}>{e.name}</td>
                 <td style={{ padding: "10px 14px" }}><RolePill role={e.role} /></td>
-                <td style={{ padding: "10px 14px" }}><Pill tone="teal">{e.level}</Pill></td>
+                <td style={{ padding: "10px 14px" }}>{e.level ? <Pill tone="teal">{e.level}</Pill> : <span style={{ color: T.muted }}>—</span>}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.dept}</td>
                 <td style={{ padding: "10px 14px" }}>
-                  <button onClick={() => setSalaryTarget(e)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: mono, color: T.text, textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: T.muted }}>{money(e.salary)}</button>
+                  <button onClick={() => setSalaryTarget(e)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: mono, color: e.salary > 0 ? T.text : T.amber, fontWeight: e.salary > 0 ? 400 : 700, textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: T.muted }}>{e.salary > 0 ? money(e.salary) : "Not set"}</button>
                 </td>
                 <td style={{ padding: "10px 14px" }}><button onClick={() => onOpenProfile(e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }}><ChevronRight size={16} /></button></td>
               </tr>
@@ -2140,7 +2290,7 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
             {team.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
                 <td style={{ padding: "10px 14px" }}>{e.name}</td>
-                <td style={{ padding: "10px 14px" }}><Pill tone="teal">{e.level}</Pill></td>
+                <td style={{ padding: "10px 14px" }}>{e.level ? <Pill tone="teal">{e.level}</Pill> : <span style={{ color: T.muted }}>—</span>}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
                 <td style={{ padding: "10px 14px", fontFamily: mono }}>{(LEAVE_BALANCES[e.id] || {})["Annual Leave"] ?? "—"} days</td>
               </tr>
@@ -2510,15 +2660,14 @@ export default function App() {
 
   const handleSignup = (form) => {
     const id = nextEmployeeId();
-    const level = form.role === "employee" ? form.level : "Manager";
-    const salary = LEVELS.find((l) => l.name === level)?.default || 12000;
     const infoKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
     const onboardingInfo = Object.fromEntries(infoKeys.map((k) => [k, form[k] || ""]));
     const newEmp = {
-      id, name: form.name, role: form.role, level, dept: form.dept,
+      id, name: form.name, role: form.role, level: null, dept: form.dept,
       position: form.position || (form.role === "hr" ? "HR Officer" : form.role === "admin" ? "System Administrator" : form.role === "it_support" ? "IT Support" : "Employee"),
-      salary, manager: null, start: "2026-09-10", email: form.email, phone: form.phone, password: form.password,
+      salary: 0, manager: null, start: "2026-09-10", email: form.email, phone: form.phone, password: form.password,
       office: form.office || OFFICES[0],
+      agreedToTerms: true, termsAgreedAt: new Date().toISOString(), onboardingSignature: form.signature,
       ...onboardingInfo,
     };
     setEmployeesState((es) => [...es, newEmp]);

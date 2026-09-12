@@ -37,7 +37,15 @@ public class SignupRequest {
     private String phone;
     private String position;
     private String department;
-    private String level; // only meaningful when role == EMPLOYEE
+    // Level is no longer chosen at signup — HR assigns salary directly per
+    // employee afterwards (see EmployeeProfileService / HrController).
+
+    @NotNull(message = "Please agree to the Terms & Conditions to continue.")
+    @jakarta.validation.constraints.AssertTrue(message = "Please agree to the Terms & Conditions to continue.")
+    private Boolean agreedToTerms;
+
+    @NotBlank(message = "Please sign before creating your account.")
+    private String signature; // PNG data URL from the signup signature pad
 
     // --- Onboarding info, required at signup (matches the frontend form) ---
     // idNumber vs passportNumber+passportCountry: exactly one identity

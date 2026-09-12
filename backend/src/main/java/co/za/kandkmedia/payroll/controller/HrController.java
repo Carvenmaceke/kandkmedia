@@ -9,8 +9,12 @@ import co.za.kandkmedia.payroll.repository.EmployeeRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
 import co.za.kandkmedia.payroll.service.PayrollService;
+import co.za.kandkmedia.payroll.service.OnboardingDocumentPdfService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,6 +32,7 @@ public class HrController {
     private final PayrollService payrollService;
     private final PayrollRepository payrollRepository;
     private final co.za.kandkmedia.payroll.service.EmployeeProfileService employeeProfileService;
+    private final OnboardingDocumentPdfService onboardingDocumentPdfService;
 
     @GetMapping("/employees")
     public List<Employee> employees() {
@@ -43,6 +48,17 @@ public class HrController {
     @PutMapping("/employees/{id}/profile")
     public Employee updateEmployeeProfile(@PathVariable Long id, @RequestBody co.za.kandkmedia.payroll.dto.EmployeeProfileDto dto) {
         return employeeProfileService.updateProfile(id, dto);
+    }
+
+    @GetMapping("/employees/{id}/onboarding-document")
+    public ResponseEntity<byte[]> downloadOnboardingDocument(@PathVariable Long id) {
+        Employee e = employee(id);
+        byte[] pdf = onboardingDocumentPdfService.generate(e);
+        String filename = "Onboarding-" + e.getEmployeeCode() + "-" + e.getFullName().replace(" ", "-") + ".pdf";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(pdf);
     }
 
     @GetMapping("/leave")

@@ -2867,7 +2867,7 @@ export default function App() {
       const auth = await apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
       setStoredToken(auth.token);
       const be = await apiFetch("/api/me");
-      const mapped = mapBackendEmployee(be);
+      const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
       setEmployeesState((es) => (es.some((e) => e.id === mapped.id) ? es.map((e) => (e.id === mapped.id ? mapped : e)) : [...es, mapped]));
       if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
         try {
@@ -2885,8 +2885,15 @@ export default function App() {
         try {
           const users = await apiFetch("/api/admin/users");
           const map = {};
-          users.forEach((u) => { if (u.employee?.employeeCode) map[u.employee.employeeCode] = u.id; });
+          const roleByCode = {};
+          users.forEach((u) => {
+            if (u.employee?.employeeCode) {
+              map[u.employee.employeeCode] = u.id;
+              roleByCode[u.employee.employeeCode] = (u.role || "employee").toLowerCase();
+            }
+          });
           setAppUserIdByEmployeeCode(map);
+          setEmployeesState((es) => es.map((e) => (roleByCode[e.id] ? { ...e, role: roleByCode[e.id] } : e)));
         } catch (e) { /* non-fatal — role changes will just fail with a clear error if attempted */ }
       }
       setCurrentUserId(mapped.id);
@@ -2933,7 +2940,7 @@ export default function App() {
       const auth = await apiFetch("/api/auth/signup", { method: "POST", body: JSON.stringify(payload) });
       setStoredToken(auth.token);
       const be = await apiFetch("/api/me");
-      const mapped = mapBackendEmployee(be);
+      const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
       setEmployeesState((es) => [...es, mapped]);
       setCurrentUserId(mapped.id);
       setViewMode("role");

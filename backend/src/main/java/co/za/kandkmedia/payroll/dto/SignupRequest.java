@@ -38,6 +38,7 @@ public class SignupRequest {
     private String phone;
     private String position;
     private String department;
+    private String office;
     // Level is no longer chosen at signup — HR assigns salary directly per
     // employee afterwards (see EmployeeProfileService / HrController).
 

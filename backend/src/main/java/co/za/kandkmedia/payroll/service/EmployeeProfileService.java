@@ -70,8 +70,10 @@ public class EmployeeProfileService {
 
         if (dto.getPhone() != null) e.setPhone(dto.getPhone());
         if (dto.getPosition() != null) e.setPosition(dto.getPosition());
+        if (dto.getOffice() != null) e.setOffice(dto.getOffice());
         if (dto.getEmploymentType() != null) e.setEmploymentType(dto.getEmploymentType());
         if (dto.getRateType() != null) e.setRateType(dto.getRateType());
+        if (dto.getSalary() != null) e.setSalary(dto.getSalary());
 
         return employeeRepository.save(e);
     }

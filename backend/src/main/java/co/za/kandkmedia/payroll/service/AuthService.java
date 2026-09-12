@@ -106,6 +106,7 @@ public class AuthService {
                 .email(email)
                 .phone(req.getPhone())
                 .position(req.getPosition())
+                .office(req.getOffice())
                 .department(department)
                 .level(level)
                 .salary(BigDecimal.ZERO)

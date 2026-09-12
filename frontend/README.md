@@ -61,8 +61,27 @@ Then open the local URL Vite prints (typically `http://localhost:5173`).
 
 ## Connecting to the real backend
 
-Set `API_BASE_URL` near the top of `src/App.jsx` to wherever the backend
-(see `../backend`) ends up running, then rebuild. It's empty by default,
-which is why Support/Office Issue submissions currently say "not
-connected" — that's accurate, not a bug, until a backend is deployed and
-this is pointed at it.
+`API_BASE_URL` in `src/App.jsx` currently points at the deployed backend
+(`https://kandkmedia.onrender.com`). When it's set:
+
+- **Login and Sign Up** call the real backend, store a JWT
+  (`localStorage`), and fetch the logged-in person's real profile
+- **HR/Admin/Master/IT Support** additionally fetch the full employee
+  list on login
+- **Salary edits, self-service profile edits, and Master's role changes**
+  persist to the real database
+- **Support tickets and Office Issues** were already wired (see below)
+
+When `API_BASE_URL` is empty, every one of those falls back to the
+original local-only, in-memory behavior — useful for frontend-only local
+development without a backend running.
+
+**Still local-only, not yet wired**: leave applications/approvals,
+payroll generation, company settings, and departments/levels management.
+Password changes have no backend endpoint at all yet. See
+`../backend/README.md` for the exact endpoint-by-endpoint status.
+
+A backend-shaped mock server was used to verify this wiring's actual
+request/response handling before it shipped (this sandbox can't reach
+the live Render+Aiven stack directly) — the real end-to-end proof is
+using the live site yourself.

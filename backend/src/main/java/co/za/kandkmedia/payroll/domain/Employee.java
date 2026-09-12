@@ -88,6 +88,7 @@ public class Employee {
     private String phone;
     private String position; // "Job Title" on the form
     private String employmentType; // e.g. Full-time, Part-time, Contract
+    private String office; // "Midrand" or "Sandton" — matches the frontend's OFFICES list
 
     /** "Hourly" or "Monthly" — how `salary` below should be read. */
     @Builder.Default

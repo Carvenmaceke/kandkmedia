@@ -54,6 +54,8 @@ public class EmployeeProfileDto {
 
     private String phone;
     private String position;
+    private String office;
     private String employmentType;
     private String rateType;
+    private java.math.BigDecimal salary;
 }

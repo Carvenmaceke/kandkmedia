@@ -327,13 +327,19 @@ endpoint — see "Making payslip emails actually send", "Automatic
 month-end payslip run", and "Help & Support requests" above for what's
 needed to switch each on.
 
-**The single biggest gap**: the frontend does not call any of this yet —
-it's still running entirely on in-memory React state (see
-`frontend/README.md`). Every backend endpoint described in this file
-works and compiles, but nothing on the frontend has been wired to
-actually call them. That wiring, plus deploying this backend somewhere
-it can run continuously with a real database connected, are the two
-things standing between this and an actually-working live system.
+**Deployed and connected**: this backend now runs live on Render, connected
+to a real MySQL database (Aiven), and the frontend is wired to it for
+authentication (login/signup issue real JWTs), fetching the logged-in
+person's profile and the full employee list, salary edits, self-service
+profile edits, Master's role-change, and Support/Office Issue
+submissions — see `frontend/README.md` for exactly what's connected vs
+still local-only.
+
+**Still not wired to the frontend**: leave applications/approvals, the
+payroll pipeline, company settings, and departments/levels management —
+these endpoints all exist and work, but nothing on the frontend calls
+them yet. There's also no password-change endpoint yet, so that stays
+local-only until one exists.
 
 Not yet implemented (see the original spec's Phase 5–8 for the intended
 shape, and "Payslip document security" above for the security-specific gaps):

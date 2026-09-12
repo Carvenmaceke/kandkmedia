@@ -993,10 +993,13 @@ function LoginScreen({ onLogin, goSignup }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    const err = onLogin(email.trim(), password);
+    setLoading(true);
+    const err = await onLogin(email.trim(), password);
+    setLoading(false);
     if (err) setError(err); else setError("");
   };
 
@@ -1022,7 +1025,7 @@ function LoginScreen({ onLogin, goSignup }) {
             <AlertCircle size={14} /> {error}
           </div>
         )}
-        <Button type="submit" variant="teal" full>Log In</Button>
+        <Button type="submit" variant="teal" full disabled={loading}>{loading ? "Logging in…" : "Log In"}</Button>
       </form>
       <div style={{ marginTop: 16, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
         Don't have an account? <button onClick={goSignup} style={{ background: "none", border: "none", color: T.teal, fontWeight: 700, cursor: "pointer", fontSize: 12.5, padding: 0 }}>Sign up</button>
@@ -1047,7 +1050,9 @@ function SignupScreen({ onSignup, goLogin }) {
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  const submit = (e) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.password) { setError("Please fill in all required fields."); return; }
     if (!isCompanyEmail(form.email)) { setError(`Please use your company email address, ending in @${ALLOWED_EMAIL_DOMAIN}.`); return; }
@@ -1076,7 +1081,10 @@ function SignupScreen({ onSignup, goLogin }) {
     const finalForm = sameAsResidential
       ? { ...form, ...Object.fromEntries(Object.entries(RESIDENTIAL_TO_POSTAL_MAP).map(([postKey, resKey]) => [postKey, form[resKey]])) }
       : form;
-    onSignup(finalForm);
+    setSubmitting(true);
+    const err = await onSignup(finalForm);
+    setSubmitting(false);
+    if (err) setError(err);
   };
 
   return (
@@ -1212,13 +1220,85 @@ function SignupScreen({ onSignup, goLogin }) {
             <AlertCircle size={14} /> {error}
           </div>
         )}
-        <Button type="submit" variant="teal" full>Create Account</Button>
+        <Button type="submit" variant="teal" full disabled={submitting}>{submitting ? "Creating account…" : "Create Account"}</Button>
       </form>
       <div style={{ marginTop: 16, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
         Already have an account? <button onClick={goLogin} style={{ background: "none", border: "none", color: T.teal, fontWeight: 700, cursor: "pointer", fontSize: 12.5, padding: 0 }}>Log in</button>
       </div>
     </AuthShell>
   );
+}
+
+/* ---------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------- */
+/* REAL API CLIENT — used when API_BASE_URL is set (i.e. a backend is     */
+/* actually deployed). Falls back to local-only behavior everywhere this  */
+/* isn't set, so the app still works for local frontend-only development. */
+/* ---------------------------------------------------------------------- */
+const AUTH_TOKEN_KEY = "kk_auth_token";
+
+function getStoredToken() {
+  try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch (e) { return null; }
+}
+function setStoredToken(token) {
+  try { token ? localStorage.setItem(AUTH_TOKEN_KEY, token) : localStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) { /* ignore */ }
+}
+
+/** Throws with a human-readable message on any non-2xx response, so
+ *  callers can just try/catch and show err.message. */
+async function apiFetch(path, options = {}) {
+  const token = getStoredToken();
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  } catch (e) {
+    throw new Error("Couldn't reach the server — check your connection and try again.");
+  }
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body && body.message) message = body.message;
+    } catch (e) { /* body wasn't JSON — keep the generic message */ }
+    throw new Error(message);
+  }
+  if (res.status === 204) return null;
+  try { return await res.json(); } catch (e) { return null; }
+}
+
+/** Converts the backend's Employee JSON shape (nested department/level
+ *  objects, firstName/lastName, numeric id) into the flat shape this
+ *  frontend already uses everywhere (dept/level as plain name strings,
+ *  a single `name`, `id` set to the human-facing employeeCode). This
+ *  lets every existing component keep working unchanged — only the data
+ *  source moves from local state to the real API. `_dbId` is kept for
+ *  calls that need the real numeric primary key (e.g. role changes). */
+function mapBackendEmployee(be) {
+  if (!be) return null;
+  const onboardingKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
+  const onboarding = Object.fromEntries(onboardingKeys.map((k) => [k, be[k] ?? ""]));
+  return {
+    id: be.employeeCode,
+    _dbId: be.id,
+    name: `${be.firstName || ""} ${be.lastName || ""}`.trim() || be.employeeCode,
+    role: (be.role || "employee").toLowerCase(),
+    level: be.level ? be.level.name : null,
+    position: be.position || "",
+    dept: be.department ? be.department.name : "",
+    salary: be.salary != null ? Number(be.salary) : 0,
+    manager: be.manager ? be.manager.employeeCode : null,
+    start: be.startDate || "",
+    email: be.email,
+    phone: be.phone || "",
+    office: be.office || OFFICES[0],
+    employmentType: be.employmentType || "",
+    agreedToTerms: !!be.agreedToTerms,
+    termsAgreedAt: be.termsAgreedAt || null,
+    onboardingSignature: be.onboardingSignature || null,
+    ...onboarding,
+  };
 }
 
 /* ---------------------------------------------------------------------- */
@@ -2652,6 +2732,7 @@ export default function App() {
   const [screen, setScreen] = useState("login"); // "login" | "signup" | "app"
   const [currentUserId, setCurrentUserId] = useState(null);
   const [portalChoice, setPortalChoice] = useState(null); // null | "leave" | "itSupport"
+  const [appUserIdByEmployeeCode, setAppUserIdByEmployeeCode] = useState({});
   const [employeesState, setEmployeesState] = useState(EMPLOYEES);
   const [balancesState, setBalancesState] = useState(LEAVE_BALANCES);
   const [levelsState, setLevelsState] = useState(LEVELS);
@@ -2676,41 +2757,121 @@ export default function App() {
 
   const history = useMemo(() => buildHistory(employeesState.filter((e) => PAST_MONTHS && e.start <= "2026-06-01")), [employeesState]);
 
-  const handleLogin = (email, password) => {
-    const user = employeesState.find((e) => e.email.toLowerCase() === email.toLowerCase());
-    if (!user) return "No account found with that email address.";
-    const expected = user.password || DEFAULT_PASSWORD;
-    if (password !== expected) return "Incorrect password.";
-    setCurrentUserId(user.id);
-    setViewMode("role");
-    setPortalChoice(null);
-    setScreen("app");
-    return null;
+  const handleLogin = async (email, password) => {
+    if (!API_BASE_URL) {
+      const user = employeesState.find((e) => e.email.toLowerCase() === email.toLowerCase());
+      if (!user) return "No account found with that email address.";
+      const expected = user.password || DEFAULT_PASSWORD;
+      if (password !== expected) return "Incorrect password.";
+      setCurrentUserId(user.id);
+      setViewMode("role");
+      setPortalChoice(null);
+      setScreen("app");
+      return null;
+    }
+    try {
+      const auth = await apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      setStoredToken(auth.token);
+      const be = await apiFetch("/api/me");
+      const mapped = mapBackendEmployee(be);
+      setEmployeesState((es) => (es.some((e) => e.id === mapped.id) ? es.map((e) => (e.id === mapped.id ? mapped : e)) : [...es, mapped]));
+      if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
+        try {
+          const list = await apiFetch("/api/hr/employees");
+          const mappedList = list.map(mapBackendEmployee);
+          setEmployeesState((es) => {
+            const byId = new Map(es.map((e) => [e.id, e]));
+            mappedList.forEach((m) => byId.set(m.id, m));
+            return Array.from(byId.values());
+          });
+        } catch (e) { /* non-fatal — HR/Admin screens fall back to whatever's already known locally */ }
+      }
+      if (mapped.role === "master") {
+        try {
+          const users = await apiFetch("/api/admin/users");
+          const map = {};
+          users.forEach((u) => { if (u.employee?.employeeCode) map[u.employee.employeeCode] = u.id; });
+          setAppUserIdByEmployeeCode(map);
+        } catch (e) { /* non-fatal — role changes will just fail with a clear error if attempted */ }
+      }
+      setCurrentUserId(mapped.id);
+      setViewMode("role");
+      setPortalChoice(null);
+      setScreen("app");
+      return null;
+    } catch (e) {
+      return e.message;
+    }
   };
 
-  const handleSignup = (form) => {
-    const id = nextEmployeeId();
+  const handleSignup = async (form) => {
+    if (!API_BASE_URL) {
+      const id = nextEmployeeId();
+      const infoKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
+      const onboardingInfo = Object.fromEntries(infoKeys.map((k) => [k, form[k] || ""]));
+      const newEmp = {
+        id, name: form.name, role: form.role, level: null, dept: form.dept,
+        position: form.position || (form.role === "hr" ? "HR Officer" : form.role === "admin" ? "System Administrator" : form.role === "it_support" ? "IT Support" : "Employee"),
+        salary: 0, manager: null, start: "2026-09-10", email: form.email, phone: form.phone, password: form.password,
+        office: form.office || OFFICES[0],
+        agreedToTerms: true, termsAgreedAt: new Date().toISOString(), onboardingSignature: form.signature,
+        ...onboardingInfo,
+      };
+      setEmployeesState((es) => [...es, newEmp]);
+      setBalancesState((bs) => ({ ...bs, [id]: { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 } }));
+      setCurrentUserId(id);
+      setViewMode("role");
+      setPortalChoice(null);
+      setScreen("app");
+      return null;
+    }
+    const [firstName, ...rest] = form.name.trim().split(/\s+/);
+    const lastName = rest.join(" ") || firstName;
     const infoKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
-    const onboardingInfo = Object.fromEntries(infoKeys.map((k) => [k, form[k] || ""]));
-    const newEmp = {
-      id, name: form.name, role: form.role, level: null, dept: form.dept,
-      position: form.position || (form.role === "hr" ? "HR Officer" : form.role === "admin" ? "System Administrator" : form.role === "it_support" ? "IT Support" : "Employee"),
-      salary: 0, manager: null, start: "2026-09-10", email: form.email, phone: form.phone, password: form.password,
-      office: form.office || OFFICES[0],
-      agreedToTerms: true, termsAgreedAt: new Date().toISOString(), onboardingSignature: form.signature,
-      ...onboardingInfo,
+    const payload = {
+      firstName, lastName, email: form.email, password: form.password,
+      phone: form.phone, position: form.position, department: form.dept, office: form.office,
+      agreedToTerms: true, signature: form.signature,
+      ...Object.fromEntries(infoKeys.map((k) => [k, form[k] || null])),
     };
-    setEmployeesState((es) => [...es, newEmp]);
-    setBalancesState((bs) => ({ ...bs, [id]: { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 } }));
-    setCurrentUserId(id);
-    setViewMode("role");
-    setPortalChoice(null);
-    setScreen("app");
+    try {
+      const auth = await apiFetch("/api/auth/signup", { method: "POST", body: JSON.stringify(payload) });
+      setStoredToken(auth.token);
+      const be = await apiFetch("/api/me");
+      const mapped = mapBackendEmployee(be);
+      setEmployeesState((es) => [...es, mapped]);
+      setCurrentUserId(mapped.id);
+      setViewMode("role");
+      setPortalChoice(null);
+      setScreen("app");
+      return null;
+    } catch (e) {
+      return e.message;
+    }
   };
 
-  const handleLogout = () => { setCurrentUserId(null); setScreen("login"); setViewMode("role"); setPortalChoice(null); };
+  const handleLogout = () => { setStoredToken(null); setCurrentUserId(null); setScreen("login"); setViewMode("role"); setPortalChoice(null); };
 
-  const handleSaveProfile = (fields) => {
+  const handleSaveProfile = async (fields) => {
+    const payload = { ...fields };
+    if (payload.name) {
+      const [fn, ...rest] = payload.name.trim().split(/\s+/);
+      payload.firstName = fn;
+      payload.lastName = rest.join(" ") || fn;
+      delete payload.name;
+    }
+    // Email and department changes aren't part of self-service profile
+    // updates on the backend yet — those still only update local state.
+    delete payload.email;
+    delete payload.dept;
+    if (API_BASE_URL) {
+      try {
+        await apiFetch("/api/me/profile", { method: "PUT", body: JSON.stringify(payload) });
+      } catch (e) {
+        alert(`Couldn't save: ${e.message}`);
+        return;
+      }
+    }
     setEmployeesState((es) => es.map((e) => (e.id === currentUserId ? { ...e, ...fields } : e)));
   };
   const handleChangePassword = (newPassword) => {
@@ -2719,10 +2880,36 @@ export default function App() {
   const updateLevel = (name, updates) =>
     setLevelsState((ls) => ls.map((l) => (l.name === name ? { ...l, ...updates } : l)));
   const addLevel = (level) => setLevelsState((ls) => [...ls, level]);
-  const updateEmployeeSalary = (employeeId, newSalary) =>
+  const updateEmployeeSalary = async (employeeId, newSalary) => {
+    if (API_BASE_URL) {
+      const target = employeesState.find((e) => e.id === employeeId);
+      if (target && target._dbId) {
+        try {
+          await apiFetch(`/api/hr/employees/${target._dbId}/profile`, { method: "PUT", body: JSON.stringify({ salary: newSalary }) });
+        } catch (e) {
+          alert(`Couldn't save the salary: ${e.message}`);
+          return;
+        }
+      }
+    }
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, salary: newSalary } : e)));
-  const updateEmployeeRole = (employeeId, newRole) =>
+  };
+  const updateEmployeeRole = async (employeeId, newRole) => {
+    if (API_BASE_URL) {
+      const appUserId = appUserIdByEmployeeCode[employeeId];
+      if (!appUserId) {
+        alert("Couldn't find this account's server record — try logging out and back in as Master to refresh the list.");
+        return;
+      }
+      try {
+        await apiFetch(`/api/admin/users/${appUserId}/role`, { method: "PUT", body: JSON.stringify({ role: newRole }) });
+      } catch (e) {
+        alert(`Couldn't change the role: ${e.message}`);
+        return;
+      }
+    }
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, role: newRole } : e)));
+  };
 
   if (screen === "login") return <LoginScreen onLogin={handleLogin} goSignup={() => setScreen("signup")} />;
   if (screen === "signup") return <SignupScreen onSignup={handleSignup} goLogin={() => setScreen("login")} />;
@@ -2766,7 +2953,8 @@ export default function App() {
     { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
   ];
   const masterNav = [
-    { id: "users", label: "User Accounts", icon: ShieldCheck }, { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "users", label: "User Accounts", icon: ShieldCheck }, { id: "employees", label: "Employees", icon: Users },
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
     { id: "levels", label: "Levels & Departments", icon: Building2 },
     { id: "support", label: "Support Tickets", icon: LifeBuoy }, { id: "officeIssues", label: "Office Issues", icon: MapPin },
@@ -2911,6 +3099,7 @@ export default function App() {
         {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
 
         {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} />}
+        {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}

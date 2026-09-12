@@ -1,6 +1,7 @@
 package co.za.kandkmedia.payroll.domain;
 
 public enum Role {
+    MASTER,
     ADMIN,
     HR,
     MANAGER,

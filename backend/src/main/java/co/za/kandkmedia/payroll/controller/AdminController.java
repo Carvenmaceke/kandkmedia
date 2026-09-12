@@ -78,6 +78,35 @@ public class AdminController {
         return userRepository.findAll();
     }
 
+    /**
+     * Master-exclusive: this is the only role-assignment endpoint in the
+     * system, and @PreAuthorize enforces MASTER specifically — not covered
+     * by the broader /api/admin/** rule that also lets ADMIN/IT_SUPPORT in,
+     * since letting any admin-tier account grant further admin access
+     * would defeat the whole point of having a single gatekeeper.
+     */
+    @PutMapping("/users/{id}/role")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('MASTER')")
+    public AppUser changeUserRole(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {
+        AppUser user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found."));
+        if (user.getRole() == co.za.kandkmedia.payroll.domain.Role.MASTER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The Master account's role cannot be changed.");
+        }
+        String roleName = body.get("role");
+        co.za.kandkmedia.payroll.domain.Role newRole;
+        try {
+            newRole = co.za.kandkmedia.payroll.domain.Role.valueOf(roleName.toUpperCase());
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown role: " + roleName);
+        }
+        if (newRole == co.za.kandkmedia.payroll.domain.Role.MASTER) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot promote another account to Master.");
+        }
+        user.setRole(newRole);
+        return userRepository.save(user);
+    }
+
     @GetMapping("/support")
     public List<SupportTicket> supportTickets() {
         return supportService.all();

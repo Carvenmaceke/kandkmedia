@@ -1,6 +1,5 @@
 package co.za.kandkmedia.payroll.dto;
 
-import co.za.kandkmedia.payroll.domain.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -31,8 +30,10 @@ public class SignupRequest {
     @Size(min = 8, message = "Password must be at least 8 characters")
     private String password;
 
-    @NotNull
-    private Role role; // EMPLOYEE, HR, ADMIN, or IT_SUPPORT — signup never grants MANAGER directly
+    // No role field — every public signup becomes Role.EMPLOYEE, enforced
+    // server-side in AuthService, never trusting a client-supplied value.
+    // HR/Admin/IT Support/Manager access is granted afterward, exclusively
+    // by the Master account, via PUT /api/admin/users/{id}/role.
 
     private String phone;
     private String position;

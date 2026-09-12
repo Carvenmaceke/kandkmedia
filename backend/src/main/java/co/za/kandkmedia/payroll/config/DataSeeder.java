@@ -1,27 +1,28 @@
 package co.za.kandkmedia.payroll.config;
 
-import co.za.kandkmedia.payroll.domain.Company;
-import co.za.kandkmedia.payroll.domain.Department;
-import co.za.kandkmedia.payroll.domain.EmployeeLevel;
-import co.za.kandkmedia.payroll.domain.LeaveType;
-import co.za.kandkmedia.payroll.repository.CompanyRepository;
-import co.za.kandkmedia.payroll.repository.DepartmentRepository;
-import co.za.kandkmedia.payroll.repository.EmployeeLevelRepository;
-import co.za.kandkmedia.payroll.repository.LeaveTypeRepository;
+import co.za.kandkmedia.payroll.domain.*;
+import co.za.kandkmedia.payroll.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Seeds only real, structural reference data — the company's actual profile,
+ * Seeds real, structural reference data — the company's actual profile,
  * a starting set of departments and salary levels (both editable in-app by
- * Admin/HR afterwards), and the standard SA leave types. No employees, no
- * user accounts, no sample leave/payroll/ticket data — this is a live
- * system now, not a demo, and every person in it should be entered through
- * Sign Up or by HR, not pre-loaded by this seeder.
+ * Admin/HR afterwards), the standard SA leave types, and exactly ONE real
+ * account: the system owner (Master). No other employees, no sample
+ * leave/payroll/ticket data — this is a live system, not a demo, and
+ * every other person in it should be entered through Sign Up, then have
+ * their role assigned by Master.
+ *
+ * The Master account is the deliberate exception to "no seed data": it's
+ * a real account, not sample data, and without it nobody could log in to
+ * grant anyone else HR/Admin/IT Support access in the first place.
  *
  * Only runs when the company table is empty, so it's safe on every restart
  * and never overwrites data you've since edited in-app.
@@ -30,10 +31,16 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DataSeeder implements CommandLineRunner {
 
+    private static final String MASTER_DEFAULT_PASSWORD = "password123";
+
     private final CompanyRepository companyRepository;
     private final DepartmentRepository departmentRepository;
     private final EmployeeLevelRepository levelRepository;
     private final LeaveTypeRepository leaveTypeRepository;
+    private final EmployeeRepository employeeRepository;
+    private final AppUserRepository userRepository;
+    private final LeaveBalanceRepository leaveBalanceRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     public void run(String... args) {
@@ -41,7 +48,7 @@ public class DataSeeder implements CommandLineRunner {
             return; // already seeded — never re-run over real data
         }
 
-        companyRepository.save(Company.builder()
+        Company company = companyRepository.save(Company.builder()
                 .name("K and K Media (Pty) Ltd")
                 .address("526, 16th Road, Constantia Square Office Park, Randjespark, Midrand, Gauteng, South Africa")
                 .email("sales@kandkmedia.co.za")
@@ -50,14 +57,18 @@ public class DataSeeder implements CommandLineRunner {
                 .logoUrl("https://www.kandkmedia.co.za/wp-content/uploads/2024/05/cropped-cropped-K-and-K-Media-logo-New-1.png")
                 .build());
 
-        seedDepartments();
+        var departments = seedDepartments();
         seedLevels();
-        seedLeaveTypes();
+        List<LeaveType> leaveTypes = seedLeaveTypes();
+
+        seedMasterAccount(company, departments.get("Admin"), leaveTypes);
     }
 
-    private void seedDepartments() {
+    private java.util.Map<String, Department> seedDepartments() {
         List<String> names = List.of("Digital Media", "Creative Services", "Publications", "Events Management", "Sales", "HR", "Admin");
-        names.forEach(n -> departmentRepository.save(Department.builder().name(n).build()));
+        return names.stream()
+                .map(n -> departmentRepository.save(Department.builder().name(n).build()))
+                .collect(java.util.stream.Collectors.toMap(Department::getName, d -> d));
     }
 
     private void seedLevels() {
@@ -76,9 +87,48 @@ public class DataSeeder implements CommandLineRunner {
                 .build()));
     }
 
-    private void seedLeaveTypes() {
+    private List<LeaveType> seedLeaveTypes() {
         List<String> names = List.of("Annual Leave", "Sick Leave", "Family Responsibility Leave",
                 "Study Leave", "Unpaid Leave", "Maternity Leave", "Parental Leave");
-        names.forEach(n -> leaveTypeRepository.save(LeaveType.builder().name(n).build()));
+        return names.stream()
+                .map(n -> leaveTypeRepository.save(LeaveType.builder().name(n).build()))
+                .toList();
+    }
+
+    private void seedMasterAccount(Company company, Department adminDept, List<LeaveType> leaveTypes) {
+        Employee master = employeeRepository.save(Employee.builder()
+                .employeeCode(employeeRepository.nextEmployeeCode())
+                .firstName("Carven")
+                .lastName("Maceke")
+                .position("Owner / System Master")
+                .department(adminDept)
+                .salary(BigDecimal.ZERO)
+                .startDate(LocalDate.now())
+                .email("carven.maceke@kandkmedia.co.za")
+                .phone("0607950837")
+                .company(company)
+                .agreedToTerms(true)
+                .build());
+
+        userRepository.save(AppUser.builder()
+                .email(master.getEmail())
+                .passwordHash(passwordEncoder.encode(MASTER_DEFAULT_PASSWORD))
+                .role(Role.MASTER)
+                .employee(master)
+                .build());
+
+        for (LeaveType type : leaveTypes) {
+            int days = switch (type.getName()) {
+                case "Annual Leave" -> 20;
+                case "Sick Leave" -> 10;
+                case "Family Responsibility Leave" -> 3;
+                default -> 0;
+            };
+            leaveBalanceRepository.save(LeaveBalance.builder()
+                    .employee(master)
+                    .leaveType(type)
+                    .daysRemaining(days)
+                    .build());
+        }
     }
 }

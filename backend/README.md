@@ -75,15 +75,37 @@ as a chosen role — a manager is promoted by HR, not self-selected.
 
 | Prefix           | Who can call it                  | What's there                                   |
 |-------------------|-----------------------------------|-------------------------------------------------|
-| `/api/auth/**`     | Anyone                            | signup, login                                   |
+| `/api/auth/**`     | Anyone                            | signup (always creates an EMPLOYEE — see below), login |
 | `/api/me/**`       | Any authenticated user            | own profile (`GET`/`PUT /profile`), leave, leave balance, payslips |
-| `/api/manager/**`  | MANAGER, HR, ADMIN, IT_SUPPORT      | team leave requests, approve/reject             |
-| `/api/hr/**`       | HR, ADMIN, IT_SUPPORT               | employee list, `PUT /employees/{id}/profile`, payroll pipeline, all leave |
-| `/api/admin/**`    | ADMIN, IT_SUPPORT                   | company profile, departments, levels, users     |
+| `/api/manager/**`  | MASTER, MANAGER, HR, ADMIN, IT_SUPPORT | team leave requests, approve/reject        |
+| `/api/hr/**`       | MASTER, HR, ADMIN, IT_SUPPORT        | employee list, `PUT /employees/{id}/profile`, payroll pipeline, all leave |
+| `/api/admin/**`    | MASTER, ADMIN, IT_SUPPORT            | company profile, departments, levels, users, onboarding docs |
 
 `/api/me/**` is what backs the frontend's "switch to my profile" — HR,
 Admin, Manager and IT Support accounts hit the exact same self-service
 endpoints an Employee-role account does.
+
+### Role assignment is Master-exclusive
+
+`SignupRequest` has no `role` field at all — every signup becomes
+`Role.EMPLOYEE`, enforced server-side in `AuthService`, never trusted from
+the client. This closes what would otherwise be a real vulnerability: if
+the client could say "make me an Admin" at signup, anyone could grant
+themselves access to everyone's personal/banking/tax information.
+
+The only way to become HR, Admin, IT Support, or Manager is via
+`PUT /api/admin/users/{id}/role`, which is restricted with
+`@PreAuthorize("hasRole('MASTER')")` specifically — not just covered by
+the broader `/api/admin/**` rule that also lets ADMIN/IT_SUPPORT in, since
+letting any admin-tier account grant further admin access would defeat
+the point of having a single gatekeeper. It also refuses to change the
+Master account's own role, and refuses to promote anyone else to Master.
+
+`DataSeeder` creates exactly one real account — the Master/system owner
+(`carven.maceke@kandkmedia.co.za`, password `password123` by default,
+change it) — since without at least one privileged account, nobody could
+grant roles to anyone else. Every other person in the system should sign
+up themselves and be assigned a role by Master afterward.
 
 `PUT /api/me/profile` and `PUT /api/hr/employees/{id}/profile` both take an
 `EmployeeProfileDto` — the full onboarding field set (personal info, tax,

@@ -129,12 +129,22 @@ const MAX_PROOF_FILE_BYTES = 4 * 1024 * 1024; // 4MB
 // Starts empty — this is a live system now, not a demo. The first account
 // created via Sign Up becomes the first real employee; everyone else signs
 // up the same way or is added by HR.
-let EMPLOYEES = [];
+// Exactly one seeded account: the real system owner. Nobody can sign up
+// as Master — it's the sole account with unrestricted access, including
+// the exclusive ability to grant HR/Admin/IT Support access to others.
+// This is intentionally the one exception to "no seed data" — it's a
+// real account, not sample data, and without it nobody could log in to
+// assign roles to anyone else.
+let EMPLOYEES = [
+  { id: "EMP-00001", name: "Carven Maceke", role: "master", level: null, position: "Owner / System Master", dept: "Admin", salary: 0, manager: null, start: "2015-01-01", email: "carven.maceke@kandkmedia.co.za", phone: "0607950837", office: "Midrand", agreedToTerms: true, termsAgreedAt: new Date().toISOString() },
+];
 
-const ROLE_LABEL = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" };
-const ROLE_TONE = { admin: "purple", hr: "teal", manager: "amber", employee: "muted", it_support: "indigo" };
+const ROLE_LABEL = { master: "Master", admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" };
+const ROLE_TONE = { master: "red", admin: "purple", hr: "teal", manager: "amber", employee: "muted", it_support: "indigo" };
 
-let LEAVE_BALANCES = {};
+let LEAVE_BALANCES = {
+  "EMP-00001": { "Annual Leave": 20, "Sick Leave": 10, "Family Responsibility Leave": 3 },
+};
 
 const INITIAL_LEAVE_REQUESTS = [];
 
@@ -1086,23 +1096,10 @@ function SignupScreen({ onSignup, goLogin }) {
           </div>
         </div>
 
-        <Field label="I am signing up as">
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {["employee", "hr", "admin", "it_support"].map((r) => (
-              <button type="button" key={r} onClick={() => setForm({ ...form, role: r })} style={{
-                flex: "1 1 100px", padding: "9px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, fontWeight: 700,
-                border: `1px solid ${form.role === r ? T.teal : T.border}`,
-                background: form.role === r ? T.tealLight : "#fff", color: form.role === r ? T.teal : T.muted,
-              }}>{ROLE_LABEL[r]}</button>
-            ))}
-          </div>
-          <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>
-            {form.role === "employee" && "You'll see your own profile, payslips and leave — nothing else."}
-            {form.role === "hr" && "You'll manage employees, payroll and leave for the whole company."}
-            {form.role === "admin" && "You'll manage company settings, employee levels/departments and user accounts."}
-            {form.role === "it_support" && "Full system access plus the Support Tickets and Office Issues management views."}
-          </div>
-        </Field>
+        <div style={{ background: T.bg, borderRadius: 8, padding: "10px 12px", marginBottom: 14, fontSize: 12, color: T.muted, display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <ShieldCheck size={15} color={T.teal} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>You're signing up as an <strong style={{ color: T.text }}>Employee</strong>. HR, Admin, IT Support and Manager access are granted afterward by the system owner — they aren't choices you make here.</span>
+        </div>
 
         <div style={{ display: "flex", gap: 10 }}>
           <div style={{ flex: 1 }}>
@@ -2073,7 +2070,7 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
 /* ADMIN AREA                                                             */
 /* ---------------------------------------------------------------------- */
 function AdminOverview({ supportTickets, officeIssues }) {
-  const roleCounts = ["it_support", "admin", "hr", "manager", "employee"].map((r) => ({ role: r, count: EMPLOYEES.filter((e) => e.role === r).length }));
+  const roleCounts = ["master", "it_support", "admin", "hr", "manager", "employee"].map((r) => ({ role: r, count: EMPLOYEES.filter((e) => e.role === r).length }));
   const openTickets = supportTickets.filter((t) => t.status !== "Resolved").length;
   const openOfficeIssues = officeIssues.filter((i) => i.status !== "Resolved").length;
   return (
@@ -2241,10 +2238,12 @@ function AdminLevels({ onUpdateLevel, onAddLevel }) {
   );
 }
 
-function AdminUsers({ currentUserId }) {
+const ASSIGNABLE_ROLES = ["employee", "manager", "hr", "admin", "it_support"];
+
+function AdminUsers({ currentUserId, isMaster, onChangeRole }) {
   return (
     <div>
-      <SectionTitle sub="Every account and its assigned system role">User Accounts</SectionTitle>
+      <SectionTitle sub={isMaster ? "Every account — you're the only one who can change roles" : "Every account and its assigned system role"}>User Accounts</SectionTitle>
       <Card style={{ overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Email", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
@@ -2253,7 +2252,15 @@ function AdminUsers({ currentUserId }) {
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}`, background: e.id === currentUserId ? T.tealLight : "transparent" }}>
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
                 <td style={{ padding: "10px 14px", fontWeight: 600 }}>{e.name}{e.id === currentUserId && <span style={{ color: T.muted, fontWeight: 400 }}> (you)</span>}</td>
-                <td style={{ padding: "10px 14px" }}><RolePill role={e.role} /></td>
+                <td style={{ padding: "10px 14px" }}>
+                  {isMaster && e.role !== "master" && e.id !== currentUserId ? (
+                    <select value={e.role} onChange={(ev) => onChangeRole(e.id, ev.target.value)} style={{ ...inputStyle, padding: "5px 8px", fontSize: 12, width: "auto" }}>
+                      {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                    </select>
+                  ) : (
+                    <RolePill role={e.role} />
+                  )}
+                </td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.email}</td>
                 <td style={{ padding: "10px 14px" }}><Pill tone="green">Active</Pill></td>
                 <td style={{ padding: "10px 14px" }}><KeyRound size={15} color={T.muted} style={{ cursor: "pointer" }} title="Reset password" /></td>
@@ -2630,6 +2637,7 @@ export default function App() {
   const [hrTab, setHrTab] = useState("dashboard");
   const [adminTab, setAdminTab] = useState("overview");
   const [itSupportTab, setItSupportTab] = useState("officeIssues");
+  const [masterTab, setMasterTab] = useState("users");
   const [leaveRequests, setLeaveRequests] = useState(INITIAL_LEAVE_REQUESTS);
   const [supportTickets, setSupportTickets] = useState([]);
   const [officeIssues, setOfficeIssues] = useState([]);
@@ -2691,6 +2699,8 @@ export default function App() {
   const addLevel = (level) => setLevelsState((ls) => [...ls, level]);
   const updateEmployeeSalary = (employeeId, newSalary) =>
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, salary: newSalary } : e)));
+  const updateEmployeeRole = (employeeId, newRole) =>
+    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, role: newRole } : e)));
 
   if (screen === "login") return <LoginScreen onLogin={handleLogin} goSignup={() => setScreen("signup")} />;
   if (screen === "signup") return <SignupScreen onSignup={handleSignup} goLogin={() => setScreen("login")} />;
@@ -2733,7 +2743,13 @@ export default function App() {
     { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
     { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
   ];
-  const roleTitle = { admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" }[role];
+  const masterNav = [
+    { id: "users", label: "User Accounts", icon: ShieldCheck }, { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
+    { id: "levels", label: "Levels & Departments", icon: Building2 },
+    { id: "support", label: "Support Tickets", icon: LifeBuoy }, { id: "officeIssues", label: "Office Issues", icon: MapPin },
+  ];
+  const roleTitle = { master: "Master", admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" }[role];
   // True on the chooser itself, and anywhere inside whichever portal was
   // chosen (including sub-pages like Support/Office Issues reached from
   // the IT Support portal) — regardless of which viewMode got us there.
@@ -2800,6 +2816,15 @@ export default function App() {
           </>
         )}
 
+        {viewMode === "role" && role === "master" && (
+          <>
+            <div style={{ fontSize: 10.5, color: "#8F8280", fontWeight: 700, letterSpacing: 0.4, padding: "10px 6px 8px" }}>MASTER</div>
+            {masterNav.map((n) => (
+              <button key={n.id} onClick={() => goRoleTab(setMasterTab, n.id)} style={{ display: "flex", alignItems: "center", gap: 8, background: masterTab === n.id ? "rgba(255,255,255,0.08)" : "transparent", border: "none", color: masterTab === n.id ? "#fff" : "#C9BFBC", padding: "8px 10px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 2 }}><n.icon size={15} /> {n.label}</button>
+            ))}
+          </>
+        )}
+
         {viewMode === "role" && role === "manager" && <div style={{ fontSize: 12, color: "#C9BFBC", padding: "10px 6px" }}>Viewing your team's dashboard.</div>}
 
         <div style={{ marginTop: "auto", paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
@@ -2852,7 +2877,7 @@ export default function App() {
         {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
-        {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} />}
+        {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
         {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
         {viewMode === "role" && role === "admin" && adminTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
@@ -2861,7 +2886,14 @@ export default function App() {
         {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
+
+        {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} />}
+        {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
+        {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings />}
+        {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
+        {viewMode === "role" && role === "master" && masterTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "role" && role === "master" && masterTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
         {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
 

@@ -45,10 +45,6 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Please use your company email address, ending in @" + allowedEmailDomain + ".");
         }
-        if (req.getRole() == Role.MANAGER) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "The Manager role is assigned by HR, not chosen at signup.");
-        }
         if (userRepository.existsByEmail(email) || employeeRepository.existsByEmail(email)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An account with that email already exists.");
         }
@@ -125,7 +121,7 @@ public class AuthService {
         AppUser user = AppUser.builder()
                 .email(email)
                 .passwordHash(passwordEncoder.encode(req.getPassword()))
-                .role(req.getRole())
+                .role(Role.EMPLOYEE)
                 .employee(employee)
                 .build();
         userRepository.save(user);

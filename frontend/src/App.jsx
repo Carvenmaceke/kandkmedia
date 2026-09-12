@@ -5,7 +5,7 @@ import {
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
-  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, MapPin, Bot,
+  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, MapPin, Bot, RefreshCw,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -1325,6 +1325,32 @@ function mapBackendPayroll(p) {
   };
 }
 
+/** Backend status is PENDING/APPROVED/REJECTED; the frontend everywhere
+ *  expects Pending/Approved/Rejected. Note: the backend has no field for
+ *  proof-of-leave file storage yet, so that stays local-display-only even
+ *  when connected — applying for leave via the real API never sends it. */
+function mapBackendLeaveRequest(lr) {
+  const cap = (s) => (s ? s.charAt(0) + s.slice(1).toLowerCase() : "Pending");
+  return {
+    _dbId: lr.id,
+    id: `LR-${lr.id}`,
+    emp: lr.employee ? lr.employee.employeeCode : null,
+    type: lr.leaveType ? lr.leaveType.name : "",
+    start: lr.startDate,
+    end: lr.endDate,
+    days: lr.daysRequested,
+    reason: lr.reason,
+    status: cap(lr.status),
+    employeeSignature: lr.employeeSignature || null,
+    employeeSignedAt: lr.employeeSignedAt || null,
+    deciderId: lr.decidedBy ? lr.decidedBy.employeeCode : null,
+    deciderName: lr.decidedBy ? lr.decidedBy.getFullName : null,
+    deciderSignature: lr.deciderSignature || null,
+    deciderSignedAt: lr.deciderSignedAt || null,
+    decisionReason: lr.decisionReason || null,
+  };
+}
+
 /* ---------------------------------------------------------------------- */
 /* SETTINGS — edit my profile                                             */
 /* ---------------------------------------------------------------------- */
@@ -2376,10 +2402,15 @@ function AdminLevels({ onUpdateLevel, onAddLevel }) {
 
 const ASSIGNABLE_ROLES = ["employee", "manager", "hr", "admin", "it_support"];
 
-function AdminUsers({ currentUserId, isMaster, onChangeRole }) {
+function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh }) {
   return (
     <div>
-      <SectionTitle sub={isMaster ? "Every account — you're the only one who can change roles" : "Every account and its assigned system role"}>User Accounts</SectionTitle>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <SectionTitle sub={isMaster ? "Every account — you're the only one who can change roles" : "Every account and its assigned system role"}>User Accounts</SectionTitle>
+        {isMaster && onRefresh && (
+          <Button variant="ghost" small icon={RefreshCw} onClick={onRefresh}>Refresh (pulls in new signups)</Button>
+        )}
+      </div>
       <Card style={{ overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Email", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
@@ -2851,6 +2882,49 @@ export default function App() {
     }
   };
 
+  const fetchLeaveForRole = async (r, employeeId) => {
+    if (!API_BASE_URL) return;
+    try {
+      let rows = [];
+      if (["hr", "admin", "master", "it_support"].includes(r)) {
+        rows = await apiFetch("/api/hr/leave");
+      } else if (r === "manager") {
+        rows = await apiFetch("/api/manager/team-leave");
+      }
+      const own = await apiFetch("/api/me/leave");
+      const merged = new Map();
+      [...rows, ...own].forEach((lr) => merged.set(lr.id, mapBackendLeaveRequest(lr)));
+      setLeaveRequests((existing) => {
+        const byId = new Map(existing.map((r2) => [r2.id, r2]));
+        merged.forEach((v, k) => byId.set(`LR-${k}`, v));
+        return Array.from(byId.values());
+      });
+    } catch (e) { /* non-fatal — leave screens fall back to local-only data */ }
+    try {
+      const balances = await apiFetch("/api/me/leave-balance");
+      const mapped = {};
+      balances.forEach((b) => { if (b.leaveType?.name) mapped[b.leaveType.name] = b.daysRemaining; });
+      if (Object.keys(mapped).length > 0 && employeeId) setBalancesState((bs) => ({ ...bs, [employeeId]: mapped }));
+    } catch (e) { /* non-fatal — falls back to default local balances */ }
+  };
+
+  const refreshAppUsers = async () => {
+    if (!API_BASE_URL) return;
+    try {
+      const users = await apiFetch("/api/admin/users");
+      const map = {};
+      const roleByCode = {};
+      users.forEach((u) => {
+        if (u.employee?.employeeCode) {
+          map[u.employee.employeeCode] = u.id;
+          roleByCode[u.employee.employeeCode] = (u.role || "employee").toLowerCase();
+        }
+      });
+      setAppUserIdByEmployeeCode(map);
+      setEmployeesState((es) => es.map((e) => (roleByCode[e.id] ? { ...e, role: roleByCode[e.id] } : e)));
+    } catch (e) { /* non-fatal — role changes will just fail with a clear error if attempted */ }
+  };
+
   const handleLogin = async (email, password) => {
     if (!API_BASE_URL) {
       const user = employeesState.find((e) => e.email.toLowerCase() === email.toLowerCase());
@@ -2882,20 +2956,9 @@ export default function App() {
         } catch (e) { /* non-fatal — HR/Admin screens fall back to whatever's already known locally */ }
       }
       if (mapped.role === "master") {
-        try {
-          const users = await apiFetch("/api/admin/users");
-          const map = {};
-          const roleByCode = {};
-          users.forEach((u) => {
-            if (u.employee?.employeeCode) {
-              map[u.employee.employeeCode] = u.id;
-              roleByCode[u.employee.employeeCode] = (u.role || "employee").toLowerCase();
-            }
-          });
-          setAppUserIdByEmployeeCode(map);
-          setEmployeesState((es) => es.map((e) => (roleByCode[e.id] ? { ...e, role: roleByCode[e.id] } : e)));
-        } catch (e) { /* non-fatal — role changes will just fail with a clear error if attempted */ }
+        await refreshAppUsers();
       }
+      fetchLeaveForRole(mapped.role, mapped.id);
       setCurrentUserId(mapped.id);
       setViewMode("role");
       setPortalChoice(null);
@@ -2942,6 +3005,7 @@ export default function App() {
       const be = await apiFetch("/api/me");
       const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
       setEmployeesState((es) => [...es, mapped]);
+      fetchLeaveForRole(mapped.role, mapped.id);
       setCurrentUserId(mapped.id);
       setViewMode("role");
       setPortalChoice(null);
@@ -3019,7 +3083,22 @@ export default function App() {
   const loginEmp = employeesState.find((e) => e.id === currentUserId);
   const role = loginEmp.role;
 
-  const decideLeave = (id, approve, signature, reason) =>
+  const decideLeave = async (id, approve, signature, reason) => {
+    if (API_BASE_URL) {
+      const target = leaveRequests.find((r) => r.id === id);
+      if (target && target._dbId) {
+        const base = role === "manager" ? `/api/manager/team-leave/${target._dbId}` : `/api/hr/leave/${target._dbId}`;
+        try {
+          const updated = await apiFetch(`${base}/${approve ? "approve" : "reject"}`, { method: "PUT", body: JSON.stringify({ signature, reason: approve ? null : reason }) });
+          const mapped = mapBackendLeaveRequest(updated);
+          setLeaveRequests((rs) => rs.map((r) => (r.id === id ? mapped : r)));
+          return;
+        } catch (e) {
+          alert(`Couldn't record this decision: ${e.message}`);
+          return;
+        }
+      }
+    }
     setLeaveRequests((rs) => rs.map((r) => (r.id === id ? {
       ...r,
       status: approve ? "Approved" : "Rejected",
@@ -3029,7 +3108,24 @@ export default function App() {
       deciderSignedAt: new Date().toISOString(),
       decisionReason: approve ? null : reason,
     } : r)));
-  const addLeaveRequest = (r) => setLeaveRequests((rs) => [r, ...rs]);
+  };
+  const addLeaveRequest = async (r) => {
+    if (API_BASE_URL) {
+      try {
+        const created = await apiFetch("/api/me/leave", {
+          method: "POST",
+          body: JSON.stringify({ leaveType: r.type, startDate: r.start, endDate: r.end, reason: r.reason, signature: r.employeeSignature }),
+        });
+        const mapped = mapBackendLeaveRequest(created);
+        setLeaveRequests((rs) => [mapped, ...rs]);
+        return;
+      } catch (e) {
+        alert(`Couldn't submit your leave application: ${e.message}`);
+        return;
+      }
+    }
+    setLeaveRequests((rs) => [r, ...rs]);
+  };
   const addSupportTicket = (t) => setSupportTickets((ts) => [t, ...ts]);
   const updateSupportTicket = (id, status, response) =>
     setSupportTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, response } : t)));
@@ -3200,7 +3296,7 @@ export default function App() {
         {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
 
-        {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} />}
+        {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} />}
         {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} />}
         {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}

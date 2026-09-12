@@ -3,8 +3,7 @@ FROM eclipse-temurin:17-jdk-jammy AS build
 WORKDIR /app
 COPY pom.xml .
 COPY src ./src
-RUN --mount=type=cache,target=/root/.m2 \
-    apt-get update && apt-get install -y maven --no-install-recommends \
+RUN apt-get update && apt-get install -y maven --no-install-recommends \
     && mvn -B -q clean package -DskipTests \
     && rm -rf /var/lib/apt/lists/*
 

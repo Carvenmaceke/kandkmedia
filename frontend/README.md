@@ -71,14 +71,20 @@ Then open the local URL Vite prints (typically `http://localhost:5173`).
 - **Salary edits, self-service profile edits, and Master's role changes**
   persist to the real database
 - **Support tickets and Office Issues** were already wired (see below)
+- **Payroll pipeline** (DRAFT → REVIEWED → APPROVED → FINALIZED → PUBLISHED
+  → SENT) — generating/fetching drafts, advancing stages, and resending a
+  failed payslip email all call the real backend
 
 When `API_BASE_URL` is empty, every one of those falls back to the
 original local-only, in-memory behavior — useful for frontend-only local
 development without a backend running.
 
 **Still local-only, not yet wired**: leave applications/approvals,
-payroll generation, company settings, and departments/levels management.
-Password changes have no backend endpoint at all yet. See
+company settings, and departments/levels management. Password changes
+have no backend endpoint at all yet. Payslip emails will only actually
+send once real SMTP credentials (MAIL_HOST/MAIL_USERNAME/MAIL_PASSWORD)
+are set on the backend host — the pipeline calling that code is wired,
+but nothing sends until those are configured. See
 `../backend/README.md` for the exact endpoint-by-endpoint status.
 
 A backend-shaped mock server was used to verify this wiring's actual

@@ -1301,6 +1301,30 @@ function mapBackendEmployee(be) {
   };
 }
 
+// "2026-09" — matches the backend's Payroll.currentPeriod() format, used for
+// every payroll API call. CURRENT_MONTH ("September 2026") stays separate,
+// purely for display.
+const CURRENT_PAY_PERIOD = "2026-09";
+
+/** Converts a backend Payroll row into the same {basic, overtime, bonus,
+ *  housing, transport, gross, paye, uif, totalDeductions, net} shape
+ *  calcPayroll() already produces locally, so HrPayroll/HrDashboard don't
+ *  need separate rendering logic for real vs local figures. */
+function mapBackendPayroll(p) {
+  const n = (v) => (v != null ? Number(v) : 0);
+  return {
+    _dbId: p.id,
+    empId: p.employee ? p.employee.employeeCode : null,
+    status: p.status,
+    basic: n(p.basicSalary), overtime: n(p.overtime), bonus: n(p.bonus),
+    housing: n(p.housingAllowance), transport: n(p.transportAllowance),
+    gross: n(p.grossPay), paye: n(p.paye), uif: n(p.uif),
+    totalDeductions: n(p.totalDeductions), net: n(p.netPay),
+    payslipId: p.payslipId || null, verificationCode: p.verificationCode || null,
+    emailSent: !!p.emailSent, emailSentAt: p.emailSentAt || null, emailFailureReason: p.emailFailureReason || null,
+  };
+}
+
 /* ---------------------------------------------------------------------- */
 /* SETTINGS — edit my profile                                             */
 /* ---------------------------------------------------------------------- */
@@ -2081,17 +2105,27 @@ function HrEmployees({ onOpenProfile, onUpdateSalary }) {
   );
 }
 
-function HrPayroll({ payrollStage, setPayslipView }) {
+function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslipEmail, payrollLoading, advanceStage }) {
+  const hasRealRecords = API_BASE_URL && Object.keys(payrollRecords || {}).length > 0;
+  const stageIdx = STAGES.indexOf(payrollStage);
   return (
     <div>
       <SectionTitle sub={`Reviewing variable earnings and deductions for ${CURRENT_MONTH}`}>Payroll — {CURRENT_MONTH}</SectionTitle>
-      <div style={{ marginBottom: 14 }}><Pill tone="teal">Status: {payrollStage}</Pill></div>
+      <div style={{ marginBottom: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <Pill tone="teal">Status: {payrollStage}</Pill>
+        {payrollLoading && <span style={{ fontSize: 12, color: T.muted }}>Loading real payroll data…</span>}
+        {API_BASE_URL && !payrollLoading && !hasRealRecords && <Pill tone="amber">Showing estimated figures — couldn't load real payroll data</Pill>}
+        {advanceStage && (stageIdx < STAGES.length - 1
+          ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1]}</Button>
+          : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>)}
+      </div>
       <Card style={{ overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Basic", "Overtime", "Bonus", "Gross", "Deductions", "Net Pay", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
             {EMPLOYEES.map((e) => {
-              const f = calcPayroll(e, 3);
+              const real = hasRealRecords ? payrollRecords[e.id] : null;
+              const f = real || calcPayroll(e, 3);
               return (
                 <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600 }}>{e.name}</div><div style={{ fontFamily: mono, fontSize: 11, color: T.muted }}>{e.id}</div></td>
@@ -2102,9 +2136,14 @@ function HrPayroll({ payrollStage, setPayslipView }) {
                   <td style={{ padding: "10px 14px", fontFamily: mono, color: T.red }}>-{money(f.totalDeductions)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 700, color: T.navy }}>{money(f.net)}</td>
                   <td style={{ padding: "10px 14px" }}>
-                    <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       <button onClick={() => setPayslipView({ emp: e, month: CURRENT_MONTH, figures: f })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview payslip"><Eye size={16} /></button>
                       <button onClick={() => downloadPayslipPdf(e, CURRENT_MONTH, f)} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF"><Download size={16} /></button>
+                      {real && real.status === "SENT" && (
+                        <button onClick={() => resendPayslipEmail(real._dbId)} title={real.emailSent ? "Resend email" : `Resend (last attempt failed: ${real.emailFailureReason || "unknown"})`} style={{ background: "none", border: "none", cursor: "pointer", color: real.emailSent ? T.green : T.red }}>
+                          <Mail size={16} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -2746,6 +2785,8 @@ export default function App() {
   const [officeIssues, setOfficeIssues] = useState([]);
   const [officeAvailability, setOfficeAvailability] = useState("");
   const [payrollStage, setPayrollStage] = useState("DRAFT");
+  const [payrollRecords, setPayrollRecords] = useState({}); // employeeCode -> mapped Payroll row (real backend data)
+  const [payrollLoading, setPayrollLoading] = useState(false);
   const [profileEmp, setProfileEmp] = useState(null);
   const [payslipView, setPayslipView] = useState(null);
 
@@ -2756,6 +2797,59 @@ export default function App() {
   LEVELS = levelsState;
 
   const history = useMemo(() => buildHistory(employeesState.filter((e) => PAST_MONTHS && e.start <= "2026-06-01")), [employeesState]);
+
+  const fetchPayrollForPeriod = async (employeeList) => {
+    if (!API_BASE_URL) return;
+    const list = employeeList || employeesState;
+    setPayrollLoading(true);
+    try {
+      let rows = await apiFetch(`/api/hr/payroll?payPeriod=${CURRENT_PAY_PERIOD}`);
+      const haveCodes = new Set(rows.map((r) => r.employee?.employeeCode).filter(Boolean));
+      const missing = list.filter((e) => e._dbId && !haveCodes.has(e.id));
+      for (const emp of missing) {
+        try {
+          const created = await apiFetch(`/api/hr/payroll/${emp._dbId}/draft`, { method: "POST" });
+          rows.push(created);
+        } catch (e) { /* one employee's draft failing shouldn't block the rest */ }
+      }
+      const mapped = {};
+      rows.forEach((r) => { const m = mapBackendPayroll(r); if (m.empId) mapped[m.empId] = m; });
+      setPayrollRecords(mapped);
+      if (rows.length > 0) setPayrollStage(rows[0].status);
+    } catch (e) {
+      // non-fatal — HrPayroll/HrDashboard fall back to local calcPayroll figures
+    }
+    setPayrollLoading(false);
+  };
+
+  const advanceStage = async () => {
+    if (!API_BASE_URL) {
+      const i = STAGES.indexOf(payrollStage);
+      if (i < STAGES.length - 1) setPayrollStage(STAGES[i + 1]);
+      return;
+    }
+    try {
+      const rows = await apiFetch(`/api/hr/payroll/advance?payPeriod=${CURRENT_PAY_PERIOD}`, { method: "POST" });
+      const mapped = {};
+      rows.forEach((r) => { const m = mapBackendPayroll(r); if (m.empId) mapped[m.empId] = m; });
+      setPayrollRecords(mapped);
+      if (rows.length > 0) setPayrollStage(rows[0].status);
+    } catch (e) {
+      alert(`Couldn't advance payroll: ${e.message}`);
+    }
+  };
+
+  const resendPayslipEmail = async (payrollDbId) => {
+    if (!API_BASE_URL || !payrollDbId) return;
+    try {
+      const updated = await apiFetch(`/api/hr/payroll/${payrollDbId}/resend-email`, { method: "POST" });
+      const m = mapBackendPayroll(updated);
+      setPayrollRecords((pr) => ({ ...pr, [m.empId]: m }));
+      alert(m.emailSent ? "Payslip email sent successfully." : `Send failed: ${m.emailFailureReason || "unknown reason"}`);
+    } catch (e) {
+      alert(`Couldn't resend: ${e.message}`);
+    }
+  };
 
   const handleLogin = async (email, password) => {
     if (!API_BASE_URL) {
@@ -2784,6 +2878,7 @@ export default function App() {
             mappedList.forEach((m) => byId.set(m.id, m));
             return Array.from(byId.values());
           });
+          fetchPayrollForPeriod(mappedList);
         } catch (e) { /* non-fatal — HR/Admin screens fall back to whatever's already known locally */ }
       }
       if (mapped.role === "master") {
@@ -2934,7 +3029,6 @@ export default function App() {
   const addOfficeIssue = (i) => setOfficeIssues((is) => [i, ...is]);
   const updateOfficeIssue = (id, status, response) =>
     setOfficeIssues((is) => is.map((i) => (i.id === id ? { ...i, status, response } : i)));
-  const advanceStage = () => { const i = STAGES.indexOf(payrollStage); if (i < STAGES.length - 1) setPayrollStage(STAGES[i + 1]); };
 
   const hrNav = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "employees", label: "Employees", icon: Users },
@@ -2954,6 +3048,7 @@ export default function App() {
   ];
   const masterNav = [
     { id: "users", label: "User Accounts", icon: ShieldCheck }, { id: "employees", label: "Employees", icon: Users },
+    { id: "payroll", label: "Payroll", icon: Banknote },
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
     { id: "levels", label: "Levels & Departments", icon: Building2 },
@@ -3080,7 +3175,7 @@ export default function App() {
 
         {viewMode === "role" && role === "hr" && hrTab === "dashboard" && <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} />}
-        {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} />}
+        {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "hr" && hrTab === "salaryStructure" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
 
@@ -3100,6 +3195,7 @@ export default function App() {
 
         {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} />}
         {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} />}
+        {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}

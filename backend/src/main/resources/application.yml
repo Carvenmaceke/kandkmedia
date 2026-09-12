@@ -28,6 +28,9 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.example.com}
     port: ${MAIL_PORT:587}
+    # Resend (and some other providers) require the SMTP auth username to be
+    # a literal string like "resend", not an email address — so this can't
+    # double as the From address. See app.mail-from below for that.
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
     properties:
@@ -38,6 +41,11 @@ spring:
             enable: true
 
 app:
+  # The actual "From" address on outgoing emails — independent of
+  # spring.mail.username above. Point this at onboarding@resend.dev for
+  # testing before a sending domain is verified in Resend, or your real
+  # verified address (e.g. payroll@kandkmedia.co.za) once it is.
+  mail-from: ${MAIL_FROM:payroll@kandkmedia.co.za}
   jwt:
     # Override with a long random secret via the JWT_SECRET env var in every real environment.
     secret: ${JWT_SECRET:change-this-secret-before-deploying-to-production}

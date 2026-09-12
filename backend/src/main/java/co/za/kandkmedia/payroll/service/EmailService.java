@@ -30,7 +30,7 @@ public class EmailService {
     private final PayslipPdfService payslipPdfService;
     private final LeaveLetterPdfService leaveLetterPdfService;
 
-    @Value("${spring.mail.username:payroll@kandkmedia.co.za}")
+    @Value("${app.mail-from:payroll@kandkmedia.co.za}")
     private String fromAddress;
 
     @Value("${app.support-email:itsupport@kandkmedia.co.za}")

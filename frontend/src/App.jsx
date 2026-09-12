@@ -816,9 +816,9 @@ function ProfileDrawer({ emp, onClose }) {
 function AuthShell({ children }) {
   return (
     <div style={{
-      fontFamily: sans, minHeight: 640, borderRadius: 10, overflow: "hidden", border: `1px solid ${T.border}`,
+      fontFamily: sans, minHeight: 640, maxHeight: 720, borderRadius: 10, overflowY: "auto", border: `1px solid ${T.border}`,
       background: `radial-gradient(circle at 20% 20%, #3A1315, ${T.navyDeep} 62%)`,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 20px",
+      display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 20px",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
@@ -877,10 +877,16 @@ function LoginScreen({ onLogin, goSignup }) {
 }
 
 function SignupScreen({ onSignup, goLogin }) {
+  const allFieldKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
+  const blankInfo = Object.fromEntries(allFieldKeys.map((k) => [k, ""]));
+
   const [form, setForm] = useState({
     name: "", email: "", phone: "", password: "", confirm: "",
     role: "employee", dept: DEPARTMENTS[0], position: "", level: "Junior", office: OFFICES[0],
+    ...blankInfo,
   });
+  const [sameAsResidential, setSameAsResidential] = useState(true);
+  const [openGroup, setOpenGroup] = useState(PERSONAL_INFO_GROUPS[0].title);
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -890,8 +896,28 @@ function SignupScreen({ onSignup, goLogin }) {
     if (!isCompanyEmail(form.email)) { setError(`Please use your company email address, ending in @${ALLOWED_EMAIL_DOMAIN}.`); return; }
     if (form.password !== form.confirm) { setError("Passwords do not match."); return; }
     if (EMPLOYEES.some((emp) => emp.email.toLowerCase() === form.email.toLowerCase())) { setError("An account with that email already exists."); return; }
+
+    if (!form.idNumber && !form.passportNumber) {
+      setError("Please provide either an Identity Number or a Passport Number.");
+      setOpenGroup("Personal Information");
+      return;
+    }
+    for (const group of PERSONAL_INFO_GROUPS) {
+      if (group.title === "Postal Address" && sameAsResidential) continue;
+      for (const [key, label, , required] of group.fields) {
+        if (required && !form[key] && !(key === "idNumber" || key === "passportNumber" || key === "passportCountry")) {
+          setError(`Please fill in "${label}" under ${group.title}.`);
+          setOpenGroup(group.title);
+          return;
+        }
+      }
+    }
+
     setError("");
-    onSignup(form);
+    const finalForm = sameAsResidential
+      ? { ...form, ...Object.fromEntries(Object.entries(RESIDENTIAL_TO_POSTAL_MAP).map(([postKey, resKey]) => [postKey, form[resKey]])) }
+      : form;
+    onSignup(finalForm);
   };
 
   return (
@@ -978,6 +1004,44 @@ function SignupScreen({ onSignup, goLogin }) {
             </div>
           </Field>
         )}
+
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.muted, margin: "18px 0 8px", paddingTop: 14, borderTop: `1px solid ${T.border}` }}>
+          Onboarding Information
+        </div>
+        {PERSONAL_INFO_GROUPS.map((group) => (
+          <div key={group.title} style={{ marginBottom: 8, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <button type="button" onClick={() => setOpenGroup(openGroup === group.title ? null : group.title)} style={{
+              width: "100%", textAlign: "left", background: T.bg, border: "none", padding: "10px 14px",
+              fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+              {group.title}
+              <ChevronRight size={14} style={{ transform: openGroup === group.title ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+            </button>
+            {openGroup === group.title && (
+              <div style={{ padding: 14 }}>
+                {group.title === "Postal Address" && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, marginBottom: 12, cursor: "pointer" }}>
+                    <input type="checkbox" checked={sameAsResidential} onChange={(e) => setSameAsResidential(e.target.checked)} />
+                    Same as residential address
+                  </label>
+                )}
+                {!(group.title === "Postal Address" && sameAsResidential) && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {group.fields.map(([key, label, type, required]) => (
+                      <div key={key}>
+                        <label style={{ fontSize: 11.5, fontWeight: 700, color: T.muted }}>{label}{required && <span style={{ color: T.red }}> *</span>}</label>
+                        <input type={type || "text"} value={form[key]} onChange={set(key)} style={{ ...inputStyle, marginTop: 4 }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        <div style={{ fontSize: 10.5, color: T.muted, marginBottom: 14 }}>
+          Provide either an Identity Number or a Passport Number + Country under Personal Information.
+        </div>
 
         {error && (
           <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 14 }}>
@@ -1430,46 +1494,52 @@ const PERSONAL_INFO_GROUPS = [
   {
     title: "Personal Information",
     fields: [
-      ["title", "Title"], ["initials", "Initials"], ["secondName", "Second Name"],
-      ["dateOfBirth", "Date of Birth", "date"], ["idNumber", "Identity Number"],
-      ["passportNumber", "Passport Number"], ["passportCountry", "Passport Country"],
-      ["race", "Race"], ["relationshipStatus", "Relationship Status"],
-      ["contactTelephone", "Contact Telephone"], ["contactCellphone", "Contact Cellphone"],
-      ["emergencyContactName", "Emergency Contact Name"],
-      ["emergencyContactTelephone", "Emergency Contact Telephone"],
-      ["emergencyContactCellphone", "Emergency Contact Cellphone"],
+      ["title", "Title", "text", true], ["initials", "Initials", "text", true], ["secondName", "Second Name", "text", false],
+      ["dateOfBirth", "Date of Birth", "date", true], ["idNumber", "Identity Number", "text", false],
+      ["passportNumber", "Passport Number", "text", false], ["passportCountry", "Passport Country", "text", false],
+      ["race", "Race", "text", true], ["relationshipStatus", "Relationship Status", "text", true],
+      ["contactTelephone", "Contact Telephone", "text", true], ["contactCellphone", "Contact Cellphone", "text", true],
+      ["emergencyContactName", "Emergency Contact Name", "text", true],
+      ["emergencyContactTelephone", "Emergency Contact Telephone", "text", true],
+      ["emergencyContactCellphone", "Emergency Contact Cellphone", "text", false],
     ],
   },
   {
     title: "Tax",
-    fields: [["taxOffice", "Tax Office"], ["incomeTaxNumber", "Income Tax Number"]],
+    fields: [["taxOffice", "Tax Office", "text", true], ["incomeTaxNumber", "Income Tax Number", "text", true]],
   },
   {
     title: "Banking Details",
     fields: [
-      ["bankAccountType", "Type of Account"], ["bankBranchCode", "Branch Code"],
-      ["bankName", "Bank Name"], ["bankBranchName", "Branch Name"],
-      ["bankAccountNumber", "Bank Account Number"], ["bankAccountHolder", "Account Holder"],
-      ["bankAccountRelationship", "Account Relationship"],
+      ["bankAccountType", "Type of Account", "text", true], ["bankBranchCode", "Branch Code", "text", true],
+      ["bankName", "Bank Name", "text", true], ["bankBranchName", "Branch Name", "text", false],
+      ["bankAccountNumber", "Bank Account Number", "text", true], ["bankAccountHolder", "Account Holder", "text", true],
+      ["bankAccountRelationship", "Account Relationship", "text", false],
     ],
   },
   {
     title: "Residential Address",
     fields: [
-      ["resUnitNumber", "Unit Number"], ["resComplexName", "Complex Name"],
-      ["resStreetNumber", "Street Number"], ["resStreetName", "Street Name"],
-      ["resSuburb", "Suburb"], ["resCity", "City"], ["resPostalCode", "Postal Code"],
+      ["resUnitNumber", "Unit Number", "text", false], ["resComplexName", "Complex Name", "text", false],
+      ["resStreetNumber", "Street Number", "text", true], ["resStreetName", "Street Name", "text", true],
+      ["resSuburb", "Suburb", "text", true], ["resCity", "City", "text", true], ["resPostalCode", "Postal Code", "text", true],
     ],
   },
   {
     title: "Postal Address",
     fields: [
-      ["postalService", "Postal Service"], ["postalNumber", "Postal Number"],
-      ["postStreetNumber", "Street Number"], ["postStreetName", "Street Name"],
-      ["postSuburb", "Suburb"], ["postCity", "City"], ["postPostalCode", "Postal Code"],
+      ["postalService", "Postal Service", "text", false], ["postalNumber", "Postal Number", "text", false],
+      ["postStreetNumber", "Street Number", "text", false], ["postStreetName", "Street Name", "text", false],
+      ["postSuburb", "Suburb", "text", false], ["postCity", "City", "text", false], ["postPostalCode", "Postal Code", "text", false],
     ],
   },
 ];
+
+const RESIDENTIAL_TO_POSTAL_MAP = {
+  postStreetNumber: "resStreetNumber", postStreetName: "resStreetName",
+  postSuburb: "resSuburb", postCity: "resCity", postPostalCode: "resPostalCode",
+};
+
 
 function PersonalInfoSection({ emp, onSave }) {
   const initial = {};
@@ -1503,9 +1573,9 @@ function PersonalInfoSection({ emp, onSave }) {
             </button>
             {openGroup === group.title && (
               <div style={{ padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {group.fields.map(([key, label, type]) => (
+                {group.fields.map(([key, label, type, required]) => (
                   <div key={key}>
-                    <label style={{ fontSize: 11.5, fontWeight: 700, color: T.muted }}>{label}</label>
+                    <label style={{ fontSize: 11.5, fontWeight: 700, color: T.muted }}>{label}{required && <span style={{ color: T.red }}> *</span>}</label>
                     <input type={type || "text"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} />
                   </div>
                 ))}
@@ -2442,11 +2512,14 @@ export default function App() {
     const id = nextEmployeeId();
     const level = form.role === "employee" ? form.level : "Manager";
     const salary = LEVELS.find((l) => l.name === level)?.default || 12000;
+    const infoKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
+    const onboardingInfo = Object.fromEntries(infoKeys.map((k) => [k, form[k] || ""]));
     const newEmp = {
       id, name: form.name, role: form.role, level, dept: form.dept,
       position: form.position || (form.role === "hr" ? "HR Officer" : form.role === "admin" ? "System Administrator" : form.role === "it_support" ? "IT Support" : "Employee"),
       salary, manager: null, start: "2026-09-10", email: form.email, phone: form.phone, password: form.password,
       office: form.office || OFFICES[0],
+      ...onboardingInfo,
     };
     setEmployeesState((es) => [...es, newEmp]);
     setBalancesState((bs) => ({ ...bs, [id]: { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 } }));

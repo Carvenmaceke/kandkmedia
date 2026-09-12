@@ -53,15 +53,61 @@ public class AuthService {
         if (userRepository.existsByEmail(email) || employeeRepository.existsByEmail(email)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An account with that email already exists.");
         }
+        if ((req.getIdNumber() == null || req.getIdNumber().isBlank())
+                && (req.getPassportNumber() == null || req.getPassportNumber().isBlank())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Please provide either an Identity Number or a Passport Number.");
+        }
 
         EmployeeLevel level = resolveLevel(req);
         Department department = req.getDepartment() == null ? null
                 : departmentRepository.findByNameIgnoreCase(req.getDepartment()).orElse(null);
 
+        // Postal address falls back to the residential address when left
+        // blank, matching the frontend's "same as residential" checkbox.
+        boolean postalProvided = req.getPostStreetNumber() != null && !req.getPostStreetNumber().isBlank();
+
         Employee employee = Employee.builder()
                 .employeeCode(employeeRepository.nextEmployeeCode())
+                .title(req.getTitle())
                 .firstName(req.getFirstName())
+                .secondName(req.getSecondName())
                 .lastName(req.getLastName())
+                .initials(req.getInitials())
+                .dateOfBirth(req.getDateOfBirth())
+                .idNumber(req.getIdNumber())
+                .passportNumber(req.getPassportNumber())
+                .passportCountry(req.getPassportCountry())
+                .race(req.getRace())
+                .relationshipStatus(req.getRelationshipStatus())
+                .contactTelephone(req.getContactTelephone())
+                .contactCellphone(req.getContactCellphone())
+                .emergencyContactName(req.getEmergencyContactName())
+                .emergencyContactTelephone(req.getEmergencyContactTelephone())
+                .emergencyContactCellphone(req.getEmergencyContactCellphone())
+                .taxOffice(req.getTaxOffice())
+                .incomeTaxNumber(req.getIncomeTaxNumber())
+                .bankAccountType(req.getBankAccountType())
+                .bankBranchCode(req.getBankBranchCode())
+                .bankName(req.getBankName())
+                .bankBranchName(req.getBankBranchName())
+                .bankAccountNumber(req.getBankAccountNumber())
+                .bankAccountHolder(req.getBankAccountHolder())
+                .bankAccountRelationship(req.getBankAccountRelationship())
+                .resUnitNumber(req.getResUnitNumber())
+                .resComplexName(req.getResComplexName())
+                .resStreetNumber(req.getResStreetNumber())
+                .resStreetName(req.getResStreetName())
+                .resSuburb(req.getResSuburb())
+                .resCity(req.getResCity())
+                .resPostalCode(req.getResPostalCode())
+                .postalService(req.getPostalService())
+                .postalNumber(req.getPostalNumber())
+                .postStreetNumber(postalProvided ? req.getPostStreetNumber() : req.getResStreetNumber())
+                .postStreetName(postalProvided ? req.getPostStreetName() : req.getResStreetName())
+                .postSuburb(postalProvided ? req.getPostSuburb() : req.getResSuburb())
+                .postCity(postalProvided ? req.getPostCity() : req.getResCity())
+                .postPostalCode(postalProvided ? req.getPostPostalCode() : req.getResPostalCode())
                 .email(email)
                 .phone(req.getPhone())
                 .position(req.getPosition())

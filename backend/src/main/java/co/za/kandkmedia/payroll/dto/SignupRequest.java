@@ -7,6 +7,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+import java.time.LocalDate;
+
 @Data
 public class SignupRequest {
 
@@ -30,10 +32,81 @@ public class SignupRequest {
     private String password;
 
     @NotNull
-    private Role role; // EMPLOYEE, HR, or ADMIN — signup never grants MANAGER directly
+    private Role role; // EMPLOYEE, HR, ADMIN, or IT_SUPPORT — signup never grants MANAGER directly
 
     private String phone;
     private String position;
     private String department;
     private String level; // only meaningful when role == EMPLOYEE
+
+    // --- Onboarding info, required at signup (matches the frontend form) ---
+    // idNumber vs passportNumber+passportCountry: exactly one identity
+    // document path is enforced in AuthService, not here, since a
+    // NotBlank on both fields would wrongly force every field.
+    @NotBlank
+    private String title;
+    private String secondName;
+    @NotBlank
+    private String initials;
+    @NotNull
+    private LocalDate dateOfBirth;
+    private String idNumber;
+    private String passportNumber;
+    private String passportCountry;
+    @NotBlank
+    private String race;
+    @NotBlank
+    private String relationshipStatus;
+
+    @NotBlank
+    private String contactTelephone;
+    @NotBlank
+    private String contactCellphone;
+    @NotBlank
+    private String emergencyContactName;
+    @NotBlank
+    private String emergencyContactTelephone;
+    private String emergencyContactCellphone;
+
+    @NotBlank
+    private String taxOffice;
+    @NotBlank
+    private String incomeTaxNumber;
+
+    @NotBlank
+    private String bankAccountType;
+    @NotBlank
+    private String bankBranchCode;
+    @NotBlank
+    private String bankName;
+    private String bankBranchName;
+    @NotBlank
+    private String bankAccountNumber;
+    @NotBlank
+    private String bankAccountHolder;
+    private String bankAccountRelationship;
+
+    private String resUnitNumber;
+    private String resComplexName;
+    @NotBlank
+    private String resStreetNumber;
+    @NotBlank
+    private String resStreetName;
+    @NotBlank
+    private String resSuburb;
+    @NotBlank
+    private String resCity;
+    @NotBlank
+    private String resPostalCode;
+
+    // Postal address: optional at the DTO level — AuthService copies the
+    // residential address across when these are left blank, mirroring the
+    // frontend's "same as residential" checkbox.
+    private String postalService;
+    private String postalNumber;
+    private String postStreetNumber;
+    private String postStreetName;
+    private String postSuburb;
+    private String postCity;
+    private String postPostalCode;
 }

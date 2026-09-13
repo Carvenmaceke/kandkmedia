@@ -30,6 +30,7 @@ public class SupportService {
                 .employeeEmail(dto.getEmployeeEmail())
                 .role(dto.getRole())
                 .department(dto.getDepartment())
+                .office(dto.getOffice())
                 .subject(dto.getSubject())
                 .category(dto.getCategory())
                 .priority(dto.getPriority())
@@ -44,6 +45,21 @@ public class SupportService {
 
     public List<SupportTicket> all() {
         return supportTicketRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    /** Frontend statuses are "Open"/"In Progress"/"Resolved" — mapped here
+     *  rather than trusting a client-supplied enum name directly. */
+    public SupportTicket updateStatus(Long id, String status, String response) {
+        SupportTicket ticket = supportTicketRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Support ticket not found."));
+        TicketStatus mapped = switch (status == null ? "" : status.toLowerCase().replace(" ", "_")) {
+            case "in_progress" -> TicketStatus.IN_PROGRESS;
+            case "resolved" -> TicketStatus.RESOLVED;
+            default -> TicketStatus.OPEN;
+        };
+        ticket.setStatus(mapped);
+        ticket.setResponse(response);
+        return supportTicketRepository.save(ticket);
     }
 
     public SupportTicket resolve(Long id) {

@@ -27,6 +27,7 @@ public class SupportTicket {
     private String employeeEmail;
     private String role;
     private String department;
+    private String office;
 
     @Column(nullable = false)
     private String subject;
@@ -41,6 +42,9 @@ public class SupportTicket {
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private TicketStatus status = TicketStatus.OPEN;
+
+    @Lob
+    private String response;
 
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();

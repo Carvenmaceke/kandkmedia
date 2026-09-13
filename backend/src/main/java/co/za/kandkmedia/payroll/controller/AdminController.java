@@ -112,6 +112,11 @@ public class AdminController {
         return supportService.all();
     }
 
+    @PutMapping("/support/{id}")
+    public SupportTicket updateSupportTicket(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {
+        return supportService.updateStatus(id, body.get("status"), body.get("response"));
+    }
+
     @PutMapping("/support/{id}/resolve")
     public SupportTicket resolveSupportTicket(@PathVariable Long id) {
         return supportService.resolve(id);

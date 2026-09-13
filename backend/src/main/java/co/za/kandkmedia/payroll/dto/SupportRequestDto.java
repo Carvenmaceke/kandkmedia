@@ -11,6 +11,7 @@ public class SupportRequestDto {
     private String employeeEmail;
     private String role;
     private String department;
+    private String office;
 
     @NotBlank(message = "Please add a subject.")
     private String subject;

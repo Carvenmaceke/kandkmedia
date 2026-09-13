@@ -1365,6 +1365,28 @@ function mapBackendLeaveRequest(lr) {
   };
 }
 
+/** Backend TicketStatus is OPEN/IN_PROGRESS/RESOLVED; the frontend
+ *  everywhere expects "Open"/"In Progress"/"Resolved". */
+function mapBackendTicket(t) {
+  const cap = (s) => (s ? s.split("_").map((w) => w.charAt(0) + w.slice(1).toLowerCase()).join(" ") : "Open");
+  return {
+    _dbId: t.id,
+    id: `TCK-${t.id}`,
+    empId: t.employeeCode,
+    empName: t.employeeName,
+    subject: t.subject,
+    category: t.category,
+    priority: t.priority,
+    description: t.description,
+    status: cap(t.status),
+    response: t.response || "",
+    office: t.office || null,
+    createdAt: t.createdAt,
+    emailSent: !!t.emailSent,
+    emailFailureReason: t.emailFailureReason || null,
+  };
+}
+
 /* ---------------------------------------------------------------------- */
 /* SETTINGS — edit my profile                                             */
 /* ---------------------------------------------------------------------- */
@@ -1436,7 +1458,7 @@ function TicketDetailModal({ ticket, onClose, onSave }) {
   );
 }
 
-function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTicket }) {
+function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTicket, onRefresh }) {
   const [view, setView] = useState(isAdminView ? "all" : "new");
   const [form, setForm] = useState({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
   const [error, setError] = useState("");
@@ -1575,6 +1597,11 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
 
       {view === "all" && (
         <Card style={{ overflow: "hidden" }}>
+          {onRefresh && (
+            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${T.border}` }}>
+              <Button variant="ghost" small icon={RefreshCw} onClick={onRefresh}>Refresh</Button>
+            </div>
+          )}
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Subject", "Category", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
@@ -2956,6 +2983,19 @@ export default function App() {
     } catch (e) { /* non-fatal — falls back to default local balances */ }
   };
 
+  const fetchSupportTickets = async () => {
+    if (!API_BASE_URL) return;
+    try {
+      const rows = await apiFetch("/api/admin/support");
+      const mapped = rows.map(mapBackendTicket);
+      setSupportTickets((ts) => {
+        const byId = new Map(ts.map((t) => [t.id, t]));
+        mapped.forEach((m) => byId.set(m.id, m));
+        return Array.from(byId.values());
+      });
+    } catch (e) { /* non-fatal — falls back to whatever's already known locally */ }
+  };
+
   const refreshAppUsers = async () => {
     if (!API_BASE_URL) return;
     try {
@@ -3024,6 +3064,9 @@ export default function App() {
             return Array.from(byId.values());
           });
         } catch (e) { /* non-fatal — team screen falls back to whatever's already known locally */ }
+      }
+      if (["admin", "master", "it_support"].includes(mapped.role)) {
+        fetchSupportTickets();
       }
       if (mapped.role === "master") {
         await refreshAppUsers();
@@ -3240,8 +3283,23 @@ export default function App() {
     setLeaveRequests((rs) => [r, ...rs]);
   };
   const addSupportTicket = (t) => setSupportTickets((ts) => [t, ...ts]);
-  const updateSupportTicket = (id, status, response) =>
+  const updateSupportTicket = async (id, status, response) => {
+    if (API_BASE_URL) {
+      const target = supportTickets.find((t) => t.id === id);
+      if (target && target._dbId) {
+        try {
+          const updated = await apiFetch(`/api/admin/support/${target._dbId}`, { method: "PUT", body: JSON.stringify({ status, response }) });
+          const mapped = mapBackendTicket(updated);
+          setSupportTickets((ts) => ts.map((t) => (t.id === id ? mapped : t)));
+          return;
+        } catch (e) {
+          alert(`Couldn't save this ticket: ${e.message}`);
+          return;
+        }
+      }
+    }
     setSupportTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, response } : t)));
+  };
   const addOfficeIssue = (i) => setOfficeIssues((is) => [i, ...is]);
   const updateOfficeIssue = (id, status, response) =>
     setOfficeIssues((is) => is.map((i) => (i.id === id ? { ...i, status, response } : i)));
@@ -3399,11 +3457,11 @@ export default function App() {
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
-        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
         {viewMode === "role" && role === "admin" && adminTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
         {viewMode === "role" && role === "it_support" && itSupportTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
@@ -3416,7 +3474,7 @@ export default function App() {
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings />}
         {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
-        {viewMode === "role" && role === "master" && masterTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} />}
+        {viewMode === "role" && role === "master" && masterTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
         {viewMode === "role" && role === "master" && masterTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
         {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}

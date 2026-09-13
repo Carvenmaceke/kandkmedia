@@ -5,6 +5,8 @@ import co.za.kandkmedia.payroll.domain.Company;
 import co.za.kandkmedia.payroll.domain.Department;
 import co.za.kandkmedia.payroll.domain.EmployeeLevel;
 import co.za.kandkmedia.payroll.domain.SupportTicket;
+import co.za.kandkmedia.payroll.domain.OfficeIssue;
+import co.za.kandkmedia.payroll.service.OfficeIssueService;
 import co.za.kandkmedia.payroll.repository.AppUserRepository;
 import co.za.kandkmedia.payroll.repository.CompanyRepository;
 import co.za.kandkmedia.payroll.repository.DepartmentRepository;
@@ -28,6 +30,7 @@ public class AdminController {
     private final EmployeeLevelRepository levelRepository;
     private final AppUserRepository userRepository;
     private final SupportService supportService;
+    private final OfficeIssueService officeIssueService;
 
     @GetMapping("/company")
     public Company company() {
@@ -120,5 +123,15 @@ public class AdminController {
     @PutMapping("/support/{id}/resolve")
     public SupportTicket resolveSupportTicket(@PathVariable Long id) {
         return supportService.resolve(id);
+    }
+
+    @GetMapping("/office-issues")
+    public List<OfficeIssue> officeIssues() {
+        return officeIssueService.all();
+    }
+
+    @PutMapping("/office-issues/{id}")
+    public OfficeIssue updateOfficeIssue(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {
+        return officeIssueService.updateStatus(id, body.get("status"), body.get("response"));
     }
 }

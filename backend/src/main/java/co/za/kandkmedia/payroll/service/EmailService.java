@@ -180,6 +180,31 @@ public class EmailService {
         return result.ok();
     }
 
+    /**
+     * Sends a physical/on-site office issue (hardware, network, printer,
+     * equipment) straight to the support inbox, same direct-send contract
+     * as sendSupportRequest — the office location is included prominently
+     * since that's the detail IT support actually needs to act on it.
+     */
+    public boolean sendOfficeIssue(co.za.kandkmedia.payroll.domain.OfficeIssue issue) {
+        String subject = "[Office: " + nullToDash(issue.getOffice()) + "] [" + nullToDash(issue.getPriority()) + "] " + nullToDash(issue.getCategory()) + ": " + issue.getSubject();
+        String text =
+                "Office: " + nullToDash(issue.getOffice()) + "\n" +
+                "Employee: " + issue.getEmployeeName() + " (" + nullToDash(issue.getEmployeeCode()) + ")\n" +
+                "Role: " + nullToDash(issue.getRole()) + "\n" +
+                "Department: " + nullToDash(issue.getDepartment()) + "\n" +
+                "Issue Type: " + nullToDash(issue.getCategory()) + "\n" +
+                "Priority: " + nullToDash(issue.getPriority()) + "\n\n" +
+                issue.getDescription() + "\n\n" +
+                "Issue ID: " + issue.getId();
+        String replyTo = (issue.getEmployeeEmail() != null && !issue.getEmployeeEmail().isBlank()) ? issue.getEmployeeEmail() : null;
+
+        SendResult result = sendViaResend(supportEmail, replyTo, subject, text, null, null);
+        issue.setEmailSent(result.ok());
+        issue.setEmailFailureReason(result.ok() ? null : result.errorMessage());
+        return result.ok();
+    }
+
     private String nullToDash(String s) {
         return s == null || s.isBlank() ? "-" : s;
     }

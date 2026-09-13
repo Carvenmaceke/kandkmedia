@@ -69,6 +69,34 @@ public class HrController {
         return employeeProfileService.updateProfile(id, dto);
     }
 
+    /**
+     * Marks an employee as no longer active (departed) and disables their
+     * login — but never deletes the row. Payroll history, leave history,
+     * and past payslip/leave-letter documents all reference this Employee
+     * and must survive for compliance purposes even after departure.
+     */
+    @PutMapping("/employees/{id}/deactivate")
+    public Employee deactivateEmployee(@PathVariable Long id, @RequestBody(required = false) java.util.Map<String, String> body) {
+        Employee e = employee(id);
+        e.setActive(false);
+        String date = body != null ? body.get("terminationDate") : null;
+        e.setTerminationDate(date != null && !date.isBlank() ? java.time.LocalDate.parse(date) : java.time.LocalDate.now());
+        employeeRepository.save(e);
+        appUserRepository.findByEmployeeId(id).ifPresent(u -> { u.setEnabled(false); appUserRepository.save(u); });
+        return e;
+    }
+
+    /** Reverses a deactivation — e.g. a rehire, or an accidental deactivation. */
+    @PutMapping("/employees/{id}/reactivate")
+    public Employee reactivateEmployee(@PathVariable Long id) {
+        Employee e = employee(id);
+        e.setActive(true);
+        e.setTerminationDate(null);
+        employeeRepository.save(e);
+        appUserRepository.findByEmployeeId(id).ifPresent(u -> { u.setEnabled(true); appUserRepository.save(u); });
+        return e;
+    }
+
     @GetMapping("/employees/{id}/onboarding-document")
     public ResponseEntity<byte[]> downloadOnboardingDocument(@PathVariable Long id) {
         Employee e = employee(id);

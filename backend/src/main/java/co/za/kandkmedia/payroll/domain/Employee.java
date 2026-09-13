@@ -107,6 +107,16 @@ public class Employee {
 
     private LocalDate startDate; // "Commencement Date" on the form
 
+    // --- Employment status: deactivating an employee (departure, not an
+    // accidental entry) never deletes their row — payroll and leave history
+    // must survive for compliance purposes and to keep past documents
+    // (payslips, leave letters) intact. Their login is disabled at the same
+    // time (see AppUser.enabled), and they drop out of the default active
+    // employee list, but every historical record stays exactly as it was. ---
+    @Builder.Default
+    private boolean active = true;
+    private LocalDate terminationDate;
+
     // --- Signup consent + signature, used to generate the HR-downloadable
     // onboarding document (see OnboardingDocumentPdfService) ---
     @Builder.Default

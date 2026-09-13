@@ -5,7 +5,7 @@ import {
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
-  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, MapPin, Bot, RefreshCw,
+  Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, MapPin, Bot, RefreshCw, UserX,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -1306,6 +1306,8 @@ function mapBackendEmployee(be) {
     phone: be.phone || "",
     office: be.office || OFFICES[0],
     employmentType: be.employmentType || "",
+    active: be.active !== false,
+    terminationDate: be.terminationDate || null,
     agreedToTerms: !!be.agreedToTerms,
     termsAgreedAt: be.termsAgreedAt || null,
     onboardingSignature: be.onboardingSignature || null,
@@ -2102,26 +2104,46 @@ function EditSalaryModal({ employee, onClose, onSave }) {
   );
 }
 
-function HrEmployees({ onOpenProfile, onUpdateSalary }) {
+function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate }) {
   const [q, setQ] = useState("");
   const [salaryTarget, setSalaryTarget] = useState(null);
-  const filtered = EMPLOYEES.filter((e) => (e.name + e.id + e.position + e.dept).toLowerCase().includes(q.toLowerCase()));
+  const [statusFilter, setStatusFilter] = useState("active");
+  const filtered = EMPLOYEES
+    .filter((e) => (e.name + e.id + e.position + e.dept).toLowerCase().includes(q.toLowerCase()))
+    .filter((e) => statusFilter === "all" || (statusFilter === "active" ? e.active !== false : e.active === false));
+
+  const handleDeactivate = (e) => {
+    if (window.confirm(`Mark ${e.name} as no longer employed here?\n\nThis disables their login immediately. Their payroll and leave history stays intact — this does not delete their record.`)) {
+      onDeactivate(e.id);
+    }
+  };
+
   return (
     <div>
       <SectionTitle sub="Manage employee profiles, levels and reporting lines">Employees</SectionTitle>
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
           <Search size={14} color={T.muted} style={{ position: "absolute", left: 10, top: 10 }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search employees…" style={{ ...inputStyle, paddingLeft: 30, maxWidth: 320 }} />
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["active", "Active"], ["terminated", "Terminated"], ["all", "All"]].map(([val, label]) => (
+            <button key={val} onClick={() => setStatusFilter(val)} style={{
+              background: statusFilter === val ? T.navy : "#fff", color: statusFilter === val ? "#fff" : T.muted,
+              border: `1px solid ${statusFilter === val ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
+              fontSize: 12, fontWeight: 600, cursor: "pointer",
+            }}>{label}</button>
+          ))}
         </div>
         <Pill tone="muted">New signups appear here automatically</Pill>
       </div>
       <Card style={{ overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Level", "Position", "Department", "Salary", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+          <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Level", "Position", "Department", "Salary", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
+            {filtered.length === 0 && <tr><td colSpan={9} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees match this view.</td></tr>}
             {filtered.map((e) => (
-              <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
+              <tr key={e.id} style={{ borderTop: `1px solid ${T.border}`, opacity: e.active === false ? 0.6 : 1 }}>
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
                 <td style={{ padding: "10px 14px", fontWeight: 600 }}>{e.name}</td>
                 <td style={{ padding: "10px 14px" }}><RolePill role={e.role} /></td>
@@ -2131,7 +2153,21 @@ function HrEmployees({ onOpenProfile, onUpdateSalary }) {
                 <td style={{ padding: "10px 14px" }}>
                   <button onClick={() => setSalaryTarget(e)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: mono, color: e.salary > 0 ? T.text : T.amber, fontWeight: e.salary > 0 ? 400 : 700, textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: T.muted }}>{e.salary > 0 ? money(e.salary) : "Not set"}</button>
                 </td>
-                <td style={{ padding: "10px 14px" }}><button onClick={() => onOpenProfile(e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }}><ChevronRight size={16} /></button></td>
+                <td style={{ padding: "10px 14px" }}>
+                  {e.active === false
+                    ? <Pill tone="red">Terminated{e.terminationDate ? ` ${e.terminationDate}` : ""}</Pill>
+                    : <Pill tone="green">Active</Pill>}
+                </td>
+                <td style={{ padding: "10px 14px" }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <button onClick={() => onOpenProfile(e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="View profile"><ChevronRight size={16} /></button>
+                    {e.active === false ? (
+                      <button onClick={() => onReactivate(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.green }} title="Reactivate"><RefreshCw size={14} /></button>
+                    ) : (
+                      <button onClick={() => handleDeactivate(e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red }} title="Mark as no longer employed"><UserX size={14} /></button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -3094,6 +3130,34 @@ export default function App() {
     }
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, salary: newSalary } : e)));
   };
+  const deactivateEmployee = async (employeeId) => {
+    if (API_BASE_URL) {
+      const target = employeesState.find((e) => e.id === employeeId);
+      if (target && target._dbId) {
+        try {
+          await apiFetch(`/api/hr/employees/${target._dbId}/deactivate`, { method: "PUT" });
+        } catch (e) {
+          alert(`Couldn't deactivate this employee: ${e.message}`);
+          return;
+        }
+      }
+    }
+    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, active: false, terminationDate: new Date().toISOString().slice(0, 10) } : e)));
+  };
+  const reactivateEmployee = async (employeeId) => {
+    if (API_BASE_URL) {
+      const target = employeesState.find((e) => e.id === employeeId);
+      if (target && target._dbId) {
+        try {
+          await apiFetch(`/api/hr/employees/${target._dbId}/reactivate`, { method: "PUT" });
+        } catch (e) {
+          alert(`Couldn't reactivate this employee: ${e.message}`);
+          return;
+        }
+      }
+    }
+    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, active: true, terminationDate: null } : e)));
+  };
   const updateEmployeeManager = async (employeeId, managerId) => {
     if (API_BASE_URL) {
       const target = employeesState.find((e) => e.id === employeeId);
@@ -3326,7 +3390,7 @@ export default function App() {
         )}
 
         {viewMode === "role" && role === "hr" && hrTab === "dashboard" && <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} />}
-        {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} />}
+        {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} />}
         {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "hr" && hrTab === "salaryStructure" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
@@ -3346,7 +3410,7 @@ export default function App() {
         {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
 
         {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} />}
-        {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} />}
+        {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} />}
         {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}

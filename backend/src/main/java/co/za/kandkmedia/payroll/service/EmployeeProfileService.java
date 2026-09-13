@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class EmployeeProfileService {
 
     private final EmployeeRepository employeeRepository;
+    private final PayrollService payrollService;
 
     public Employee updateProfile(Long employeeId, EmployeeProfileDto dto) {
         Employee e = employeeRepository.findById(employeeId)
@@ -86,6 +87,10 @@ public class EmployeeProfileService {
             }
         }
 
-        return employeeRepository.save(e);
+        Employee saved = employeeRepository.save(e);
+        if (dto.getSalary() != null) {
+            payrollService.refreshDraftIfPresent(saved);
+        }
+        return saved;
     }
 }

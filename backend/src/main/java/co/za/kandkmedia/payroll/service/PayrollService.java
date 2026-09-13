@@ -35,34 +35,66 @@ public class PayrollService {
 
     public Payroll generateDraft(Employee employee, String payPeriod, BigDecimal overtime, BigDecimal bonus) {
         return payrollRepository.findByEmployeeIdAndPayPeriod(employee.getId(), payPeriod)
-                .orElseGet(() -> {
-                    BigDecimal basic = employee.getSalary();
-                    BigDecimal housing = isSeniorOrManager(employee) ? new BigDecimal("2000") : BigDecimal.ZERO;
-                    BigDecimal transport = isIntern(employee) ? BigDecimal.ZERO : new BigDecimal("1000");
-                    BigDecimal gross = basic.add(overtime).add(bonus).add(housing).add(transport);
+                .orElseGet(() -> payrollRepository.save(calculate(employee, payPeriod, overtime, bonus)));
+    }
 
-                    BigDecimal paye = gross.multiply(PAYE_RATE).setScale(2, RoundingMode.HALF_UP);
-                    BigDecimal uif = gross.min(UIF_CAP).multiply(UIF_RATE).setScale(2, RoundingMode.HALF_UP);
-                    BigDecimal totalDeductions = paye.add(uif);
-                    BigDecimal net = gross.subtract(totalDeductions);
-
-                    Payroll payroll = Payroll.builder()
-                            .employee(employee)
-                            .payPeriod(payPeriod)
-                            .basicSalary(basic)
-                            .overtime(overtime)
-                            .bonus(bonus)
-                            .housingAllowance(housing)
-                            .transportAllowance(transport)
-                            .grossPay(gross)
-                            .paye(paye)
-                            .uif(uif)
-                            .totalDeductions(totalDeductions)
-                            .netPay(net)
-                            .status(PayrollStatus.DRAFT)
-                            .build();
-                    return payrollRepository.save(payroll);
+    /**
+     * If this employee already has a payroll record for the current pay
+     * period AND it's still sitting in DRAFT, recalculates it from the
+     * employee's current salary/allowances. This is what makes an HR
+     * salary edit actually show up on that period's payslip — without
+     * this, an already-created draft keeps whatever figures it was
+     * calculated with at draft-creation time, even after the underlying
+     * salary changes, since generateDraft only calculates once and
+     * returns the existing row untouched after that.
+     *
+     * Deliberately scoped to DRAFT only: once HR has moved a record to
+     * REVIEWED or further, a salary edit should never silently rewrite
+     * numbers someone has already reviewed/approved/finalized.
+     */
+    public void refreshDraftIfPresent(Employee employee) {
+        payrollRepository.findByEmployeeIdAndPayPeriod(employee.getId(), Payroll.currentPeriod())
+                .filter(p -> p.getStatus() == PayrollStatus.DRAFT)
+                .ifPresent(existing -> {
+                    Payroll recalculated = calculate(employee, existing.getPayPeriod(), existing.getOvertime(), existing.getBonus());
+                    existing.setBasicSalary(recalculated.getBasicSalary());
+                    existing.setHousingAllowance(recalculated.getHousingAllowance());
+                    existing.setTransportAllowance(recalculated.getTransportAllowance());
+                    existing.setGrossPay(recalculated.getGrossPay());
+                    existing.setPaye(recalculated.getPaye());
+                    existing.setUif(recalculated.getUif());
+                    existing.setTotalDeductions(recalculated.getTotalDeductions());
+                    existing.setNetPay(recalculated.getNetPay());
+                    payrollRepository.save(existing);
                 });
+    }
+
+    private Payroll calculate(Employee employee, String payPeriod, BigDecimal overtime, BigDecimal bonus) {
+        BigDecimal basic = employee.getSalary();
+        BigDecimal housing = isSeniorOrManager(employee) ? new BigDecimal("2000") : BigDecimal.ZERO;
+        BigDecimal transport = isIntern(employee) ? BigDecimal.ZERO : new BigDecimal("1000");
+        BigDecimal gross = basic.add(overtime).add(bonus).add(housing).add(transport);
+
+        BigDecimal paye = gross.multiply(PAYE_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal uif = gross.min(UIF_CAP).multiply(UIF_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalDeductions = paye.add(uif);
+        BigDecimal net = gross.subtract(totalDeductions);
+
+        return Payroll.builder()
+                .employee(employee)
+                .payPeriod(payPeriod)
+                .basicSalary(basic)
+                .overtime(overtime)
+                .bonus(bonus)
+                .housingAllowance(housing)
+                .transportAllowance(transport)
+                .grossPay(gross)
+                .paye(paye)
+                .uif(uif)
+                .totalDeductions(totalDeductions)
+                .netPay(net)
+                .status(PayrollStatus.DRAFT)
+                .build();
     }
 
     /** Advances every record for a pay period exactly one stage — mirrors the HR "Advance to X" button. */

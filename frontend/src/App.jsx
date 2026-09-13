@@ -3441,6 +3441,7 @@ export default function App() {
       if (target && target._dbId) {
         try {
           await apiFetch(`/api/hr/employees/${target._dbId}/profile`, { method: "PUT", body: JSON.stringify({ salary: newSalary }) });
+          fetchPayrollForPeriod(employeesState.map((e) => (e.id === employeeId ? { ...e, salary: newSalary } : e)));
         } catch (e) {
           alert(`Couldn't save the salary: ${e.message}`);
           return;

@@ -3241,10 +3241,15 @@ export default function App() {
       setEmployeesState((es) => (es.some((e) => e.id === mapped.id) ? es.map((e) => (e.id === mapped.id ? mapped : e)) : [...es, mapped]));
       if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
         try {
-          const list = await apiFetch("/api/hr/employees");
+          // These three calls are independent of each other — running them
+          // concurrently instead of one-after-another is what actually cut
+          // login latency here, not just Render's cold-start behavior.
+          const [list, roleByCode, adminUsers] = await Promise.all([
+            apiFetch("/api/hr/employees"),
+            apiFetch("/api/hr/employee-roles").catch(() => ({})),
+            mapped.role === "master" ? apiFetch("/api/admin/users").catch(() => null) : Promise.resolve(null),
+          ]);
           const mappedList = list.map(mapBackendEmployee);
-          let roleByCode = {};
-          try { roleByCode = await apiFetch("/api/hr/employee-roles"); } catch (e) { /* non-fatal — roles just won't display for others */ }
           const withRoles = mappedList.map((m) => {
             // Never let this bulk fetch override the current user's own
             // role — mapped.role came straight from the login response
@@ -3259,6 +3264,18 @@ export default function App() {
             withRoles.forEach((m) => byId.set(m.id, m));
             return Array.from(byId.values());
           });
+          if (adminUsers) {
+            const map = {};
+            const roleByCode2 = {};
+            adminUsers.forEach((u) => {
+              if (u.employee?.employeeCode) {
+                map[u.employee.employeeCode] = u.id;
+                roleByCode2[u.employee.employeeCode] = (u.role || "employee").toLowerCase();
+              }
+            });
+            setAppUserIdByEmployeeCode(map);
+            setEmployeesState((es) => es.map((e) => (roleByCode2[e.id] ? { ...e, role: roleByCode2[e.id] } : e)));
+          }
           fetchPayrollForPeriod(mappedList);
         } catch (e) { /* non-fatal — HR/Admin screens fall back to whatever's already known locally */ }
       }
@@ -3281,9 +3298,6 @@ export default function App() {
         fetchOfficeIssues();
         fetchCompany();
         fetchPayrollSettings();
-      }
-      if (mapped.role === "master") {
-        await refreshAppUsers();
       }
       fetchLeaveForRole(mapped.role, mapped.id);
       fetchOfficeAvailability();

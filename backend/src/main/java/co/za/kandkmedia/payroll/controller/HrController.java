@@ -182,4 +182,19 @@ public class HrController {
     public void deleteDraft(@PathVariable Long id) {
         payrollService.deleteDraft(id);
     }
+
+    /**
+     * Removes a payroll record regardless of status — Master-exclusive,
+     * for correcting a record that was wrong from the start (e.g. the
+     * zero-salary auto-draft bug) and already advanced past DRAFT before
+     * anyone noticed. Not for deleting a normal, correctly-calculated
+     * Finalized/Sent payslip — @PreAuthorize keeps this out of reach of
+     * HR/Admin/IT Support, same reasoning as the role-assignment endpoint:
+     * a single gatekeeper for an action that can erase real history.
+     */
+    @DeleteMapping("/payroll/{id}/force")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('MASTER')")
+    public void forceDeletePayroll(@PathVariable Long id) {
+        payrollService.forceDelete(id);
+    }
 }

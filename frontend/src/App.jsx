@@ -2264,7 +2264,7 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
   );
 }
 
-function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslipEmail, deletePayrollDraft, payrollLoading, advanceStage }) {
+function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslipEmail, deletePayrollDraft, forceDeletePayroll, isMaster, payrollLoading, advanceStage }) {
   const hasRealRecords = API_BASE_URL && Object.keys(payrollRecords || {}).length > 0;
   const stageIdx = STAGES.indexOf(payrollStage);
   // When connected to the real backend, an employee with no record here
@@ -2316,6 +2316,11 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
                       )}
                       {real && real.status === "DRAFT" && deletePayrollDraft && (
                         <button onClick={() => { if (window.confirm(`Remove this DRAFT payroll record for ${e.name}? This can't be undone.`)) deletePayrollDraft(real._dbId); }} title="Remove this draft" style={{ background: "none", border: "none", cursor: "pointer", color: T.red }}>
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                      {real && real.status !== "DRAFT" && isMaster && forceDeletePayroll && (
+                        <button onClick={() => { if (window.confirm(`This payroll record for ${e.name} has already reached ${real.status}${real.status === "SENT" ? " — a payslip email may already have gone out with these figures" : ""}. Delete it anyway? This is meant for correcting a record that was wrong from the start, not for undoing a legitimate payslip. This can't be undone.`)) forceDeletePayroll(real._dbId); }} title={`Force-delete this ${real.status} record (Master only)`} style={{ background: "none", border: "none", cursor: "pointer", color: T.red }}>
                           <Trash2 size={16} />
                         </button>
                       )}
@@ -3089,6 +3094,22 @@ export default function App() {
     }
   };
 
+  const forceDeletePayroll = async (payrollDbId) => {
+    if (!API_BASE_URL || !payrollDbId) return;
+    try {
+      await apiFetch(`/api/hr/payroll/${payrollDbId}/force`, { method: "DELETE" });
+      setPayrollRecords((pr) => {
+        const next = { ...pr };
+        for (const key of Object.keys(next)) {
+          if (next[key]._dbId === payrollDbId) delete next[key];
+        }
+        return next;
+      });
+    } catch (e) {
+      alert(`Couldn't remove this record: ${e.message}`);
+    }
+  };
+
   const fetchLeaveForRole = async (r, employeeId) => {
     if (!API_BASE_URL) return;
     try {
@@ -3801,7 +3822,7 @@ export default function App() {
 
         {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} />}
         {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} />}
-        {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
+        {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} forceDeletePayroll={forceDeletePayroll} isMaster={true} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}

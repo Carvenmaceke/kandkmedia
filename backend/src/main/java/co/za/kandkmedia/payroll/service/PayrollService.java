@@ -165,9 +165,76 @@ public class PayrollService {
         Payroll payroll = payrollRepository.findById(payrollId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
         if (payroll.getStatus() != PayrollStatus.DRAFT) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a DRAFT payroll record can be deleted — this one has already moved past that stage.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a DRAFT payroll record can be deleted — this one has already moved past that stage. Use the Master-only force-delete for a record that's wrong but already advanced.");
         }
         payrollRepository.delete(payroll);
+    }
+
+    /**
+     * Deletes a payroll record regardless of status — deliberately kept
+     * separate from deleteDraft and restricted to MASTER only (see the
+     * controller's @PreAuthorize). This exists for exactly one situation:
+     * a record that was wrong from the start (e.g. the zero-salary
+     * auto-draft bug) got advanced past DRAFT — possibly all the way to
+     * SENT, meaning an email may have already gone out with the wrong
+     * figures — before anyone noticed. A routine, correctly-calculated
+     * Sent/Finalized payslip should never go through this path; this is
+     * for correcting bad data, not undoing legitimate payroll history.
+     */
+    public void forceDelete(Long payrollId) {
+        Payroll payroll = payrollRepository.findById(payrollId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
+        payrollRepository.delete(payroll);
+    }
+
+    /**
+     * Corrects a payroll record that's stuck at a zero basic salary, no
+     * matter what stage it's already reached — including SENT. This is
+     * deliberately narrower than a general "edit anything" escape hatch:
+     * it only acts when basicSalary is exactly zero, which can only have
+     * happened from the auto-draft-for-a-not-yet-salaried-employee bug,
+     * never from a real salary someone was actually paid. A record with
+     * any real basic salary, at any stage, is refused here — that's not
+     * this method's job, and it should never become one.
+     *
+     * If the record had already reached SENT (meaning a — necessarily
+     * wrong — payslip email may already have gone out), this also
+     * resends it with the corrected figures once fixed, so the employee
+     * ends up with the right document rather than the original R0 one.
+     */
+    public Payroll correctZeroSalaryRecord(Long payrollId) {
+        Payroll payroll = payrollRepository.findById(payrollId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
+        if (payroll.getBasicSalary() != null && payroll.getBasicSalary().compareTo(BigDecimal.ZERO) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This record already has a real basic salary — it isn't one of the zero-salary records this action is for.");
+        }
+        Employee employee = payroll.getEmployee();
+        if (employee.getSalary() == null || employee.getSalary().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This employee's salary still hasn't been set — set it under Employees first.");
+        }
+
+        Payroll recalculated = calculate(employee, payroll.getPayPeriod(), payroll.getOvertime(), payroll.getBonus());
+        payroll.setBasicSalary(recalculated.getBasicSalary());
+        payroll.setHousingAllowance(recalculated.getHousingAllowance());
+        payroll.setTransportAllowance(recalculated.getTransportAllowance());
+        payroll.setGrossPay(recalculated.getGrossPay());
+        payroll.setPaye(recalculated.getPaye());
+        payroll.setUif(recalculated.getUif());
+        payroll.setTotalDeductions(recalculated.getTotalDeductions());
+        payroll.setNetPay(recalculated.getNetPay());
+
+        if (payroll.getStatus() == PayrollStatus.FINALIZED || payroll.getStatus() == PayrollStatus.SENT) {
+            // The security seal (payslip ID, hash) was generated over the
+            // wrong figures — reseal so the hash actually matches the
+            // corrected document, then resend with the right numbers.
+            sealPayslip(payroll);
+        }
+        Payroll saved = payrollRepository.save(payroll);
+        if (saved.getStatus() == PayrollStatus.SENT) {
+            emailService.sendPayslip(saved);
+            saved = payrollRepository.save(saved);
+        }
+        return saved;
     }
 
     /**

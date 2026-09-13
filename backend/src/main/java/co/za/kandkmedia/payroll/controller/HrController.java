@@ -4,6 +4,8 @@ import co.za.kandkmedia.payroll.domain.AppUser;
 import co.za.kandkmedia.payroll.domain.Employee;
 import co.za.kandkmedia.payroll.domain.LeaveRequest;
 import co.za.kandkmedia.payroll.domain.Payroll;
+import co.za.kandkmedia.payroll.domain.EmployeeLevel;
+import co.za.kandkmedia.payroll.repository.EmployeeLevelRepository;
 import co.za.kandkmedia.payroll.dto.LeaveDecisionDto;
 import co.za.kandkmedia.payroll.repository.EmployeeRepository;
 import co.za.kandkmedia.payroll.repository.AppUserRepository;
@@ -32,9 +34,30 @@ public class HrController {
     private final LeaveService leaveService;
     private final PayrollService payrollService;
     private final PayrollRepository payrollRepository;
+    private final EmployeeLevelRepository levelRepository;
     private final co.za.kandkmedia.payroll.service.EmployeeProfileService employeeProfileService;
     private final AppUserRepository appUserRepository;
     private final OnboardingDocumentPdfService onboardingDocumentPdfService;
+
+    @GetMapping("/levels")
+    public List<EmployeeLevel> levels() {
+        return levelRepository.findAll();
+    }
+
+    @PostMapping("/levels")
+    public EmployeeLevel addLevel(@RequestBody EmployeeLevel level) {
+        return levelRepository.save(level);
+    }
+
+    @PutMapping("/levels/{id}")
+    public EmployeeLevel updateLevel(@PathVariable Long id, @RequestBody EmployeeLevel update) {
+        EmployeeLevel level = levelRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Level not found."));
+        level.setDefaultSalary(update.getDefaultSalary());
+        level.setMinSalary(update.getMinSalary());
+        level.setMaxSalary(update.getMaxSalary());
+        return levelRepository.save(level);
+    }
 
     @GetMapping("/employees")
     public List<Employee> employees() {

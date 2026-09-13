@@ -66,6 +66,11 @@ public class AdminController {
         return levelRepository.findAll();
     }
 
+    @PostMapping("/levels")
+    public EmployeeLevel addLevel(@RequestBody EmployeeLevel level) {
+        return levelRepository.save(level);
+    }
+
     @PutMapping("/levels/{id}")
     public EmployeeLevel updateLevel(@PathVariable Long id, @RequestBody EmployeeLevel update) {
         EmployeeLevel level = levelRepository.findById(id)

@@ -38,7 +38,10 @@ const DEFAULT_PASSWORD = "password123";
 /* ---------------------------------------------------------------------- */
 /* SEED DATA (mutable — signup/profile edits update these at runtime)     */
 /* ---------------------------------------------------------------------- */
-const COMPANY = {
+// `let`, not `const` — synced from React state each render (same pattern
+// as EMPLOYEES/LEVELS) so Admin's edits to company details show up
+// everywhere COMPANY is read, including generated PDFs.
+let COMPANY = {
   name: "K and K Media (Pty) Ltd",
   regNo: "",
   address: "526, 16th Road, Constantia Square Office Park, Randjespark, Midrand, Gauteng, South Africa",
@@ -2361,26 +2364,39 @@ function AdminOverview({ supportTickets, officeIssues }) {
   );
 }
 
-function AdminCompanySettings() {
-  const field = (label, value) => (
+function AdminCompanySettings({ onUpdateCompany }) {
+  const [form, setForm] = useState({ name: COMPANY.name, regNo: COMPANY.regNo, address: COMPANY.address, email: COMPANY.email, phone: COMPANY.phone, website: COMPANY.website, logo: COMPANY.logo });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const field = (label, key, placeholder) => (
     <div style={{ marginBottom: 14 }}>
       <label style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</label>
-      <input readOnly value={value} style={{ ...inputStyle, marginTop: 5, background: T.bg }} />
+      <input value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} placeholder={placeholder} style={{ ...inputStyle, marginTop: 5 }} />
     </div>
   );
+  const save = async () => {
+    setSaving(true);
+    const ok = await onUpdateCompany(form);
+    setSaving(false);
+    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  };
   return (
     <div>
       <SectionTitle sub="Company profile and automated payslip delivery">Company & Settings</SectionTitle>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
           <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Company Profile</div>
-          {field("Company Name", COMPANY.name)}
-          {field("Registration No.", COMPANY.regNo || "Not yet added — enter your CIPC registration number")}
-          {field("Address", COMPANY.address)}
-          {field("Email", COMPANY.email)}
-          {field("Phone", COMPANY.phone)}
-          {field("Website", COMPANY.website)}
-          <Button variant="ghost" small>Save Changes</Button>
+          {field("Company Name", "name")}
+          {field("Registration No.", "regNo", "Enter your CIPC registration number")}
+          {field("Address", "address")}
+          {field("Email", "email")}
+          {field("Phone", "phone")}
+          {field("Website", "website")}
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <Button variant="teal" small onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Button>
+            {saved && <Pill tone="green">Saved</Pill>}
+          </div>
+          {!API_BASE_URL && <div style={{ fontSize: 11, color: T.muted, marginTop: 8 }}>Not connected to a backend — changes are kept locally for this session only.</div>}
         </Card>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
           <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Payslip Delivery</div>
@@ -2393,7 +2409,11 @@ function AdminCompanySettings() {
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="radio" checked readOnly /> Last day of month</label>
             <label style={{ display: "flex", gap: 8, alignItems: "center", color: T.muted }}><input type="radio" readOnly /> One day before month end</label>
           </div>
-          {field("Delivery Time", "18:00")}
+          <div style={{ marginBottom: 4 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 0.3 }}>Delivery Time</label>
+            <input readOnly value="18:00" style={{ ...inputStyle, marginTop: 5, background: T.bg }} />
+          </div>
+          <div style={{ fontSize: 11, color: T.muted, marginTop: 8 }}>This section is configured on the backend (app.payslip-scheduler.* / cron), not editable from here yet.</div>
         </Card>
       </div>
     </div>
@@ -2908,6 +2928,7 @@ export default function App() {
   const [employeesState, setEmployeesState] = useState(EMPLOYEES);
   const [balancesState, setBalancesState] = useState(LEAVE_BALANCES);
   const [levelsState, setLevelsState] = useState(LEVELS);
+  const [companyState, setCompanyState] = useState(COMPANY);
   const [viewMode, setViewMode] = useState("role"); // "role" | "selfService" | "settings"
   const [hrTab, setHrTab] = useState("dashboard");
   const [adminTab, setAdminTab] = useState("overview");
@@ -2928,6 +2949,7 @@ export default function App() {
   EMPLOYEES = employeesState;
   LEAVE_BALANCES = balancesState;
   LEVELS = levelsState;
+  COMPANY = companyState;
 
   const history = useMemo(() => buildHistory(employeesState.filter((e) => PAST_MONTHS && e.start <= "2026-06-01")), [employeesState]);
 
@@ -3023,6 +3045,59 @@ export default function App() {
     } catch (e) { /* non-fatal — falls back to whatever's already known locally */ }
   };
 
+  const fetchLevels = async () => {
+    if (!API_BASE_URL) return;
+    try {
+      const rows = await apiFetch("/api/hr/levels");
+      const mapped = rows.map((l) => ({ _dbId: l.id, name: l.name, default: Number(l.defaultSalary) || 0, min: Number(l.minSalary) || 0, max: Number(l.maxSalary) || 0 }));
+      setLevelsState((ls) => {
+        const byName = new Map(ls.map((l) => [l.name, l]));
+        mapped.forEach((m) => byName.set(m.name, m));
+        return Array.from(byName.values());
+      });
+    } catch (e) { /* non-fatal — falls back to the built-in default levels */ }
+  };
+
+  const fetchCompany = async () => {
+    if (!API_BASE_URL) return;
+    try {
+      const c = await apiFetch("/api/admin/company");
+      setCompanyState({
+        name: c.name || COMPANY.name,
+        regNo: c.registrationNumber || "",
+        address: c.address || COMPANY.address,
+        email: c.email || COMPANY.email,
+        phone: c.phone || COMPANY.phone,
+        website: c.website || COMPANY.website,
+        logo: c.logoUrl || COMPANY.logo,
+      });
+    } catch (e) { /* non-fatal — falls back to the built-in default company info */ }
+  };
+
+  const updateCompany = async (fields) => {
+    if (API_BASE_URL) {
+      try {
+        const updated = await apiFetch("/api/admin/company", {
+          method: "PUT",
+          body: JSON.stringify({
+            name: fields.name, registrationNumber: fields.regNo, address: fields.address,
+            email: fields.email, phone: fields.phone, website: fields.website, logoUrl: fields.logo,
+          }),
+        });
+        setCompanyState({
+          name: updated.name, regNo: updated.registrationNumber || "", address: updated.address,
+          email: updated.email, phone: updated.phone, website: updated.website, logo: updated.logoUrl || COMPANY.logo,
+        });
+        return true;
+      } catch (e) {
+        alert(`Couldn't save company details: ${e.message}`);
+        return false;
+      }
+    }
+    setCompanyState((c) => ({ ...c, ...fields }));
+    return true;
+  };
+
   const fetchOfficeIssues = async () => {
     if (!API_BASE_URL) return;
     try {
@@ -3105,9 +3180,13 @@ export default function App() {
           });
         } catch (e) { /* non-fatal — team screen falls back to whatever's already known locally */ }
       }
+      if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
+        fetchLevels();
+      }
       if (["admin", "master", "it_support"].includes(mapped.role)) {
         fetchSupportTickets();
         fetchOfficeIssues();
+        fetchCompany();
       }
       if (mapped.role === "master") {
         await refreshAppUsers();
@@ -3197,9 +3276,41 @@ export default function App() {
   const handleChangePassword = (newPassword) => {
     setEmployeesState((es) => es.map((e) => (e.id === currentUserId ? { ...e, password: newPassword } : e)));
   };
-  const updateLevel = (name, updates) =>
+  const updateLevel = async (name, updates) => {
+    if (API_BASE_URL) {
+      const target = levelsState.find((l) => l.name === name);
+      if (target && target._dbId) {
+        try {
+          const updated = await apiFetch(`/api/hr/levels/${target._dbId}`, {
+            method: "PUT",
+            body: JSON.stringify({ defaultSalary: updates.default, minSalary: updates.min, maxSalary: updates.max }),
+          });
+          setLevelsState((ls) => ls.map((l) => (l.name === name ? { _dbId: updated.id, name: updated.name, default: Number(updated.defaultSalary) || 0, min: Number(updated.minSalary) || 0, max: Number(updated.maxSalary) || 0 } : l)));
+          return;
+        } catch (e) {
+          alert(`Couldn't save this level: ${e.message}`);
+          return;
+        }
+      }
+    }
     setLevelsState((ls) => ls.map((l) => (l.name === name ? { ...l, ...updates } : l)));
-  const addLevel = (level) => setLevelsState((ls) => [...ls, level]);
+  };
+  const addLevel = async (level) => {
+    if (API_BASE_URL) {
+      try {
+        const created = await apiFetch("/api/hr/levels", {
+          method: "POST",
+          body: JSON.stringify({ name: level.name, defaultSalary: level.default, minSalary: level.min, maxSalary: level.max }),
+        });
+        setLevelsState((ls) => [...ls, { _dbId: created.id, name: created.name, default: Number(created.defaultSalary) || 0, min: Number(created.minSalary) || 0, max: Number(created.maxSalary) || 0 }]);
+        return;
+      } catch (e) {
+        alert(`Couldn't add this level: ${e.message}`);
+        return;
+      }
+    }
+    setLevelsState((ls) => [...ls, level]);
+  };
   const updateEmployeeSalary = async (employeeId, newSalary) => {
     if (API_BASE_URL) {
       const target = employeesState.find((e) => e.id === employeeId);
@@ -3510,7 +3621,7 @@ export default function App() {
         {viewMode === "role" && role === "hr" && hrTab === "salaryStructure" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
 
         {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
-        {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings />}
+        {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} />}
         {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
         {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
@@ -3519,7 +3630,7 @@ export default function App() {
         {viewMode === "role" && role === "it_support" && itSupportTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} onRefresh={fetchOfficeIssues} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
 
@@ -3528,7 +3639,7 @@ export default function App() {
         {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
-        {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings />}
+        {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} />}
         {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "master" && masterTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
         {viewMode === "role" && role === "master" && masterTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={officeAvailability} onSetAvailability={setOfficeAvailability} onUpdateIssue={updateOfficeIssue} onRefresh={fetchOfficeIssues} />}

@@ -94,6 +94,11 @@ public class Employee {
     @Builder.Default
     private String rateType = "Monthly";
 
+    @Builder.Default
+    private boolean notifyLeave = true;
+    @Builder.Default
+    private boolean notifyPayslip = true;
+
     @ManyToOne
     @JoinColumn(name = "department_id")
     private Department department;
@@ -117,13 +122,22 @@ public class Employee {
     private boolean active = true;
     private LocalDate terminationDate;
 
+    // --- Notification preferences — checked before sending payslip/leave-
+    // decision emails (see PayrollService/LeaveService). The underlying
+    // record is always created either way; this only controls whether the
+    // email itself goes out. ---
+    @Builder.Default
+    private boolean notifyLeave = true;
+    @Builder.Default
+    private boolean notifyPayslip = true;
+
     // --- Signup consent + signature, used to generate the HR-downloadable
     // onboarding document (see OnboardingDocumentPdfService) ---
     @Builder.Default
     private boolean agreedToTerms = false;
     private java.time.LocalDateTime termsAgreedAt;
 
-    @Lob
+    @Column(columnDefinition = "LONGTEXT")
     private String onboardingSignature; // PNG data URL from the signup signature pad
 
     @ManyToOne

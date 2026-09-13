@@ -25,4 +25,10 @@ public class Company {
     private String phone;
     private String website;
     private String logoUrl;
+
+    /** IT Support's "I'll be at X office until Y" note, shown to every
+     *  employee before they report an Office Issue. Company-wide (not
+     *  per-session local state), so it's actually the same for everyone. */
+    @Lob
+    private String officeAvailabilityNote;
 }

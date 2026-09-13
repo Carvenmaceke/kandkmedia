@@ -2,33 +2,30 @@ package co.za.kandkmedia.payroll.scheduler;
 
 import co.za.kandkmedia.payroll.domain.Employee;
 import co.za.kandkmedia.payroll.domain.Payroll;
+import co.za.kandkmedia.payroll.domain.PayrollSettings;
 import co.za.kandkmedia.payroll.domain.PayrollStatus;
 import co.za.kandkmedia.payroll.repository.EmployeeRepository;
+import co.za.kandkmedia.payroll.repository.PayrollSettingsRepository;
 import co.za.kandkmedia.payroll.service.PayrollService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 /**
- * Runs once a day (see app.payslip-delivery.cron-hour/cron-minute) and, on
- * the configured trigger day only, generates any missing draft payroll rows
- * for the current pay period and pushes every one of that period's records
- * through to SENT — which is what actually fires the real payslip emails
- * (PayrollService.advanceStage sends on the transition into SENT).
- *
- * Deliberately does NOT stop to wait for HR review: this is the automatic
- * safety-net send described in the spec ("automatically generate and send
- * payslips at the end of every month"). If HR wants to review variable
- * earnings (overtime, bonus) before anyone is paid, that has to happen
- * earlier in the month via the normal HR payroll screens — anything still
- * sitting in DRAFT on the trigger day goes out with whatever figures it
- * already has (overtime/bonus default to zero if HR never generated a
- * draft for that employee at all).
+ * Checks the database-backed PayrollSettings every minute rather than using
+ * a fixed @Scheduled cron expression for the delivery time — cron
+ * expressions are resolved once at application startup and can't change
+ * without a restart, which would defeat the point of making delivery time
+ * editable from Company Settings. This runs constantly but does almost
+ * nothing on 1,439 out of 1,440 checks a day; the actual work only fires
+ * when the current time matches the configured delivery hour/minute AND
+ * today is the configured trigger day AND it hasn't already run today
+ * (lastRunDate guards against re-firing every minute during that match).
  */
 @Component
 @RequiredArgsConstructor
@@ -37,51 +34,54 @@ public class PayslipSchedulerService {
 
     private final EmployeeRepository employeeRepository;
     private final PayrollService payrollService;
+    private final PayrollSettingsRepository payrollSettingsRepository;
 
-    @Value("${app.payslip-delivery.auto-send:true}")
-    private boolean autoSendEnabled;
-
-    @Value("${app.payslip-delivery.send-on:LAST_DAY_OF_MONTH}")
-    private String sendOn;
-
-    @Scheduled(cron = "0 ${app.payslip-delivery.cron-minute:0} ${app.payslip-delivery.cron-hour:18} * * ?")
-    public void runMonthEndPayslipRun() {
-        if (!autoSendEnabled) {
+    @Scheduled(cron = "0 * * * * ?") // every minute, on the minute
+    public void checkAndRunIfDue() {
+        PayrollSettings settings = payrollSettingsRepository.findAll().stream().findFirst()
+                .orElseGet(() -> payrollSettingsRepository.save(PayrollSettings.builder().build()));
+        if (!settings.isAutoSendEnabled()) {
             return;
         }
-        if (!isTriggerDayToday()) {
+        LocalDate today = LocalDate.now();
+        if (today.equals(settings.getLastRunDate())) {
+            return; // already ran today
+        }
+        LocalTime now = LocalTime.now();
+        if (now.getHour() != settings.getDeliveryHour() || now.getMinute() != settings.getDeliveryMinute()) {
+            return;
+        }
+        if (!isTriggerDayToday(today, settings.getSendOn())) {
             return;
         }
 
+        runMonthEndPayslipRun();
+        settings.setLastRunDate(today);
+        payrollSettingsRepository.save(settings);
+    }
+
+    private void runMonthEndPayslipRun() {
         String period = Payroll.currentPeriod();
         log.info("Automatic month-end payslip run starting for {}", period);
-
         try {
             for (Employee employee : employeeRepository.findAll()) {
                 payrollService.generateDraft(employee, period, BigDecimal.ZERO, BigDecimal.ZERO);
             }
-
             // One call per remaining stage to walk everything through to SENT.
             // Records already further along (e.g. HR got them to APPROVED
             // earlier in the month) just continue from where they are; records
             // already at SENT are untouched (advanceStage no-ops past the end
-            // of the pipeline), so re-running this on the same day is safe and
-            // won't double-send anyone's email.
+            // of the pipeline), so this is safe to re-run.
             for (int i = 0; i < PayrollStatus.values().length; i++) {
                 payrollService.advanceStage(period);
             }
-
             log.info("Automatic month-end payslip run complete for {}", period);
         } catch (Exception e) {
-            // A scheduled method that throws stops future executions from
-            // being logged clearly by default — catch and log explicitly so
-            // a bad run tonight doesn't go unnoticed.
             log.error("Automatic month-end payslip run failed for {}", period, e);
         }
     }
 
-    private boolean isTriggerDayToday() {
-        LocalDate today = LocalDate.now();
+    private boolean isTriggerDayToday(LocalDate today, String sendOn) {
         LocalDate lastDayOfMonth = today.withDayOfMonth(today.lengthOfMonth());
         if ("DAY_BEFORE_MONTH_END".equalsIgnoreCase(sendOn)) {
             return today.equals(lastDayOfMonth.minusDays(1));

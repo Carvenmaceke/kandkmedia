@@ -24,4 +24,11 @@ public class LeaveRequestDto {
     /** PNG data URL from the frontend's signature pad — required, same as the UI enforces. */
     @NotBlank(message = "Please sign the application before submitting.")
     private String signature;
+
+    // Proof of leave (sick note, etc.) — optional here since the frontend
+    // only requires it for specific leave types (Sick, Maternity, etc.),
+    // enforced client-side.
+    private String proofFileName;
+    private String proofFileType;
+    private String proofFileDataUrl;
 }

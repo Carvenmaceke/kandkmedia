@@ -8,6 +8,7 @@ import co.za.kandkmedia.payroll.dto.LeaveRequestDto;
 import co.za.kandkmedia.payroll.dto.EmployeeProfileDto;
 import co.za.kandkmedia.payroll.dto.ChangePasswordDto;
 import co.za.kandkmedia.payroll.repository.AppUserRepository;
+import co.za.kandkmedia.payroll.repository.CompanyRepository;
 import co.za.kandkmedia.payroll.repository.LeaveBalanceRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
@@ -38,10 +39,22 @@ public class MeController {
     private final EmployeeProfileService employeeProfileService;
     private final AppUserRepository appUserRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CompanyRepository companyRepository;
 
     @GetMapping
     public Employee myProfile(@AuthenticationPrincipal AppUser user) {
         return employeeOf(user);
+    }
+
+    /** Read-only, any authenticated role — the whole point of this note is
+     *  that every employee sees it, not just Admin/IT Support/Master (who
+     *  are the only ones with /api/admin/** access to set it). */
+    @GetMapping("/office-availability")
+    public java.util.Map<String, String> officeAvailability() {
+        String note = companyRepository.findAll().stream().findFirst()
+                .map(co.za.kandkmedia.payroll.domain.Company::getOfficeAvailabilityNote)
+                .orElse(null);
+        return java.util.Collections.singletonMap("note", note == null ? "" : note);
     }
 
     @PutMapping("/profile")

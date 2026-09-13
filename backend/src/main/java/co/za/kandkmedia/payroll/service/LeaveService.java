@@ -39,6 +39,9 @@ public class LeaveService {
                 .status(LeaveStatus.PENDING)
                 .employeeSignature(dto.getSignature())
                 .employeeSignedAt(java.time.LocalDateTime.now())
+                .proofFileName(dto.getProofFileName())
+                .proofFileType(dto.getProofFileType())
+                .proofFileDataUrl(dto.getProofFileDataUrl())
                 .build();
 
         return leaveRequestRepository.save(request);
@@ -91,7 +94,9 @@ public class LeaveService {
         }
 
         LeaveRequest saved = leaveRequestRepository.save(request);
-        emailService.sendLeaveLetter(saved);
+        if (saved.getEmployee().isNotifyLeave()) {
+            emailService.sendLeaveLetter(saved);
+        }
         return leaveRequestRepository.save(saved);
     }
 }

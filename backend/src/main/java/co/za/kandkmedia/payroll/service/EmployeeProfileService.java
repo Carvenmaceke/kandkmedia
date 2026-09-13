@@ -74,6 +74,8 @@ public class EmployeeProfileService {
         if (dto.getEmploymentType() != null) e.setEmploymentType(dto.getEmploymentType());
         if (dto.getRateType() != null) e.setRateType(dto.getRateType());
         if (dto.getSalary() != null) e.setSalary(dto.getSalary());
+        if (dto.getNotifyLeave() != null) e.setNotifyLeave(dto.getNotifyLeave());
+        if (dto.getNotifyPayslip() != null) e.setNotifyPayslip(dto.getNotifyPayslip());
         if (dto.getManagerEmployeeCode() != null) {
             if (dto.getManagerEmployeeCode().isBlank()) {
                 e.setManager(null);
@@ -83,6 +85,8 @@ public class EmployeeProfileService {
                 e.setManager(manager);
             }
         }
+        if (dto.getNotifyLeave() != null) e.setNotifyLeave(dto.getNotifyLeave());
+        if (dto.getNotifyPayslip() != null) e.setNotifyPayslip(dto.getNotifyPayslip());
 
         return employeeRepository.save(e);
     }

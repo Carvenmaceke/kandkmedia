@@ -58,9 +58,14 @@ public class EmployeeProfileDto {
     private String employmentType;
     private String rateType;
     private java.math.BigDecimal salary;
+    private Boolean notifyLeave;
+    private Boolean notifyPayslip;
 
     /** The employeeCode (e.g. EMP-00005) of the employee's manager — not a
      *  raw numeric id, since that's what HR/Master actually has on hand in
      *  the UI. Empty string clears the manager relationship. */
     private String managerEmployeeCode;
+
+    private Boolean notifyLeave;
+    private Boolean notifyPayslip;
 }

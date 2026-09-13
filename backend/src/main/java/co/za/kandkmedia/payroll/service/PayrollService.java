@@ -95,7 +95,9 @@ public class PayrollService {
         // doesn't stop the rest of the batch from sending.
         if (movingToSent) {
             for (Payroll payroll : saved) {
-                emailService.sendPayslip(payroll);
+                if (payroll.getEmployee().isNotifyPayslip()) {
+                    emailService.sendPayslip(payroll);
+                }
             }
             saved = payrollRepository.saveAll(saved);
         }

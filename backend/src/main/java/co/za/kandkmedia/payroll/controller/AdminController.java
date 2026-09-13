@@ -6,6 +6,8 @@ import co.za.kandkmedia.payroll.domain.Department;
 import co.za.kandkmedia.payroll.domain.EmployeeLevel;
 import co.za.kandkmedia.payroll.domain.SupportTicket;
 import co.za.kandkmedia.payroll.domain.OfficeIssue;
+import co.za.kandkmedia.payroll.domain.PayrollSettings;
+import co.za.kandkmedia.payroll.repository.PayrollSettingsRepository;
 import co.za.kandkmedia.payroll.service.OfficeIssueService;
 import co.za.kandkmedia.payroll.repository.AppUserRepository;
 import co.za.kandkmedia.payroll.repository.CompanyRepository;
@@ -31,6 +33,7 @@ public class AdminController {
     private final AppUserRepository userRepository;
     private final SupportService supportService;
     private final OfficeIssueService officeIssueService;
+    private final PayrollSettingsRepository payrollSettingsRepository;
 
     @GetMapping("/company")
     public Company company() {
@@ -48,6 +51,13 @@ public class AdminController {
         company.setPhone(update.getPhone());
         company.setWebsite(update.getWebsite());
         company.setLogoUrl(update.getLogoUrl());
+        return companyRepository.save(company);
+    }
+
+    @PutMapping("/office-availability")
+    public Company updateOfficeAvailability(@RequestBody java.util.Map<String, String> body) {
+        Company company = company();
+        company.setOfficeAvailabilityNote(body.get("note"));
         return companyRepository.save(company);
     }
 
@@ -138,5 +148,21 @@ public class AdminController {
     @PutMapping("/office-issues/{id}")
     public OfficeIssue updateOfficeIssue(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {
         return officeIssueService.updateStatus(id, body.get("status"), body.get("response"));
+    }
+
+    @GetMapping("/payroll-settings")
+    public PayrollSettings payrollSettings() {
+        return payrollSettingsRepository.findAll().stream().findFirst()
+                .orElseGet(() -> payrollSettingsRepository.save(PayrollSettings.builder().build()));
+    }
+
+    @PutMapping("/payroll-settings")
+    public PayrollSettings updatePayrollSettings(@RequestBody PayrollSettings update) {
+        PayrollSettings settings = payrollSettings();
+        settings.setAutoSendEnabled(update.isAutoSendEnabled());
+        settings.setSendOn(update.getSendOn());
+        settings.setDeliveryHour(update.getDeliveryHour());
+        settings.setDeliveryMinute(update.getDeliveryMinute());
+        return payrollSettingsRepository.save(settings);
     }
 }

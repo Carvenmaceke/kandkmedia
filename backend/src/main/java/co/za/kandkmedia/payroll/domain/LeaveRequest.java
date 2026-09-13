@@ -49,17 +49,29 @@ public class LeaveRequest {
     // --- Signatures — both stored as PNG data URLs (base64), same format
     // the frontend's canvas signature pad produces. ---
 
-    @Lob
+    @Column(columnDefinition = "LONGTEXT")
     private String employeeSignature;
     private java.time.LocalDateTime employeeSignedAt;
 
-    @Lob
+    @Column(columnDefinition = "LONGTEXT")
     private String deciderSignature;
     private java.time.LocalDateTime deciderSignedAt;
 
     /** Required when declined; null when approved. */
     @Lob
     private String decisionReason;
+
+    // --- Proof of leave (sick note, etc.) — stored as a base64 data URL,
+    // same pattern already used for signatures. No separate file storage
+    // service (S3 etc.) is configured, and Render's filesystem is
+    // ephemeral anyway, so the database is the only place this can
+    // actually persist. Frontend already enforces a 4MB size limit before
+    // ever building this data URL. ---
+    private String proofFileName;
+    private String proofFileType;
+
+    @Column(columnDefinition = "LONGTEXT")
+    private String proofFileDataUrl;
 
     @Builder.Default
     private boolean letterEmailSent = false;

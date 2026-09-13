@@ -1000,6 +1000,11 @@ function AuthShell({ children }) {
           <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 46, objectFit: "contain" }} />
         </div>
         <Card style={{ padding: 28 }}>{children}</Card>
+        <div style={{ textAlign: "center", marginTop: 18, fontSize: 11.5 }}>
+          <a href="https://axeconnect.co.za/" target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.55)", textDecoration: "none" }}>
+            Built by Axe Connect
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -3717,6 +3722,11 @@ export default function App() {
           <button onClick={handleLogout} style={{ display: "flex", alignItems: "center", gap: 8, color: "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
             <LogOut size={14} /> Log out
           </button>
+          <div style={{ textAlign: "center", marginTop: 10, fontSize: 10.5 }}>
+            <a href="https://axeconnect.co.za/" target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.35)", textDecoration: "none" }}>
+              Built by Axe Connect
+            </a>
+          </div>
         </div>
       </div>
 

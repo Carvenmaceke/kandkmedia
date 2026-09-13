@@ -6,6 +6,8 @@ import co.za.kandkmedia.payroll.domain.LeaveRequest;
 import co.za.kandkmedia.payroll.domain.Payroll;
 import co.za.kandkmedia.payroll.dto.LeaveRequestDto;
 import co.za.kandkmedia.payroll.dto.EmployeeProfileDto;
+import co.za.kandkmedia.payroll.dto.ChangePasswordDto;
+import co.za.kandkmedia.payroll.repository.AppUserRepository;
 import co.za.kandkmedia.payroll.repository.LeaveBalanceRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
@@ -14,6 +16,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -33,6 +36,8 @@ public class MeController {
     private final LeaveBalanceRepository leaveBalanceRepository;
     private final PayrollRepository payrollRepository;
     private final EmployeeProfileService employeeProfileService;
+    private final AppUserRepository appUserRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @GetMapping
     public Employee myProfile(@AuthenticationPrincipal AppUser user) {
@@ -42,6 +47,20 @@ public class MeController {
     @PutMapping("/profile")
     public Employee updateMyProfile(@AuthenticationPrincipal AppUser user, @RequestBody EmployeeProfileDto dto) {
         return employeeProfileService.updateProfile(employeeOf(user).getId(), dto);
+    }
+
+    /**
+     * Requires the correct current password before allowing a change —
+     * this is the one place a wrong password on the request body is
+     * expected and meaningful, not something to silently trust.
+     */
+    @PutMapping("/password")
+    public void changePassword(@AuthenticationPrincipal AppUser user, @Valid @RequestBody ChangePasswordDto dto) {
+        if (!passwordEncoder.matches(dto.getCurrentPassword(), user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Current password is incorrect.");
+        }
+        user.setPasswordHash(passwordEncoder.encode(dto.getNewPassword()));
+        appUserRepository.save(user);
     }
 
     @GetMapping("/leave")

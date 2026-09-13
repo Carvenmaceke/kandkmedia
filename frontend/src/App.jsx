@@ -1971,15 +1971,28 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const savePassword = (e) => {
+  const [pwSaving, setPwSaving] = useState(false);
+  const savePassword = async (e) => {
     e.preventDefault();
-    const expected = emp.password || DEFAULT_PASSWORD;
-    if (pw.current !== expected) { setPwMsg({ tone: "red", text: "Current password is incorrect." }); return; }
-    if (pw.next.length < 6) { setPwMsg({ tone: "red", text: "New password must be at least 6 characters." }); return; }
+    if (pw.next.length < 8) { setPwMsg({ tone: "red", text: "New password must be at least 8 characters." }); return; }
     if (pw.next !== pw.confirm) { setPwMsg({ tone: "red", text: "New passwords do not match." }); return; }
-    onChangePassword(pw.next);
-    setPw({ current: "", next: "", confirm: "" });
-    setPwMsg({ tone: "green", text: "Password updated." });
+    if (!API_BASE_URL) {
+      const expected = emp.password || DEFAULT_PASSWORD;
+      if (pw.current !== expected) { setPwMsg({ tone: "red", text: "Current password is incorrect." }); return; }
+      onChangePassword(pw.current, pw.next);
+      setPw({ current: "", next: "", confirm: "" });
+      setPwMsg({ tone: "green", text: "Password updated." });
+      return;
+    }
+    setPwSaving(true);
+    const result = await onChangePassword(pw.current, pw.next);
+    setPwSaving(false);
+    if (result.ok) {
+      setPw({ current: "", next: "", confirm: "" });
+      setPwMsg({ tone: "green", text: "Password updated." });
+    } else {
+      setPwMsg({ tone: "red", text: result.message });
+    }
   };
 
   return (
@@ -2032,7 +2045,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
               {pwMsg && (
                 <div style={{ marginBottom: 12 }}><Pill tone={pwMsg.tone}>{pwMsg.text}</Pill></div>
               )}
-              <Button type="submit" variant="ghost" small>Update Password</Button>
+              <Button type="submit" variant="ghost" small disabled={pwSaving}>{pwSaving ? "Updating…" : "Update Password"}</Button>
             </form>
           </Card>
 
@@ -3273,8 +3286,17 @@ export default function App() {
     }
     setEmployeesState((es) => es.map((e) => (e.id === currentUserId ? { ...e, ...fields } : e)));
   };
-  const handleChangePassword = (newPassword) => {
+  const handleChangePassword = async (currentPassword, newPassword) => {
+    if (API_BASE_URL) {
+      try {
+        await apiFetch("/api/me/password", { method: "PUT", body: JSON.stringify({ currentPassword, newPassword }) });
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, message: e.message };
+      }
+    }
     setEmployeesState((es) => es.map((e) => (e.id === currentUserId ? { ...e, password: newPassword } : e)));
+    return { ok: true };
   };
   const updateLevel = async (name, updates) => {
     if (API_BASE_URL) {

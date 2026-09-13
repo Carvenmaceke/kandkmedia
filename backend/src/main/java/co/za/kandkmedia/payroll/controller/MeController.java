@@ -91,9 +91,15 @@ public class MeController {
         return leaveBalanceRepository.findByEmployeeId(employeeOf(user).getId());
     }
 
+    /** Only Finalized or Sent records — a Draft/Reviewed/Approved row is
+     *  still being worked on and isn't a real payslip an employee should
+     *  see or download yet. */
     @GetMapping("/payslips")
     public List<Payroll> myPayslips(@AuthenticationPrincipal AppUser user) {
-        return payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(employeeOf(user).getId());
+        return payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(employeeOf(user).getId()).stream()
+                .filter(p -> p.getStatus() == co.za.kandkmedia.payroll.domain.PayrollStatus.FINALIZED
+                        || p.getStatus() == co.za.kandkmedia.payroll.domain.PayrollStatus.SENT)
+                .toList();
     }
 
     private Employee employeeOf(AppUser user) {

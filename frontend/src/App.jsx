@@ -1335,12 +1335,21 @@ const CURRENT_PAY_PERIOD = "2026-09";
  *  housing, transport, gross, paye, uif, totalDeductions, net} shape
  *  calcPayroll() already produces locally, so HrPayroll/HrDashboard don't
  *  need separate rendering logic for real vs local figures. */
+/** "2026-09" -> "September 2026", matching the existing month-label convention. */
+function formatPayPeriod(payPeriod) {
+  if (!payPeriod) return "";
+  const [year, month] = payPeriod.split("-").map(Number);
+  const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return `${names[month - 1] || ""} ${year}`.trim();
+}
+
 function mapBackendPayroll(p) {
   const n = (v) => (v != null ? Number(v) : 0);
   return {
     _dbId: p.id,
     empId: p.employee ? p.employee.employeeCode : null,
     status: p.status,
+    payPeriod: p.payPeriod || null,
     basic: n(p.basicSalary), overtime: n(p.overtime), bonus: n(p.bonus),
     housing: n(p.housingAllowance), transport: n(p.transportAllowance),
     gross: n(p.grossPay), paye: n(p.paye), uif: n(p.uif),
@@ -2828,13 +2837,19 @@ function ITSupportPortal({ goSupport, goOfficeIssues }) {
 }
 
 
-function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, setPayslipView, onBackToChooser }) {
+function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips, setPayslipView, onBackToChooser }) {
   const [tab, setTab] = useState("dashboard");
   const [form, setForm] = useState({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null, proofFile: null });
   const [formError, setFormError] = useState("");
   const balances = LEAVE_BALANCES[emp.id] || { "Annual Leave": 15, "Sick Leave": 10, "Family Responsibility Leave": 3 };
   const myRequests = leaveRequests.filter((r) => r.emp === emp.id);
-  const myHistory = history[emp.id] || [];
+  // Real backend data only when connected — never the old fabricated
+  // calcPayroll figures, which had literally hardcoded fake overtime
+  // amounts and showed a "payslip" even for someone whose salary had
+  // never actually been set by HR.
+  const myHistory = API_BASE_URL
+    ? (myPayslips || []).map((p) => ({ month: formatPayPeriod(p.payPeriod), figures: p }))
+    : (history[emp.id] || []);
 
   const days = (s, e) => { if (!s || !e) return 0; const d = (new Date(e) - new Date(s)) / 86400000 + 1; return d > 0 ? Math.round(d) : 0; };
   const proofRequired = PROOF_REQUIRED_TYPES.includes(form.type);
@@ -2999,6 +3014,7 @@ export default function App() {
   const [appUserIdByEmployeeCode, setAppUserIdByEmployeeCode] = useState({});
   const [employeesState, setEmployeesState] = useState(EMPLOYEES);
   const [balancesState, setBalancesState] = useState(LEAVE_BALANCES);
+  const [myPayslipsState, setMyPayslipsState] = useState({});
   const [levelsState, setLevelsState] = useState(LEVELS);
   const [companyState, setCompanyState] = useState(COMPANY);
   const [payrollSettingsState, setPayrollSettingsState] = useState({ autoSendEnabled: true, sendOn: "LAST_DAY_OF_MONTH", deliveryHour: 18, deliveryMinute: 0 });
@@ -3186,6 +3202,15 @@ export default function App() {
     return true;
   };
 
+  const fetchMyPayslips = async (employeeId) => {
+    if (!API_BASE_URL) return;
+    try {
+      const rows = await apiFetch("/api/me/payslips");
+      const mapped = rows.map(mapBackendPayroll);
+      setMyPayslipsState((ps) => ({ ...ps, [employeeId]: mapped }));
+    } catch (e) { /* non-fatal — "My Payslips" just shows nothing until this succeeds */ }
+  };
+
   const fetchOfficeAvailability = async () => {
     if (!API_BASE_URL) return;
     try {
@@ -3359,6 +3384,7 @@ export default function App() {
       }
       fetchLeaveForRole(mapped.role, mapped.id);
       fetchOfficeAvailability();
+      fetchMyPayslips(mapped.id);
       setCurrentUserId(mapped.id);
       setViewMode("role");
       setPortalChoice(null);
@@ -3407,6 +3433,7 @@ export default function App() {
       setEmployeesState((es) => [...es, mapped]);
       fetchLeaveForRole(mapped.role, mapped.id);
       fetchOfficeAvailability();
+      fetchMyPayslips(mapped.id);
       setCurrentUserId(mapped.id);
       setViewMode("role");
       setPortalChoice(null);
@@ -3794,7 +3821,7 @@ export default function App() {
           <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
         )}
         {viewMode === "selfService" && role !== "employee" && portalChoice === "leave" && (
-          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
+          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
         )}
         {viewMode === "selfService" && role !== "employee" && portalChoice === "itSupport" && (
           <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
@@ -3836,7 +3863,7 @@ export default function App() {
           <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
         )}
         {viewMode === "role" && role === "employee" && portalChoice === "leave" && (
-          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
+          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
         )}
         {viewMode === "role" && role === "employee" && portalChoice === "itSupport" && (
           <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />

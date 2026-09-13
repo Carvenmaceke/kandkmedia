@@ -94,11 +94,6 @@ public class Employee {
     @Builder.Default
     private String rateType = "Monthly";
 
-    @Builder.Default
-    private boolean notifyLeave = true;
-    @Builder.Default
-    private boolean notifyPayslip = true;
-
     @ManyToOne
     @JoinColumn(name = "department_id")
     private Department department;

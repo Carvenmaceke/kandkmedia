@@ -85,8 +85,6 @@ public class EmployeeProfileService {
                 e.setManager(manager);
             }
         }
-        if (dto.getNotifyLeave() != null) e.setNotifyLeave(dto.getNotifyLeave());
-        if (dto.getNotifyPayslip() != null) e.setNotifyPayslip(dto.getNotifyPayslip());
 
         return employeeRepository.save(e);
     }

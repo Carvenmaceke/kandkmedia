@@ -65,7 +65,4 @@ public class EmployeeProfileDto {
      *  raw numeric id, since that's what HR/Master actually has on hand in
      *  the UI. Empty string clears the manager relationship. */
     private String managerEmployeeCode;
-
-    private Boolean notifyLeave;
-    private Boolean notifyPayslip;
 }

@@ -2264,9 +2264,14 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
   );
 }
 
-function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslipEmail, payrollLoading, advanceStage }) {
+function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslipEmail, deletePayrollDraft, payrollLoading, advanceStage }) {
   const hasRealRecords = API_BASE_URL && Object.keys(payrollRecords || {}).length > 0;
   const stageIdx = STAGES.indexOf(payrollStage);
+  // When connected to the real backend, an employee with no record here
+  // means their salary hasn't been set by HR yet — correctly, no payslip
+  // should exist for them at all, so they're left out of this table
+  // rather than shown with a made-up estimated figure.
+  const visibleEmployees = API_BASE_URL ? EMPLOYEES.filter((e) => payrollRecords[e.id]) : EMPLOYEES;
   return (
     <div>
       <SectionTitle sub={`Reviewing variable earnings and deductions for ${CURRENT_MONTH}`}>Payroll — {CURRENT_MONTH}</SectionTitle>
@@ -2274,6 +2279,9 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
         <Pill tone="teal">Status: {payrollStage}</Pill>
         {payrollLoading && <span style={{ fontSize: 12, color: T.muted }}>Loading real payroll data…</span>}
         {API_BASE_URL && !payrollLoading && !hasRealRecords && <Pill tone="amber">Showing estimated figures — couldn't load real payroll data</Pill>}
+        {API_BASE_URL && !payrollLoading && EMPLOYEES.length > visibleEmployees.length && (
+          <Pill tone="muted">{EMPLOYEES.length - visibleEmployees.length} employee(s) hidden — salary not yet set</Pill>
+        )}
         {advanceStage && (stageIdx < STAGES.length - 1
           ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1]}</Button>
           : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>)}
@@ -2282,7 +2290,10 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Basic", "Overtime", "Bonus", "Gross", "Deductions", "Net Pay", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
-            {EMPLOYEES.map((e) => {
+            {visibleEmployees.length === 0 && (
+              <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees have a salary set yet — add one under Employees to generate their payslip.</td></tr>
+            )}
+            {visibleEmployees.map((e) => {
               const real = hasRealRecords ? payrollRecords[e.id] : null;
               const f = real || calcPayroll(e, 3);
               return (
@@ -2301,6 +2312,11 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
                       {real && real.status === "SENT" && (
                         <button onClick={() => resendPayslipEmail(real._dbId)} title={real.emailSent ? "Resend email" : `Resend (last attempt failed: ${real.emailFailureReason || "unknown"})`} style={{ background: "none", border: "none", cursor: "pointer", color: real.emailSent ? T.green : T.red }}>
                           <Mail size={16} />
+                        </button>
+                      )}
+                      {real && real.status === "DRAFT" && deletePayrollDraft && (
+                        <button onClick={() => { if (window.confirm(`Remove this DRAFT payroll record for ${e.name}? This can't be undone.`)) deletePayrollDraft(real._dbId); }} title="Remove this draft" style={{ background: "none", border: "none", cursor: "pointer", color: T.red }}>
+                          <Trash2 size={16} />
                         </button>
                       )}
                     </div>
@@ -3057,6 +3073,22 @@ export default function App() {
     }
   };
 
+  const deletePayrollDraft = async (payrollDbId) => {
+    if (!API_BASE_URL || !payrollDbId) return;
+    try {
+      await apiFetch(`/api/hr/payroll/${payrollDbId}`, { method: "DELETE" });
+      setPayrollRecords((pr) => {
+        const next = { ...pr };
+        for (const key of Object.keys(next)) {
+          if (next[key]._dbId === payrollDbId) delete next[key];
+        }
+        return next;
+      });
+    } catch (e) {
+      alert(`Couldn't remove this draft: ${e.message}`);
+    }
+  };
+
   const fetchLeaveForRole = async (r, employeeId) => {
     if (!API_BASE_URL) return;
     try {
@@ -3749,7 +3781,7 @@ export default function App() {
 
         {viewMode === "role" && role === "hr" && hrTab === "dashboard" && <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} />}
-        {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
+        {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "hr" && hrTab === "salaryStructure" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
 
@@ -3769,7 +3801,7 @@ export default function App() {
 
         {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} />}
         {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} />}
-        {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
+        {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}

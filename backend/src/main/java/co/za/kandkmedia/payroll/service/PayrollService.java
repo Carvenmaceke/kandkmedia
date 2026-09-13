@@ -33,9 +33,18 @@ public class PayrollService {
     private final PayslipPdfService payslipPdfService;
     private final PayslipSecurityService payslipSecurityService;
 
-    public Payroll generateDraft(Employee employee, String payPeriod, BigDecimal overtime, BigDecimal bonus) {
-        return payrollRepository.findByEmployeeIdAndPayPeriod(employee.getId(), payPeriod)
-                .orElseGet(() -> payrollRepository.save(calculate(employee, payPeriod, overtime, bonus)));
+    /** Returns empty (creates nothing) if the employee's salary hasn't
+     *  been set by HR yet — a payslip shouldn't exist at all for someone
+     *  who was only just signed up and defaults to a salary of zero. */
+    public java.util.Optional<Payroll> generateDraft(Employee employee, String payPeriod, BigDecimal overtime, BigDecimal bonus) {
+        java.util.Optional<Payroll> existing = payrollRepository.findByEmployeeIdAndPayPeriod(employee.getId(), payPeriod);
+        if (existing.isPresent()) {
+            return existing;
+        }
+        if (employee.getSalary() == null || employee.getSalary().compareTo(BigDecimal.ZERO) <= 0) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(payrollRepository.save(calculate(employee, payPeriod, overtime, bonus)));
     }
 
     /**
@@ -143,6 +152,22 @@ public class PayrollService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
         emailService.sendPayslip(payroll);
         return payrollRepository.save(payroll);
+    }
+
+    /** Removes a payroll record entirely — restricted to DRAFT only, since
+     *  anything past that point (Reviewed, Approved, Finalized, Sent) is a
+     *  real record that must be kept for audit purposes, not deleted. This
+     *  exists specifically to clean up drafts that were auto-created for
+     *  employees before their salary had been set (the signup default of
+     *  zero) — a bug fixed in generateDraft, but one that could have
+     *  already created erroneous rows before this fix shipped. */
+    public void deleteDraft(Long payrollId) {
+        Payroll payroll = payrollRepository.findById(payrollId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
+        if (payroll.getStatus() != PayrollStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a DRAFT payroll record can be deleted — this one has already moved past that stage.");
+        }
+        payrollRepository.delete(payroll);
     }
 
     /**

@@ -152,13 +152,17 @@ public class HrController {
         return payrollRepository.findByPayPeriod(period);
     }
 
-    /** Generates (or fetches, if already generated) this month's draft payroll row for one employee. */
+    /** Generates (or fetches, if already generated) this month's draft payroll row for one employee.
+     *  Returns 409 if this employee's salary hasn't been set by HR yet — no payslip should exist
+     *  for someone still sitting at the signup default of zero. */
     @PostMapping("/payroll/{employeeId}/draft")
     public Payroll generateDraft(@PathVariable Long employeeId,
                                   @RequestParam(defaultValue = "0") BigDecimal overtime,
                                   @RequestParam(defaultValue = "0") BigDecimal bonus) {
         Employee employee = employee(employeeId);
-        return payrollService.generateDraft(employee, Payroll.currentPeriod(), overtime, bonus);
+        return payrollService.generateDraft(employee, Payroll.currentPeriod(), overtime, bonus)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                        "This employee's salary hasn't been set yet — add it under Employees before generating a payslip."));
     }
 
     @PostMapping("/payroll/advance")
@@ -171,5 +175,11 @@ public class HrController {
     @PostMapping("/payroll/{id}/resend-email")
     public Payroll resendEmail(@PathVariable Long id) {
         return payrollService.resendEmail(id);
+    }
+
+    /** Removes a payroll record — only while it's still in DRAFT. */
+    @DeleteMapping("/payroll/{id}")
+    public void deleteDraft(@PathVariable Long id) {
+        payrollService.deleteDraft(id);
     }
 }

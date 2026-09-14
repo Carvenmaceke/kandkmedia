@@ -940,7 +940,7 @@ function DecisionModal({ target, decider, onClose, onConfirm }) {
 }
 
 
-function ProfileDrawer({ emp, onClose, onUpdateManager }) {
+function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo }) {
   if (!emp) return null;
   const mgr = emp.manager ? empById(emp.manager) : null;
   const managers = EMPLOYEES.filter((e) => e.role === "manager" && e.id !== emp.id);
@@ -973,7 +973,12 @@ function ProfileDrawer({ emp, onClose, onUpdateManager }) {
             )}
           </div>
         </div>
-        <div style={{ marginTop: 20 }}>
+        <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+          {onOpenPersonalInfo && (
+            <Button variant="teal" small icon={PenLine} onClick={() => onOpenPersonalInfo(emp)}>
+              {emp.idNumber || emp.taxOffice || emp.bankAccountNumber ? "Edit Personal & Payroll Info" : "Complete Profile (Personal, Tax & Banking)"}
+            </Button>
+          )}
           <Button variant="ghost" small icon={FileCheck2} onClick={() => downloadOnboardingDocument(emp)}>Download Onboarding Document</Button>
         </div>
       </div>
@@ -1056,18 +1061,12 @@ function LoginScreen({ onLogin, goSignup }) {
 }
 
 function SignupScreen({ onSignup, goLogin }) {
-  const allFieldKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
-  const blankInfo = Object.fromEntries(allFieldKeys.map((k) => [k, ""]));
-
   const [form, setForm] = useState({
     name: "", email: "", phone: "", password: "", confirm: "",
     role: "employee", dept: DEPARTMENTS[0], position: "", office: OFFICES[0], signature: null,
-    ...blankInfo,
   });
-  const [sameAsResidential, setSameAsResidential] = useState(true);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
-  const [openGroup, setOpenGroup] = useState(PERSONAL_INFO_GROUPS[0].title);
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -1079,31 +1078,12 @@ function SignupScreen({ onSignup, goLogin }) {
     if (!isCompanyEmail(form.email)) { setError(`Please use your company email address, ending in @${ALLOWED_EMAIL_DOMAIN}.`); return; }
     if (form.password !== form.confirm) { setError("Passwords do not match."); return; }
     if (EMPLOYEES.some((emp) => emp.email.toLowerCase() === form.email.toLowerCase())) { setError("An account with that email already exists."); return; }
-
-    if (!form.idNumber && !form.passportNumber) {
-      setError("Please provide either an Identity Number or a Passport Number.");
-      setOpenGroup("Personal Information");
-      return;
-    }
-    for (const group of PERSONAL_INFO_GROUPS) {
-      if (group.title === "Postal Address" && sameAsResidential) continue;
-      for (const [key, label, , required] of group.fields) {
-        if (required && !form[key] && !(key === "idNumber" || key === "passportNumber" || key === "passportCountry")) {
-          setError(`Please fill in "${label}" under ${group.title}.`);
-          setOpenGroup(group.title);
-          return;
-        }
-      }
-    }
     if (!agreedToTerms) { setError("Please agree to the Terms & Conditions to continue."); return; }
     if (!form.signature) { setError("Please sign before creating your account."); return; }
 
     setError("");
-    const finalForm = sameAsResidential
-      ? { ...form, ...Object.fromEntries(Object.entries(RESIDENTIAL_TO_POSTAL_MAP).map(([postKey, resKey]) => [postKey, form[resKey]])) }
-      : form;
     setSubmitting(true);
-    const err = await onSignup(finalForm);
+    const err = await onSignup(form);
     setSubmitting(false);
     if (err) setError(err);
   };
@@ -1169,42 +1149,8 @@ function SignupScreen({ onSignup, goLogin }) {
           <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Which office you're based at — used to route IT support requests to the right location.</div>
         </Field>
 
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.muted, margin: "18px 0 8px", paddingTop: 14, borderTop: `1px solid ${T.border}` }}>
-          Onboarding Information
-        </div>
-        {PERSONAL_INFO_GROUPS.map((group) => (
-          <div key={group.title} style={{ marginBottom: 8, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
-            <button type="button" onClick={() => setOpenGroup(openGroup === group.title ? null : group.title)} style={{
-              width: "100%", textAlign: "left", background: T.bg, border: "none", padding: "10px 14px",
-              fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
-            }}>
-              {group.title}
-              <ChevronRight size={14} style={{ transform: openGroup === group.title ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
-            </button>
-            {openGroup === group.title && (
-              <div style={{ padding: 14 }}>
-                {group.title === "Postal Address" && (
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, marginBottom: 12, cursor: "pointer" }}>
-                    <input type="checkbox" checked={sameAsResidential} onChange={(e) => setSameAsResidential(e.target.checked)} />
-                    Same as residential address
-                  </label>
-                )}
-                {!(group.title === "Postal Address" && sameAsResidential) && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    {group.fields.map(([key, label, type, required]) => (
-                      <div key={key}>
-                        <label style={{ fontSize: 11.5, fontWeight: 700, color: T.muted }}>{label}{required && <span style={{ color: T.red }}> *</span>}</label>
-                        <input type={type || "text"} value={form[key]} onChange={set(key)} style={{ ...inputStyle, marginTop: 4 }} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-        <div style={{ fontSize: 10.5, color: T.muted, marginBottom: 14 }}>
-          Provide either an Identity Number or a Passport Number + Country under Personal Information.
+        <div style={{ background: T.bg, borderRadius: 8, padding: "10px 12px", marginBottom: 14, fontSize: 11.5, color: T.muted }}>
+          HR will add your personal, tax, and banking details (needed for payroll) once your account is created — you don't need to provide those here.
         </div>
 
         <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, marginBottom: 14, overflow: "hidden" }}>
@@ -1217,10 +1163,10 @@ function SignupScreen({ onSignup, goLogin }) {
           </button>
           {termsOpen && (
             <div style={{ padding: 14, fontSize: 11.5, color: T.muted, lineHeight: 1.7, maxHeight: 180, overflowY: "auto" }}>
-              <p><strong>Consent to processing of personal information.</strong> By signing up, you consent to {COMPANY.name} collecting, storing and processing the personal information you provide here (including identity/passport details, tax information, banking details, and residential/postal address) for payroll, tax, HR administration, and leave management purposes, in accordance with the Protection of Personal Information Act (POPIA).</p>
-              <p><strong>Accuracy declaration.</strong> You declare that the information you have provided is true and correct to the best of your knowledge, and agree to notify HR promptly of any changes.</p>
-              <p><strong>Use of banking details.</strong> Your banking details will be used solely for the purpose of paying your salary and will not be shared outside the company except as required by law (e.g. SARS, UIF).</p>
-              <p><strong>Signature.</strong> The signature you provide below will appear on the onboarding document HR keeps on file for this account, alongside the information above.</p>
+              <p><strong>Consent to processing of personal information.</strong> By signing up, you consent to {COMPANY.name} collecting, storing and processing your personal information (including identity/passport details, tax information, banking details, and residential/postal address, once added by HR) for payroll, tax, HR administration, and leave management purposes, in accordance with the Protection of Personal Information Act (POPIA).</p>
+              <p><strong>Accuracy declaration.</strong> Once HR has added your personal, tax, and banking details, you agree to notify HR promptly of any changes or inaccuracies.</p>
+              <p><strong>Use of banking details.</strong> Your banking details, once on file, will be used solely for the purpose of paying your salary and will not be shared outside the company except as required by law (e.g. SARS, UIF).</p>
+              <p><strong>Signature.</strong> The signature you provide below will appear on the onboarding document HR keeps on file for this account.</p>
               <p style={{ marginTop: 10, fontStyle: "italic" }}>This is placeholder wording pending review by K and K Media's own legal/HR team — it has not been reviewed by a lawyer and should be replaced with the company's actual approved terms before relying on it.</p>
             </div>
           )}
@@ -1228,7 +1174,7 @@ function SignupScreen({ onSignup, goLogin }) {
 
         <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, marginBottom: 14, cursor: "pointer" }}>
           <input type="checkbox" checked={agreedToTerms} onChange={(e) => setAgreedToTerms(e.target.checked)} style={{ marginTop: 2 }} />
-          <span>I agree to the Terms &amp; Conditions above and consent to {COMPANY.name} processing this personal information for payroll and HR purposes.</span>
+          <span>I agree to the Terms &amp; Conditions above and consent to {COMPANY.name} processing my personal information for payroll and HR purposes.</span>
         </label>
 
         <SignaturePad value={form.signature} onChange={(sig) => setForm({ ...form, signature: sig })} />
@@ -3030,6 +2976,7 @@ export default function App() {
   const [payrollRecords, setPayrollRecords] = useState({}); // employeeCode -> mapped Payroll row (real backend data)
   const [payrollLoading, setPayrollLoading] = useState(false);
   const [profileEmp, setProfileEmp] = useState(null);
+  const [personalInfoTarget, setPersonalInfoTarget] = useState(null);
   const [payslipView, setPayslipView] = useState(null);
 
   // Sync the module-level mutable data with React state every render, so
@@ -3558,6 +3505,23 @@ export default function App() {
     }
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, active: true, terminationDate: null } : e)));
   };
+  const updateEmployeePersonalInfo = async (employeeId, fields) => {
+    if (API_BASE_URL) {
+      const target = employeesState.find((e) => e.id === employeeId);
+      if (target && target._dbId) {
+        try {
+          await apiFetch(`/api/hr/employees/${target._dbId}/profile`, { method: "PUT", body: JSON.stringify(fields) });
+        } catch (e) {
+          alert(`Couldn't save this employee's details: ${e.message}`);
+          return;
+        }
+      }
+    }
+    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, ...fields } : e)));
+    setProfileEmp((pe) => (pe && pe.id === employeeId ? { ...pe, ...fields } : pe));
+    setPersonalInfoTarget(null);
+    alert("Saved.");
+  };
   const updateEmployeeManager = async (employeeId, managerId) => {
     if (API_BASE_URL) {
       const target = employeesState.find((e) => e.id === employeeId);
@@ -3870,7 +3834,18 @@ export default function App() {
         )}
       </div>
 
-      {profileEmp && <ProfileDrawer emp={profileEmp} onClose={() => setProfileEmp(null)} onUpdateManager={updateEmployeeManager} />}
+      {profileEmp && <ProfileDrawer emp={profileEmp} onClose={() => setProfileEmp(null)} onUpdateManager={updateEmployeeManager} onOpenPersonalInfo={setPersonalInfoTarget} />}
+      {personalInfoTarget && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.45)", zIndex: 50, display: "flex", justifyContent: "center", alignItems: "flex-start", overflowY: "auto", padding: "40px 20px" }} onClick={() => setPersonalInfoTarget(null)}>
+          <div style={{ width: "100%", maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{personalInfoTarget.name} — Personal & Payroll Information</div>
+              <button onClick={() => setPersonalInfoTarget(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#fff" }}><X size={20} /></button>
+            </div>
+            <PersonalInfoSection emp={personalInfoTarget} onSave={(fields) => updateEmployeePersonalInfo(personalInfoTarget.id, fields)} />
+          </div>
+        </div>
+      )}
       {payslipView && <Payslip {...payslipView} onClose={() => setPayslipView(null)} />}
     </div>
   );

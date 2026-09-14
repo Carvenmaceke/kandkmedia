@@ -49,69 +49,48 @@ public class SignupRequest {
     @NotBlank(message = "Please sign before creating your account.")
     private String signature; // PNG data URL from the signup signature pad
 
-    // --- Onboarding info, required at signup (matches the frontend form) ---
-    // idNumber vs passportNumber+passportCountry: exactly one identity
-    // document path is enforced in AuthService, not here, since a
-    // NotBlank on both fields would wrongly force every field.
-    @NotBlank
+    // --- Onboarding info — optional at signup now; HR fills this in for
+    // the employee afterward via PUT /api/hr/employees/{id}/profile once
+    // their account exists. idNumber vs passportNumber+passportCountry is
+    // no longer enforced here either, for the same reason. ---
     private String title;
     private String secondName;
-    @NotBlank
     private String initials;
-    @NotNull
     private LocalDate dateOfBirth;
     private String idNumber;
     private String passportNumber;
     private String passportCountry;
-    @NotBlank
     private String race;
-    @NotBlank
     private String relationshipStatus;
 
-    @NotBlank
     private String contactTelephone;
-    @NotBlank
     private String contactCellphone;
-    @NotBlank
     private String emergencyContactName;
-    @NotBlank
     private String emergencyContactTelephone;
     private String emergencyContactCellphone;
 
-    @NotBlank
     private String taxOffice;
-    @NotBlank
     private String incomeTaxNumber;
 
-    @NotBlank
     private String bankAccountType;
-    @NotBlank
     private String bankBranchCode;
-    @NotBlank
     private String bankName;
     private String bankBranchName;
-    @NotBlank
     private String bankAccountNumber;
-    @NotBlank
     private String bankAccountHolder;
     private String bankAccountRelationship;
 
     private String resUnitNumber;
     private String resComplexName;
-    @NotBlank
     private String resStreetNumber;
-    @NotBlank
     private String resStreetName;
-    @NotBlank
     private String resSuburb;
-    @NotBlank
     private String resCity;
-    @NotBlank
     private String resPostalCode;
 
-    // Postal address: optional at the DTO level — AuthService copies the
-    // residential address across when these are left blank, mirroring the
-    // frontend's "same as residential" checkbox.
+    // Postal address: AuthService copies the residential address across
+    // when these are left blank, mirroring the frontend's "same as
+    // residential" checkbox — unchanged, just no longer required either.
     private String postalService;
     private String postalNumber;
     private String postStreetNumber;

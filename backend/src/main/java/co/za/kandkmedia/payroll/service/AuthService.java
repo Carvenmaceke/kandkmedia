@@ -48,11 +48,6 @@ public class AuthService {
         if (userRepository.existsByEmail(email) || employeeRepository.existsByEmail(email)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An account with that email already exists.");
         }
-        if ((req.getIdNumber() == null || req.getIdNumber().isBlank())
-                && (req.getPassportNumber() == null || req.getPassportNumber().isBlank())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Please provide either an Identity Number or a Passport Number.");
-        }
 
         EmployeeLevel level = null; // levels no longer drive salary — HR sets it per employee after signup
         Department department = req.getDepartment() == null ? null

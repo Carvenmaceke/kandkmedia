@@ -140,6 +140,12 @@ public class AdminController {
         return supportService.resolve(id);
     }
 
+    /** Removes a Resolved ticket from the list. */
+    @DeleteMapping("/support/{id}")
+    public void clearSupportTicket(@PathVariable Long id) {
+        supportService.clear(id);
+    }
+
     @GetMapping("/office-issues")
     public List<OfficeIssue> officeIssues() {
         return officeIssueService.all();
@@ -148,6 +154,12 @@ public class AdminController {
     @PutMapping("/office-issues/{id}")
     public OfficeIssue updateOfficeIssue(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {
         return officeIssueService.updateStatus(id, body.get("status"), body.get("response"));
+    }
+
+    /** Removes a Resolved office issue from the list. */
+    @DeleteMapping("/office-issues/{id}")
+    public void clearOfficeIssue(@PathVariable Long id) {
+        officeIssueService.clear(id);
     }
 
     @GetMapping("/payroll-settings")

@@ -1409,7 +1409,7 @@ async function sendRequestToServer(path, ticket, emp) {
   }
 }
 
-function TicketDetailModal({ ticket, onClose, onSave }) {
+function TicketDetailModal({ ticket, onClose, onSave, onClear }) {
   const [status, setStatus] = useState(ticket?.status || "Open");
   const [response, setResponse] = useState(ticket?.response || "");
 
@@ -1440,16 +1440,21 @@ function TicketDetailModal({ ticket, onClose, onSave }) {
           <textarea value={response} onChange={(e) => setResponse(e.target.value)} rows={4} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="e.g. I'll be at the Sandton office from 2pm today and can look at this then…" />
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
-          <Button variant="teal" onClick={() => onSave(ticket.id, status, response)}>Save</Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="teal" onClick={() => onSave(ticket.id, status, response)}>Save</Button>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          </div>
+          {ticket.status === "Resolved" && onClear && (
+            <Button variant="ghost" icon={Trash2} onClick={() => { if (window.confirm("Clear this resolved ticket? This removes it from the list permanently.")) onClear(ticket.id); }}>Clear</Button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTicket, onRefresh }) {
+function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTicket, onClearTicket, onRefresh }) {
   const [view, setView] = useState(isAdminView ? "all" : "new");
   const [form, setForm] = useState({ subject: "", category: SUPPORT_CATEGORIES[0], priority: "Medium", description: "" });
   const [error, setError] = useState("");
@@ -1615,7 +1620,8 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
       )}
 
       <TicketDetailModal ticket={detailTicket} onClose={() => setDetailTicket(null)}
-        onSave={(id, status, response) => { onUpdateTicket(id, status, response); setDetailTicket(null); }} />
+        onSave={(id, status, response) => { onUpdateTicket(id, status, response); setDetailTicket(null); }}
+        onClear={onClearTicket ? (id) => { onClearTicket(id); setDetailTicket(null); } : null} />
     </div>
   );
 }
@@ -1624,7 +1630,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
 /* OFFICE ISSUES — separate feature: on-site hardware/network/equipment   */
 /* issues at a specific office (Midrand/Sandton), managed by IT Support   */
 /* ---------------------------------------------------------------------- */
-function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availability, onSetAvailability, onUpdateIssue, onRefresh }) {
+function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availability, onSetAvailability, onUpdateIssue, onClearIssue, onRefresh }) {
   const [view, setView] = useState(isAdminView ? "all" : "new");
   const [form, setForm] = useState({ subject: "", type: OFFICE_ISSUE_TYPES[0], priority: "Medium", description: "", office: emp.office || OFFICES[0] });
   const [error, setError] = useState("");
@@ -1816,7 +1822,8 @@ function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availab
       )}
 
       <TicketDetailModal ticket={detailIssue} onClose={() => setDetailIssue(null)}
-        onSave={(id, status, response) => { onUpdateIssue(id, status, response); setDetailIssue(null); }} />
+        onSave={(id, status, response) => { onUpdateIssue(id, status, response); setDetailIssue(null); }}
+        onClear={onClearIssue ? (id) => { onClearIssue(id); setDetailIssue(null); } : null} />
     </div>
   );
 }
@@ -3624,6 +3631,18 @@ export default function App() {
     }
     setSupportTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, response } : t)));
   };
+  const clearSupportTicket = async (id) => {
+    const target = supportTickets.find((t) => t.id === id);
+    if (API_BASE_URL && target && target._dbId) {
+      try {
+        await apiFetch(`/api/admin/support/${target._dbId}`, { method: "DELETE" });
+      } catch (e) {
+        alert(`Couldn't clear this ticket: ${e.message}`);
+        return;
+      }
+    }
+    setSupportTickets((ts) => ts.filter((t) => t.id !== id));
+  };
   const addOfficeIssue = (i) => setOfficeIssues((is) => [i, ...is]);
   const updateOfficeIssue = async (id, status, response) => {
     if (API_BASE_URL) {
@@ -3641,6 +3660,18 @@ export default function App() {
       }
     }
     setOfficeIssues((is) => is.map((i) => (i.id === id ? { ...i, status, response } : i)));
+  };
+  const clearOfficeIssue = async (id) => {
+    const target = officeIssues.find((i) => i.id === id);
+    if (API_BASE_URL && target && target._dbId) {
+      try {
+        await apiFetch(`/api/admin/office-issues/${target._dbId}`, { method: "DELETE" });
+      } catch (e) {
+        alert(`Couldn't clear this issue: ${e.message}`);
+        return;
+      }
+    }
+    setOfficeIssues((is) => is.filter((i) => i.id !== id));
   };
 
   const hrNav = [
@@ -3801,11 +3832,11 @@ export default function App() {
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}
         {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
-        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
-        {viewMode === "role" && role === "admin" && adminTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onRefresh={fetchOfficeIssues} />}
+        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onClearTicket={clearSupportTicket} onRefresh={fetchSupportTickets} />}
+        {viewMode === "role" && role === "admin" && adminTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onClearIssue={clearOfficeIssue} onRefresh={fetchOfficeIssues} />}
 
-        {viewMode === "role" && role === "it_support" && itSupportTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onRefresh={fetchOfficeIssues} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onClearIssue={clearOfficeIssue} onRefresh={fetchOfficeIssues} />}
+        {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onClearTicket={clearSupportTicket} onRefresh={fetchSupportTickets} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
@@ -3818,8 +3849,8 @@ export default function App() {
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}
         {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
-        {viewMode === "role" && role === "master" && masterTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onRefresh={fetchSupportTickets} />}
-        {viewMode === "role" && role === "master" && masterTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onRefresh={fetchOfficeIssues} />}
+        {viewMode === "role" && role === "master" && masterTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onClearTicket={clearSupportTicket} onRefresh={fetchSupportTickets} />}
+        {viewMode === "role" && role === "master" && masterTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onClearIssue={clearOfficeIssue} onRefresh={fetchOfficeIssues} />}
 
         {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
 

@@ -68,4 +68,15 @@ public class SupportService {
         ticket.setStatus(TicketStatus.RESOLVED);
         return supportTicketRepository.save(ticket);
     }
+
+    /** Removes a ticket from the list entirely — only once it's Resolved,
+     *  so an open or in-progress issue can't be cleared away by mistake. */
+    public void clear(Long id) {
+        SupportTicket ticket = supportTicketRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Support ticket not found."));
+        if (ticket.getStatus() != TicketStatus.RESOLVED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a Resolved ticket can be cleared.");
+        }
+        supportTicketRepository.delete(ticket);
+    }
 }

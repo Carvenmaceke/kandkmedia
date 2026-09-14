@@ -60,4 +60,14 @@ public class OfficeIssueService {
         issue.setResponse(response);
         return officeIssueRepository.save(issue);
     }
+
+    /** Removes an issue from the list entirely — only once it's Resolved. */
+    public void clear(Long id) {
+        OfficeIssue issue = officeIssueRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Office issue not found."));
+        if (issue.getStatus() != TicketStatus.RESOLVED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a Resolved issue can be cleared.");
+        }
+        officeIssueRepository.delete(issue);
+    }
 }

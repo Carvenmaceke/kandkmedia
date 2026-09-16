@@ -1214,7 +1214,8 @@ function setStoredToken(token) {
 /** Throws with a human-readable message on any non-2xx response, so
  *  callers can just try/catch and show err.message. */
 async function apiFetch(path, options = {}) {
-  const token = getStoredToken();
+  const isAuthEndpoint = path === "/api/auth/login" || path === "/api/auth/signup";
+  const token = isAuthEndpoint ? null : getStoredToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;

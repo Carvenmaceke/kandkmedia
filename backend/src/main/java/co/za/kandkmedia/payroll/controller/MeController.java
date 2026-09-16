@@ -57,6 +57,17 @@ public class MeController {
         return java.util.Collections.singletonMap("note", note == null ? "" : note);
     }
 
+    /** Only this employee's own days — never anyone else's schedule. */
+    @GetMapping("/schedule")
+    public java.util.Map<String, Object> mySchedule(@AuthenticationPrincipal AppUser user) {
+        Employee e = employeeOf(user);
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("office", e.getOffice());
+        result.put("daysPerWeek", e.getDaysPerWeek());
+        result.put("assignedWorkDays", e.getAssignedWorkDays() == null ? java.util.List.of() : java.util.Arrays.asList(e.getAssignedWorkDays().split(",")));
+        return result;
+    }
+
     @PutMapping("/profile")
     public Employee updateMyProfile(@AuthenticationPrincipal AppUser user, @RequestBody EmployeeProfileDto dto) {
         return employeeProfileService.updateProfile(employeeOf(user).getId(), dto);

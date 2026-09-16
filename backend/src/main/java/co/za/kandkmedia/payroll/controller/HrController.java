@@ -6,6 +6,7 @@ import co.za.kandkmedia.payroll.domain.LeaveRequest;
 import co.za.kandkmedia.payroll.domain.Payroll;
 import co.za.kandkmedia.payroll.domain.EmployeeLevel;
 import co.za.kandkmedia.payroll.repository.EmployeeLevelRepository;
+import co.za.kandkmedia.payroll.service.WorkScheduleService;
 import co.za.kandkmedia.payroll.dto.LeaveDecisionDto;
 import co.za.kandkmedia.payroll.repository.EmployeeRepository;
 import co.za.kandkmedia.payroll.repository.AppUserRepository;
@@ -35,6 +36,7 @@ public class HrController {
     private final PayrollService payrollService;
     private final PayrollRepository payrollRepository;
     private final EmployeeLevelRepository levelRepository;
+    private final WorkScheduleService workScheduleService;
     private final co.za.kandkmedia.payroll.service.EmployeeProfileService employeeProfileService;
     private final AppUserRepository appUserRepository;
     private final OnboardingDocumentPdfService onboardingDocumentPdfService;
@@ -57,6 +59,61 @@ public class HrController {
         level.setMinSalary(update.getMinSalary());
         level.setMaxSalary(update.getMaxSalary());
         return levelRepository.save(level);
+    }
+
+    /** Sets how many days/week an employee needs to be in-office. Doesn't
+     *  assign WHICH days by itself — call /schedule/auto-assign after
+     *  changing this (or several employees' requirements at once) to
+     *  re-run the balancing algorithm. */
+    @PutMapping("/employees/{id}/schedule")
+    public Employee setDaysPerWeek(@PathVariable Long id, @RequestBody java.util.Map<String, Integer> body) {
+        Employee e = employee(id);
+        Integer days = body.get("daysPerWeek");
+        if (days == null || days < 0 || days > 5) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "daysPerWeek must be between 0 and 5.");
+        }
+        e.setDaysPerWeek(days);
+        return employeeRepository.save(e);
+    }
+
+    /** Re-runs the day-balancing algorithm for every employee with a
+     *  daysPerWeek requirement set. Safe to call repeatedly — e.g. after
+     *  a new employee gets their requirement set, or an office's capacity
+     *  changes. */
+    @PostMapping("/schedule/auto-assign")
+    public List<Employee> autoAssignSchedule() {
+        return workScheduleService.autoAssignAll();
+    }
+
+    /** Per-weekday headcount for one office — how full each day currently
+     *  is against that office's capacity, for HR to check before deciding
+     *  whether to raise someone's days or adjust capacity. */
+    @GetMapping("/schedule/headcount")
+    public java.util.Map<String, Integer> scheduleHeadcount(@RequestParam String office) {
+        java.util.Map<String, Integer> result = new java.util.LinkedHashMap<>();
+        workScheduleService.headcountForOffice(office).forEach((day, count) -> result.put(day.name(), count));
+        return result;
+    }
+
+    @GetMapping("/schedule/capacity")
+    public java.util.Map<String, Integer> scheduleCapacity() {
+        co.za.kandkmedia.payroll.domain.Company company = workScheduleService.company();
+        java.util.Map<String, Integer> result = new java.util.LinkedHashMap<>();
+        result.put("Midrand", company.getMidrandCapacity());
+        result.put("Sandton", company.getSandtonCapacity());
+        return result;
+    }
+
+    @PutMapping("/schedule/capacity")
+    public java.util.Map<String, Integer> updateScheduleCapacity(@RequestBody java.util.Map<String, Integer> body) {
+        co.za.kandkmedia.payroll.domain.Company company = workScheduleService.company();
+        if (body.get("Midrand") != null) company.setMidrandCapacity(body.get("Midrand"));
+        if (body.get("Sandton") != null) company.setSandtonCapacity(body.get("Sandton"));
+        workScheduleService.saveCompany(company);
+        java.util.Map<String, Integer> result = new java.util.LinkedHashMap<>();
+        result.put("Midrand", company.getMidrandCapacity());
+        result.put("Sandton", company.getSandtonCapacity());
+        return result;
     }
 
     @GetMapping("/employees")

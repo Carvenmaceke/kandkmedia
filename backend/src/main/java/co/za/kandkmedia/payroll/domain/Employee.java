@@ -126,6 +126,17 @@ public class Employee {
     @Builder.Default
     private boolean notifyPayslip = true;
 
+    // --- Office work schedule. HR sets daysPerWeek (how many days this
+    // employee needs to be in-office); WorkScheduleService's auto-assign
+    // then decides WHICH specific weekdays, balanced against office
+    // capacity so everyone isn't trying to use the same desks on the same
+    // day. assignedWorkDays is a comma-separated list of day-of-week names
+    // (e.g. "MONDAY,WEDNESDAY,FRIDAY") — simple string storage rather than
+    // a separate table, since this is a small, per-employee value that's
+    // always read/written as a whole set together. ---
+    private Integer daysPerWeek;
+    private String assignedWorkDays;
+
     // --- Signup consent + signature, used to generate the HR-downloadable
     // onboarding document (see OnboardingDocumentPdfService) ---
     @Builder.Default

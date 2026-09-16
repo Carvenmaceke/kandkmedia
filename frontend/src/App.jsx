@@ -1265,6 +1265,8 @@ function mapBackendEmployee(be) {
     terminationDate: be.terminationDate || null,
     notifyLeave: be.notifyLeave !== false,
     notifyPayslip: be.notifyPayslip !== false,
+    daysPerWeek: be.daysPerWeek != null ? be.daysPerWeek : null,
+    assignedWorkDays: be.assignedWorkDays ? be.assignedWorkDays.split(",") : [],
     agreedToTerms: !!be.agreedToTerms,
     termsAgreedAt: be.termsAgreedAt || null,
     onboardingSignature: be.onboardingSignature || null,
@@ -1282,6 +1284,26 @@ const CURRENT_PAY_PERIOD = "2026-09";
  *  calcPayroll() already produces locally, so HrPayroll/HrDashboard don't
  *  need separate rendering logic for real vs local figures. */
 /** "2026-09" -> "September 2026", matching the existing month-label convention. */
+/** Returns this week's Monday-Friday as [{day: "MONDAY", date: "16 Sep", label: "Mon"}, ...],
+ *  matching the DayOfWeek names the backend stores in assignedWorkDays. */
+function thisWeekDates() {
+  const days = [
+    { day: "MONDAY", label: "Mon" }, { day: "TUESDAY", label: "Tue" }, { day: "WEDNESDAY", label: "Wed" },
+    { day: "THURSDAY", label: "Thu" }, { day: "FRIDAY", label: "Fri" },
+  ];
+  const now = new Date();
+  const jsDay = now.getDay(); // 0 = Sunday, 1 = Monday, ...
+  const diffToMonday = jsDay === 0 ? -6 : 1 - jsDay;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return days.map((d, i) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + i);
+    return { ...d, date: `${date.getDate()} ${monthNames[date.getMonth()]}` };
+  });
+}
+
 function formatPayPeriod(payPeriod) {
   if (!payPeriod) return "";
   const [year, month] = payPeriod.split("-").map(Number);
@@ -2226,6 +2248,124 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
   );
 }
 
+const WEEKDAY_LABELS = { MONDAY: "Mon", TUESDAY: "Tue", WEDNESDAY: "Wed", THURSDAY: "Thu", FRIDAY: "Fri" };
+const WEEKDAY_ORDER = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
+
+function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAutoAssign }) {
+  const [capForm, setCapForm] = useState(capacity);
+  const [capSaving, setCapSaving] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [officeFilter, setOfficeFilter] = useState("All");
+
+  const filtered = EMPLOYEES.filter((e) => e.active !== false).filter((e) => officeFilter === "All" || e.office === officeFilter);
+
+  // Headcount per office/day, computed straight from each employee's
+  // currently assigned days — always in sync with what's actually shown.
+  const headcount = {};
+  OFFICES.forEach((o) => { headcount[o] = {}; WEEKDAY_ORDER.forEach((d) => { headcount[o][d] = 0; }); });
+  EMPLOYEES.filter((e) => e.active !== false).forEach((e) => {
+    (e.assignedWorkDays || []).forEach((d) => { if (headcount[e.office]) headcount[e.office][d] = (headcount[e.office][d] || 0) + 1; });
+  });
+
+  const saveCapacity = async () => {
+    setCapSaving(true);
+    await onUpdateCapacity(capForm);
+    setCapSaving(false);
+  };
+
+  const runAutoAssign = async () => {
+    setAssigning(true);
+    await onAutoAssign();
+    setAssigning(false);
+  };
+
+  return (
+    <div>
+      <SectionTitle sub="Set how many days/week each employee needs in-office — the system spreads specific days across the week to keep within desk capacity">Work Schedule</SectionTitle>
+
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 20 }}>
+        <Card style={{ padding: 18, flex: "1 1 280px" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>Office Desk Capacity</div>
+          {OFFICES.map((o) => (
+            <div key={o} style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: T.muted }}>{o}</label>
+              <input type="number" min={0} value={capForm[o]} onChange={(e) => setCapForm({ ...capForm, [o]: Number(e.target.value) })} style={{ ...inputStyle, marginTop: 4 }} />
+            </div>
+          ))}
+          <Button variant="teal" small onClick={saveCapacity} disabled={capSaving}>{capSaving ? "Saving…" : "Save Capacity"}</Button>
+        </Card>
+
+        <Card style={{ padding: 18, flex: "2 1 380px" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>This Week's Headcount vs Capacity</div>
+          {OFFICES.map((o) => (
+            <div key={o} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>{o}</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {WEEKDAY_ORDER.map((d) => {
+                  const count = headcount[o][d] || 0;
+                  const over = count > capForm[o];
+                  return (
+                    <div key={d} style={{ flex: 1, textAlign: "center", padding: "6px 4px", borderRadius: 6, background: over ? T.redBg : T.bg, border: `1px solid ${over ? T.red : T.border}` }}>
+                      <div style={{ fontSize: 10, color: T.muted, fontWeight: 700 }}>{WEEKDAY_LABELS[d]}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: over ? T.red : T.text }}>{count}/{capForm[o]}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </Card>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {["All", ...OFFICES].map((o) => (
+            <button key={o} onClick={() => setOfficeFilter(o)} style={{
+              background: officeFilter === o ? T.navy : "#fff", color: officeFilter === o ? "#fff" : T.muted,
+              border: `1px solid ${officeFilter === o ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
+              fontSize: 12, fontWeight: 600, cursor: "pointer",
+            }}>{o}</button>
+          ))}
+        </div>
+        <Button variant="teal" small icon={RefreshCw} onClick={runAutoAssign} disabled={assigning}>{assigning ? "Generating…" : "Auto-Generate Schedule"}</Button>
+      </div>
+
+      <Card style={{ overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: T.bg, textAlign: "left" }}>
+              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Employee</th>
+              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Office</th>
+              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Days/Week</th>
+              {WEEKDAY_ORDER.map((d) => <th key={d} style={{ padding: "10px 8px", fontSize: 11.5, color: T.muted, fontWeight: 700, textAlign: "center" }}>{WEEKDAY_LABELS[d]}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees to show.</td></tr>}
+            {filtered.map((e) => (
+              <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600 }}>{e.name}</div><div style={{ fontFamily: mono, fontSize: 11, color: T.muted }}>{e.id}</div></td>
+                <td style={{ padding: "10px 14px", color: T.muted }}>{e.office}</td>
+                <td style={{ padding: "10px 14px" }}>
+                  <select value={e.daysPerWeek ?? ""} onChange={(ev) => onUpdateDaysPerWeek(e.id, Number(ev.target.value))} style={{ ...inputStyle, padding: "5px 8px", width: 80 }}>
+                    <option value="">—</option>
+                    {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </td>
+                {WEEKDAY_ORDER.map((d) => (
+                  <td key={d} style={{ padding: "10px 8px", textAlign: "center" }}>
+                    {(e.assignedWorkDays || []).includes(d) ? <span style={{ color: T.teal, fontWeight: 700 }}>●</span> : <span style={{ color: T.border }}>—</span>}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
 function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslipEmail, deletePayrollDraft, forceDeletePayroll, isMaster, payrollLoading, advanceStage }) {
   const hasRealRecords = API_BASE_URL && Object.keys(payrollRecords || {}).length > 0;
   const stageIdx = STAGES.indexOf(payrollStage);
@@ -2790,7 +2930,7 @@ function ITSupportPortal({ goSupport, goOfficeIssues }) {
 }
 
 
-function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips, setPayslipView, onBackToChooser }) {
+function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips, mySchedule, setPayslipView, onBackToChooser }) {
   const [tab, setTab] = useState("dashboard");
   const [form, setForm] = useState({ type: LEAVE_TYPES[0], start: "", end: "", reason: "", signature: null, proofFile: null });
   const [formError, setFormError] = useState("");
@@ -2825,6 +2965,7 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
   const tabs = [
     { id: "dashboard", label: "Dashboard" }, { id: "payslips", label: "My Payslips" },
     { id: "applyLeave", label: "Apply for Leave" }, { id: "leaveHistory", label: "Leave History" },
+    { id: "mySchedule", label: "My Schedule" },
   ];
 
   return (
@@ -2953,6 +3094,42 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
           </table>
         </Card>
       )}
+      {tab === "mySchedule" && (
+        <Card style={{ padding: 20 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>This Week's Office Schedule</div>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>
+            {mySchedule && mySchedule.daysPerWeek != null
+              ? `You're scheduled for ${mySchedule.daysPerWeek} day${mySchedule.daysPerWeek === 1 ? "" : "s"}/week at ${mySchedule.office || "your office"}.`
+              : "HR hasn't set your in-office schedule yet."}
+          </div>
+          {mySchedule && mySchedule.daysPerWeek != null ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+              {thisWeekDates().map(({ day, date, label }) => {
+                const inOffice = (mySchedule.assignedWorkDays || []).includes(day);
+                return (
+                  <div key={day} style={{ textAlign: "center", padding: "14px 6px", borderRadius: 8, background: inOffice ? T.tealLight : T.bg, border: `1px solid ${inOffice ? T.teal : T.border}` }}>
+                    <div style={{ fontSize: 11, color: T.muted, fontWeight: 700 }}>{label}</div>
+                    <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{date}</div>
+                    {inOffice ? (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                        <Building2 size={16} color={T.teal} />
+                        <span style={{ fontSize: 11, fontWeight: 700, color: T.teal }}>In Office</span>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                        <span style={{ fontSize: 16, color: T.muted }}>—</span>
+                        <span style={{ fontSize: 11, color: T.muted }}>Remote</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12.5, color: T.muted }}>Once HR sets how many days/week you need to be in-office, your specific days will show here.</div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
@@ -2971,6 +3148,8 @@ export default function App() {
   const [levelsState, setLevelsState] = useState(LEVELS);
   const [companyState, setCompanyState] = useState(COMPANY);
   const [payrollSettingsState, setPayrollSettingsState] = useState({ autoSendEnabled: true, sendOn: "LAST_DAY_OF_MONTH", deliveryHour: 18, deliveryMinute: 0 });
+  const [scheduleCapacityState, setScheduleCapacityState] = useState({ Midrand: 15, Sandton: 10 });
+  const [myScheduleState, setMyScheduleState] = useState(null);
   const [viewMode, setViewMode] = useState("role"); // "role" | "selfService" | "settings"
   const [hrTab, setHrTab] = useState("dashboard");
   const [adminTab, setAdminTab] = useState("overview");
@@ -3130,6 +3309,74 @@ export default function App() {
         return Array.from(byName.values());
       });
     } catch (e) { /* non-fatal — falls back to the built-in default levels */ }
+  };
+
+  const fetchScheduleCapacity = async () => {
+    if (!API_BASE_URL) return;
+    try {
+      const c = await apiFetch("/api/hr/schedule/capacity");
+      setScheduleCapacityState({ Midrand: c.Midrand ?? 15, Sandton: c.Sandton ?? 10 });
+    } catch (e) { /* non-fatal — falls back to the built-in default capacity */ }
+  };
+
+  const updateScheduleCapacity = async (fields) => {
+    if (API_BASE_URL) {
+      try {
+        const updated = await apiFetch("/api/hr/schedule/capacity", { method: "PUT", body: JSON.stringify(fields) });
+        setScheduleCapacityState({ Midrand: updated.Midrand ?? 15, Sandton: updated.Sandton ?? 10 });
+        return true;
+      } catch (e) {
+        alert(`Couldn't save office capacity: ${e.message}`);
+        return false;
+      }
+    }
+    setScheduleCapacityState((c) => ({ ...c, ...fields }));
+    return true;
+  };
+
+  const updateEmployeeDaysPerWeek = async (employeeId, days) => {
+    if (API_BASE_URL) {
+      const target = employeesState.find((e) => e.id === employeeId);
+      if (target && target._dbId) {
+        try {
+          await apiFetch(`/api/hr/employees/${target._dbId}/schedule`, { method: "PUT", body: JSON.stringify({ daysPerWeek: days }) });
+        } catch (e) {
+          alert(`Couldn't save this employee's schedule: ${e.message}`);
+          return;
+        }
+      }
+    }
+    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, daysPerWeek: days } : e)));
+  };
+
+  const autoAssignSchedule = async () => {
+    if (!API_BASE_URL) {
+      alert("Auto-assign needs a connected backend.");
+      return;
+    }
+    try {
+      const updated = await apiFetch("/api/hr/schedule/auto-assign", { method: "POST" });
+      const mapped = updated.map(mapBackendEmployee);
+      setEmployeesState((es) => {
+        const byId = new Map(es.map((e) => [e.id, e]));
+        mapped.forEach((m) => {
+          const existing = byId.get(m.id);
+          byId.set(m.id, existing ? { ...existing, daysPerWeek: m.daysPerWeek, assignedWorkDays: m.assignedWorkDays } : m);
+        });
+        return Array.from(byId.values());
+      });
+      alert("Schedule generated for everyone with a days/week requirement set.");
+    } catch (e) {
+      alert(`Couldn't generate the schedule: ${e.message}`);
+    }
+  };
+
+  const fetchMySchedule = async () => {
+    if (!API_BASE_URL) return;
+    try {
+      const s = await apiFetch("/api/me/schedule");
+      setMyScheduleState(s);
+    } catch (e) { /* non-fatal — My Schedule just shows nothing until this succeeds */ }
   };
 
   const fetchPayrollSettings = async () => {
@@ -3329,6 +3576,7 @@ export default function App() {
       }
       if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
         fetchLevels();
+        fetchScheduleCapacity();
       }
       if (["admin", "master", "it_support"].includes(mapped.role)) {
         fetchSupportTickets();
@@ -3339,6 +3587,7 @@ export default function App() {
       fetchLeaveForRole(mapped.role, mapped.id);
       fetchOfficeAvailability();
       fetchMyPayslips(mapped.id);
+      fetchMySchedule();
       setCurrentUserId(mapped.id);
       setViewMode("role");
       setPortalChoice(null);
@@ -3388,6 +3637,7 @@ export default function App() {
       fetchLeaveForRole(mapped.role, mapped.id);
       fetchOfficeAvailability();
       fetchMyPayslips(mapped.id);
+      fetchMySchedule();
       setCurrentUserId(mapped.id);
       setViewMode("role");
       setPortalChoice(null);
@@ -3678,6 +3928,7 @@ export default function App() {
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "employees", label: "Employees", icon: Users },
     { id: "payroll", label: "Payroll", icon: Banknote }, { id: "leave", label: "Leave", icon: CalendarDays },
     { id: "salaryStructure", label: "Salary Structure", icon: SlidersHorizontal },
+    { id: "workSchedule", label: "Work Schedule", icon: Clock },
   ];
   const adminNav = [
     { id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
@@ -3693,6 +3944,7 @@ export default function App() {
   const masterNav = [
     { id: "users", label: "User Accounts", icon: ShieldCheck }, { id: "employees", label: "Employees", icon: Users },
     { id: "payroll", label: "Payroll", icon: Banknote }, { id: "leave", label: "Leave", icon: CalendarDays },
+    { id: "workSchedule", label: "Work Schedule", icon: Clock },
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
     { id: "levels", label: "Levels & Departments", icon: Building2 },
@@ -3816,7 +4068,7 @@ export default function App() {
           <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
         )}
         {viewMode === "selfService" && role !== "employee" && portalChoice === "leave" && (
-          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
+          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} mySchedule={myScheduleState} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
         )}
         {viewMode === "selfService" && role !== "employee" && portalChoice === "itSupport" && (
           <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
@@ -3827,6 +4079,7 @@ export default function App() {
         {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "hr" && hrTab === "salaryStructure" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
+        {viewMode === "role" && role === "hr" && hrTab === "workSchedule" && <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} />}
 
         {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}
@@ -3846,6 +4099,7 @@ export default function App() {
         {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} />}
         {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} forceDeletePayroll={forceDeletePayroll} isMaster={true} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
+        {viewMode === "role" && role === "master" && masterTab === "workSchedule" && <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
         {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}
         {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
@@ -3858,7 +4112,7 @@ export default function App() {
           <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
         )}
         {viewMode === "role" && role === "employee" && portalChoice === "leave" && (
-          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
+          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} mySchedule={myScheduleState} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
         )}
         {viewMode === "role" && role === "employee" && portalChoice === "itSupport" && (
           <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />

@@ -31,4 +31,11 @@ public class Company {
      *  per-session local state), so it's actually the same for everyone. */
     @Lob
     private String officeAvailabilityNote;
+
+    // --- Office desk capacity, used by WorkScheduleService to decide how
+    // many people can be assigned to each office on a given day. ---
+    @Builder.Default
+    private int midrandCapacity = 15;
+    @Builder.Default
+    private int sandtonCapacity = 10;
 }

@@ -2892,7 +2892,7 @@ function ChoicePortalCard({ icon: Icon, title, desc, onClick }) {
   );
 }
 
-function PortalChooser({ empName, onChoose }) {
+function PortalChooser({ empName, mySchedule, onChoose }) {
   return (
     <div style={{ maxWidth: 640 }}>
       <SectionTitle sub={`Welcome, ${empName}. What would you like to do?`}>Choose a Portal</SectionTitle>
@@ -2900,6 +2900,26 @@ function PortalChooser({ empName, onChoose }) {
         <ChoicePortalCard icon={Banknote} title="Payroll & Leave" desc="View your payslips, apply for leave, and check your leave balance." onClick={() => onChoose("leave")} />
         <ChoicePortalCard icon={LifeBuoy} title="IT Support" desc="Ask the assistant, or log a system or office issue." onClick={() => onChoose("itSupport")} />
       </div>
+      {mySchedule && mySchedule.daysPerWeek != null && (
+        <Card style={{ padding: 18, marginTop: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>This Week's Office Schedule</div>
+            <div style={{ fontSize: 11.5, color: T.muted }}>{mySchedule.daysPerWeek} day{mySchedule.daysPerWeek === 1 ? "" : "s"}/week · {mySchedule.office}</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+            {thisWeekDates().map(({ day, date, label }) => {
+              const inOffice = (mySchedule.assignedWorkDays || []).includes(day);
+              return (
+                <div key={day} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 8, background: inOffice ? T.tealLight : T.bg, border: `1px solid ${inOffice ? T.teal : T.border}` }}>
+                  <div style={{ fontSize: 10.5, color: T.muted, fontWeight: 700, letterSpacing: 0.3 }}>{label}</div>
+                  <div style={{ fontSize: 10, color: T.muted, marginBottom: 6 }}>{date}</div>
+                  {inOffice ? <Building2 size={14} color={T.teal} style={{ margin: "0 auto" }} /> : <span style={{ fontSize: 13, color: T.border }}>—</span>}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -4066,7 +4086,7 @@ export default function App() {
         {viewMode === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} onBack={() => setViewMode("role")} isAdminView={false} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
         {viewMode === "selfService" && role !== "employee" && portalChoice === null && (
-          <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
+          <PortalChooser empName={loginEmp.name} mySchedule={myScheduleState} onChoose={setPortalChoice} />
         )}
         {viewMode === "selfService" && role !== "employee" && portalChoice === "leave" && (
           <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} mySchedule={myScheduleState} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
@@ -4110,7 +4130,7 @@ export default function App() {
         {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
 
         {viewMode === "role" && role === "employee" && portalChoice === null && (
-          <PortalChooser empName={loginEmp.name} onChoose={setPortalChoice} />
+          <PortalChooser empName={loginEmp.name} mySchedule={myScheduleState} onChoose={setPortalChoice} />
         )}
         {viewMode === "role" && role === "employee" && portalChoice === "leave" && (
           <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} mySchedule={myScheduleState} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />

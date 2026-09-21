@@ -1274,7 +1274,10 @@ async function openRealPayslipPdf(path, filename, mode) {
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, { headers });
+    // no-store: without this, a browser can serve a cached response for this exact URL —
+    // e.g. one fetched before a server-side fix deployed — instead of re-fetching the
+    // current document. A payslip must always reflect what the server has right now.
+    res = await fetch(`${API_BASE_URL}${path}`, { headers, cache: "no-store" });
   } catch (e) {
     const message = "Couldn't reach the server — check your connection and try again.";
     console.error("Payslip PDF fetch failed:", e);

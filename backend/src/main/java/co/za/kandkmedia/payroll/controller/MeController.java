@@ -137,6 +137,7 @@ public class MeController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(pdf);
     }
 

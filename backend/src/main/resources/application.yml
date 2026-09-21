@@ -2,6 +2,14 @@ server:
   # Render (and most hosts) inject PORT at runtime and expect the app to
   # bind to it — falls back to 8080 for local development.
   port: ${PORT:8080}
+  error:
+    # Spring Boot hides the actual exception message from error responses
+    # by default (just "status":500,"error":"Internal Server Error") —
+    # include it so a failure like payslip PDF generation crashing server-
+    # side (e.g. LibreOffice missing) is diagnosable from the client error
+    # message instead of only from server logs nobody outside ops can see.
+    # Never includes the stack trace itself.
+    include-message: always
 
 spring:
   application:

@@ -1246,6 +1246,27 @@ async function apiFetch(path, options = {}) {
  *  popup blocker, so it gets silently blocked with no error at all. This
  *  is the standard workaround: open a blank tab while still inside the
  *  click's call stack, then point it at the real URL once ready. */
+/** Writes a plain, visible error message into a tab we already opened —
+ *  used instead of alert()+close() for preview failures. An alert() fires
+ *  in the ORIGINAL tab while focus has already moved to the new one, so
+ *  it's easy to miss entirely; a message inside the tab the person is
+ *  actually looking at is not. */
+function showErrorInTab(tab, message) {
+  if (!tab || tab.closed) { alert(message); return; }
+  try {
+    tab.document.open();
+    tab.document.write(
+      `<!doctype html><html><head><title>Payslip</title></head>` +
+      `<body style="font:14px system-ui, sans-serif; padding:32px; color:#3A2A28;">` +
+      `<p>${message.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>` +
+      `</body></html>`
+    );
+    tab.document.close();
+  } catch (e) {
+    alert(message);
+  }
+}
+
 async function openRealPayslipPdf(path, filename, mode) {
   const previewTab = mode === "preview" ? window.open("", "_blank") : null;
   const token = getStoredToken();
@@ -1255,21 +1276,32 @@ async function openRealPayslipPdf(path, filename, mode) {
   try {
     res = await fetch(`${API_BASE_URL}${path}`, { headers });
   } catch (e) {
-    if (previewTab) previewTab.close();
-    alert("Couldn't reach the server — check your connection and try again.");
+    const message = "Couldn't reach the server — check your connection and try again.";
+    console.error("Payslip PDF fetch failed:", e);
+    if (previewTab) showErrorInTab(previewTab, message); else alert(message);
     return;
   }
   if (!res.ok) {
-    let message = `Couldn't load the payslip (${res.status})`;
+    let message = `Couldn't load the payslip (HTTP ${res.status})`;
     try {
       const body = await res.json();
       if (body && body.message) message = body.message;
     } catch (e) { /* body wasn't JSON */ }
-    if (previewTab) previewTab.close();
-    alert(message);
+    console.error("Payslip PDF request failed:", res.status, message);
+    if (previewTab) showErrorInTab(previewTab, message); else alert(message);
     return;
   }
-  const blob = await res.blob();
+  const rawBlob = await res.blob();
+  if (!rawBlob || rawBlob.size === 0) {
+    const message = "The server returned an empty payslip file — this usually means PDF generation failed on the server. Please tell IT/HR the payslip came back empty.";
+    console.error("Payslip PDF response was empty.", res.headers.get("content-type"));
+    if (previewTab) showErrorInTab(previewTab, message); else alert(message);
+    return;
+  }
+  // Force the correct MIME type in case the server response's content-type
+  // didn't make it through — otherwise the browser may not know to render
+  // it as a PDF and a preview tab can end up blank instead of erroring.
+  const blob = rawBlob.type === "application/pdf" ? rawBlob : new Blob([rawBlob], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   if (mode === "download") {
     const link = document.createElement("a");

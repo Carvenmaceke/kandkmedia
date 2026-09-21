@@ -13,9 +13,13 @@ import co.za.kandkmedia.payroll.repository.LeaveBalanceRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
 import co.za.kandkmedia.payroll.service.EmployeeProfileService;
+import co.za.kandkmedia.payroll.service.PayslipPdfService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -40,6 +44,7 @@ public class MeController {
     private final AppUserRepository appUserRepository;
     private final PasswordEncoder passwordEncoder;
     private final CompanyRepository companyRepository;
+    private final PayslipPdfService payslipPdfService;
 
     @GetMapping
     public Employee myProfile(@AuthenticationPrincipal AppUser user) {
@@ -112,6 +117,27 @@ public class MeController {
                 .filter(p -> p.getStatus() == co.za.kandkmedia.payroll.domain.PayrollStatus.FINALIZED
                         || p.getStatus() == co.za.kandkmedia.payroll.domain.PayrollStatus.SENT)
                 .toList();
+    }
+
+    /** The real generated payslip document — only ever this employee's own, and only once finalized. */
+    @GetMapping("/payslips/{id}/pdf")
+    public ResponseEntity<byte[]> myPayslipPdf(@PathVariable Long id, @AuthenticationPrincipal AppUser user) {
+        Payroll payroll = payrollRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
+        Long ownEmployeeId = employeeOf(user).getId();
+        if (!payroll.getEmployee().getId().equals(ownEmployeeId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This isn't your payslip.");
+        }
+        if (payroll.getStatus() != co.za.kandkmedia.payroll.domain.PayrollStatus.FINALIZED
+                && payroll.getStatus() != co.za.kandkmedia.payroll.domain.PayrollStatus.SENT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This payslip isn't finalized yet.");
+        }
+        byte[] pdf = payslipPdfService.generate(payroll);
+        String filename = payroll.getPayPeriod() + "-" + payroll.getEmployee().getEmployeeCode() + ".pdf";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                .body(pdf);
     }
 
     private Employee employeeOf(AppUser user) {

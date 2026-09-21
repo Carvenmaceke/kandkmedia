@@ -1236,6 +1236,45 @@ async function apiFetch(path, options = {}) {
   try { return await res.json(); } catch (e) { return null; }
 }
 
+/** Fetches the real, backend-generated payslip PDF (built from the actual
+ *  company template) and either opens it in a new tab or triggers a save —
+ *  never a client-side mockup. */
+async function openRealPayslipPdf(path, filename, mode) {
+  const token = getStoredToken();
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { headers });
+  } catch (e) {
+    alert("Couldn't reach the server — check your connection and try again.");
+    return;
+  }
+  if (!res.ok) {
+    let message = `Couldn't load the payslip (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body && body.message) message = body.message;
+    } catch (e) { /* body wasn't JSON */ }
+    alert(message);
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  if (mode === "download") {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } else {
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+}
+
 /** Converts the backend's Employee JSON shape (nested department/level
  *  objects, firstName/lastName, numeric id) into the flat shape this
  *  frontend already uses everywhere (dept/level as plain name strings,
@@ -2412,8 +2451,17 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 700, color: T.navy }}>{money(f.net)}</td>
                   <td style={{ padding: "10px 14px" }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                      <button onClick={() => setPayslipView({ emp: e, month: CURRENT_MONTH, figures: f })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview payslip"><Eye size={16} /></button>
-                      <button onClick={() => downloadPayslipPdf(e, CURRENT_MONTH, f)} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF"><Download size={16} /></button>
+                      {real ? (
+                        <>
+                          <button onClick={() => openRealPayslipPdf(`/api/hr/payroll/${real._dbId}/pdf`, `${CURRENT_MONTH.replace(" ", "-")}-${e.id}.pdf`, "preview")} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview payslip"><Eye size={16} /></button>
+                          <button onClick={() => openRealPayslipPdf(`/api/hr/payroll/${real._dbId}/pdf`, `${CURRENT_MONTH.replace(" ", "-")}-${e.id}.pdf`, "download")} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF"><Download size={16} /></button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => setPayslipView({ emp: e, month: CURRENT_MONTH, figures: f })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview payslip (estimated — not yet saved)"><Eye size={16} /></button>
+                          <button onClick={() => downloadPayslipPdf(e, CURRENT_MONTH, f)} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF (estimated — not yet saved)"><Download size={16} /></button>
+                        </>
+                      )}
                       {real && real.status === "SENT" && (
                         <button onClick={() => resendPayslipEmail(real._dbId)} title={real.emailSent ? "Resend email" : `Resend (last attempt failed: ${real.emailFailureReason || "unknown"})`} style={{ background: "none", border: "none", cursor: "pointer", color: real.emailSent ? T.green : T.red }}>
                           <Mail size={16} />
@@ -3034,8 +3082,17 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
                     <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 600 }}>{money(h.figures.net)}</td>
                     <td style={{ padding: "10px 14px" }}>
                       <div style={{ display: "flex", gap: 10 }}>
-                        <button onClick={() => setPayslipView({ emp, month: h.month, figures: h.figures })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview"><Eye size={16} /></button>
-                        <button onClick={() => downloadPayslipPdf(emp, h.month, h.figures)} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF"><Download size={16} /></button>
+                        {h.figures._dbId ? (
+                          <>
+                            <button onClick={() => openRealPayslipPdf(`/api/me/payslips/${h.figures._dbId}/pdf`, `${h.month.replace(" ", "-")}-${emp.id}.pdf`, "preview")} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview"><Eye size={16} /></button>
+                            <button onClick={() => openRealPayslipPdf(`/api/me/payslips/${h.figures._dbId}/pdf`, `${h.month.replace(" ", "-")}-${emp.id}.pdf`, "download")} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF"><Download size={16} /></button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => setPayslipView({ emp, month: h.month, figures: h.figures })} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Preview"><Eye size={16} /></button>
+                            <button onClick={() => downloadPayslipPdf(emp, h.month, h.figures)} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }} title="Download PDF"><Download size={16} /></button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

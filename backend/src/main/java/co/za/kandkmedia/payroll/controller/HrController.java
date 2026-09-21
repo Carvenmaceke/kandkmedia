@@ -13,6 +13,7 @@ import co.za.kandkmedia.payroll.repository.AppUserRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
 import co.za.kandkmedia.payroll.service.PayrollService;
+import co.za.kandkmedia.payroll.service.PayslipPdfService;
 import co.za.kandkmedia.payroll.service.OnboardingDocumentPdfService;
 import co.za.kandkmedia.payroll.service.SalaryVisibilityService;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,7 @@ public class HrController {
     private final AppUserRepository appUserRepository;
     private final OnboardingDocumentPdfService onboardingDocumentPdfService;
     private final SalaryVisibilityService salaryVisibilityService;
+    private final PayslipPdfService payslipPdfService;
 
     /** Internal lookup — returns the real entity, salary included. Never expose this return value directly from an endpoint; use employeeDetail() for that. */
     private Employee employee(Long id) {
@@ -246,6 +248,20 @@ public class HrController {
     @PreAuthorize("hasRole('HR')")
     public Payroll resendEmail(@PathVariable Long id) {
         return payrollService.resendEmail(id);
+    }
+
+    /** The real generated payslip document (built from the company's actual template) — not a mockup. */
+    @GetMapping("/payroll/{id}/pdf")
+    @PreAuthorize("hasRole('HR')")
+    public ResponseEntity<byte[]> payslipPdf(@PathVariable Long id) {
+        Payroll payroll = payrollRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll record not found."));
+        byte[] pdf = payslipPdfService.generate(payroll);
+        String filename = payroll.getPayPeriod() + "-" + payroll.getEmployee().getEmployeeCode() + ".pdf";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                .body(pdf);
     }
 
     /** Removes a payroll record — only while it's still in DRAFT. */

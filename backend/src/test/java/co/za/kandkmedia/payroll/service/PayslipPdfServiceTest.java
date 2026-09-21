@@ -3,6 +3,7 @@ package co.za.kandkmedia.payroll.service;
 import co.za.kandkmedia.payroll.domain.Employee;
 import co.za.kandkmedia.payroll.domain.Payroll;
 import co.za.kandkmedia.payroll.domain.PayrollStatus;
+import co.za.kandkmedia.payroll.repository.CompanyRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,11 +38,20 @@ import static org.mockito.Mockito.when;
 class PayslipPdfServiceTest {
 
     private final PayrollRepository payrollRepository = Mockito.mock(PayrollRepository.class);
-    private final PayslipDocxTemplateService docxTemplateService = new PayslipDocxTemplateService();
+    private final CompanyRepository companyRepository = Mockito.mock(CompanyRepository.class);
+    private final PayslipDocxTemplateService docxTemplateService = new PayslipDocxTemplateService(companyRepository);
     private final DocxToPdfConverter docxToPdfConverter = new DocxToPdfConverter();
     private final PayslipPdfService payslipPdfService = new PayslipPdfService(docxTemplateService, docxToPdfConverter, payrollRepository);
 
     PayslipPdfServiceTest() {
+        // A Company with a logoUrl that refuses the connection immediately (nothing listens on
+        // port 1) rather than an empty Company list — with no company row at all,
+        // PayslipDocxTemplateService now falls back to the real kandkmedia.co.za default logo
+        // URL, and hitting that from every test run would make the suite depend on the network
+        // and a third-party site staying up. The fetch failing fast still exercises (and proves
+        // non-fatal) the "logo unreachable" path without either problem.
+        when(companyRepository.findAll()).thenReturn(List.of(
+                co.za.kandkmedia.payroll.domain.Company.builder().logoUrl("http://127.0.0.1:1/unreachable.png").build()));
         ReflectionTestUtils.setField(docxTemplateService, "verificationBaseUrl", "https://kandkmedia.example/api/public/verify");
     }
 
@@ -120,6 +130,12 @@ class PayslipPdfServiceTest {
         assertThat(documentXml).contains("Gross Earnings"); // YTD row label
         assertThat(documentXml).contains("PAY-2024-11-000042"); // verification block
         assertThat(hasQrMedia).isTrue();
+        // "Sage VIP" is removed from mc:Choice (the branch every renderer we care about uses —
+        // see PayslipDocxTemplateService's class doc); it deliberately stays in mc:Fallback,
+        // dead markup nothing renders, so only the Choice branch is checked here.
+        int choiceStart = documentXml.indexOf("<mc:Choice");
+        int choiceEnd = documentXml.indexOf("</mc:Choice>") + "</mc:Choice>".length();
+        assertThat(documentXml.substring(choiceStart, choiceEnd)).doesNotContain("Sage VIP");
 
         javax.xml.parsers.DocumentBuilderFactory factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
@@ -148,6 +164,16 @@ class PayslipPdfServiceTest {
         }
         assertThat(documentXml).doesNotContain("Payslip ID:");
         assertThat(documentXml).doesNotContainPattern("___[A-Z][A-Z_]*___");
+    }
+
+    @Test
+    void unreachableLogoUrlDoesNotFailGeneration() {
+        // The constructor's companyRepository stub already points at an unreachable logoUrl —
+        // this just asserts explicitly that the docx still builds (the QR/verification-style
+        // "non-fatal, just skip it" handling applies to the logo fetch too).
+        when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of());
+        byte[] docx = docxTemplateService.build(payroll(employee()), new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+        assertThat(docx).isNotEmpty();
     }
 
     @Test

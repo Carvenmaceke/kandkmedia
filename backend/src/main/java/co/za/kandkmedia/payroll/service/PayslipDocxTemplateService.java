@@ -3,11 +3,14 @@ package co.za.kandkmedia.payroll.service;
 import co.za.kandkmedia.payroll.domain.Company;
 import co.za.kandkmedia.payroll.domain.Employee;
 import co.za.kandkmedia.payroll.domain.Payroll;
+import co.za.kandkmedia.payroll.repository.CompanyRepository;
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.WriterException;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -18,8 +21,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -59,6 +67,8 @@ import java.util.zip.ZipOutputStream;
  * from the template's own row styling and inserted at runtime.
  */
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class PayslipDocxTemplateService {
 
     private static final String TEMPLATE_RESOURCE = "templates/payslip-template.docx";
@@ -67,6 +77,17 @@ public class PayslipDocxTemplateService {
     private static final String CONTENT_TYPES_ENTRY = "[Content_Types].xml";
     private static final String QR_MEDIA_ENTRY = "word/media/verification-qr.png";
     private static final String QR_RELATIONSHIP_ID = "rIdVerificationQr";
+    private static final String LOGO_MEDIA_ENTRY = "word/media/company-logo.png";
+    private static final String LOGO_RELATIONSHIP_ID = "rIdCompanyLogo";
+
+    // Where "Sage VIP" used to sit in the reference template (bottom-right footer) — this document
+    // isn't from Sage, so that credit is removed from the template resource itself, and the
+    // company's logo is drawn in the same spot instead.
+    private static final long LOGO_X = 6136915L, LOGO_Y = 9447250L, LOGO_MAX_W = 1038994L, LOGO_MAX_H = 246338L;
+
+    /** Same default the frontend falls back to (AdminCompanySettings) when Company.logoUrl hasn't
+     *  been explicitly saved yet, so the real logo shows up without that being a prerequisite. */
+    private static final String DEFAULT_LOGO_URL = "https://www.kandkmedia.co.za/wp-content/uploads/2024/05/cropped-cropped-K-and-K-Media-logo-New-1.png";
 
     private static final DecimalFormat AMOUNT_FMT = new DecimalFormat("0.00");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -95,6 +116,8 @@ public class PayslipDocxTemplateService {
     private static final long QR_X = 5900000L, QR_Y = 7250000L, QR_SIZE = 900000L;
 
     private static final Map<String, byte[]> TEMPLATE_ENTRIES = loadTemplateEntries();
+
+    private final CompanyRepository companyRepository;
 
     @Value("${app.verification-base-url}")
     private String verificationBaseUrl;
@@ -125,6 +148,7 @@ public class PayslipDocxTemplateService {
         boolean hasVerification = payroll.getPayslipId() != null;
         byte[] qrPng = null;
         Map<String, byte[]> entries = new LinkedHashMap<>(TEMPLATE_ENTRIES);
+        List<String> relationshipsToAdd = new java.util.ArrayList<>();
 
         if (hasVerification) {
             try {
@@ -136,9 +160,27 @@ public class PayslipDocxTemplateService {
             xml = insertVerificationBlock(xml, payroll, qrPng != null);
             if (qrPng != null) {
                 entries.put(QR_MEDIA_ENTRY, qrPng);
-                entries.put(RELS_ENTRY, addImageRelationship(new String(TEMPLATE_ENTRIES.get(RELS_ENTRY), StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8));
-                entries.put(CONTENT_TYPES_ENTRY, ensurePngContentType(new String(TEMPLATE_ENTRIES.get(CONTENT_TYPES_ENTRY), StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8));
+                relationshipsToAdd.add(imageRelationship(QR_RELATIONSHIP_ID, "media/verification-qr.png"));
             }
+        }
+
+        Company company = companyRepository.findAll().stream().findFirst().orElse(null);
+        String logoUrl = company != null && company.getLogoUrl() != null && !company.getLogoUrl().isBlank()
+                ? company.getLogoUrl() : DEFAULT_LOGO_URL;
+        LogoAsset logo = fetchLogoAsset(logoUrl);
+        if (logo != null) {
+            entries.put(LOGO_MEDIA_ENTRY, logo.png());
+            relationshipsToAdd.add(imageRelationship(LOGO_RELATIONSHIP_ID, "media/company-logo.png"));
+            xml = insertAfterShape(xml, "Rectangle 68", picture(LOGO_RELATIONSHIP_ID, "Company Logo", LOGO_X, LOGO_Y, logo.width(), logo.height()));
+        }
+
+        if (!relationshipsToAdd.isEmpty()) {
+            String rels = new String(TEMPLATE_ENTRIES.get(RELS_ENTRY), StandardCharsets.UTF_8);
+            for (String relationship : relationshipsToAdd) {
+                rels = rels.replace("</Relationships>", relationship + "</Relationships>");
+            }
+            entries.put(RELS_ENTRY, rels.getBytes(StandardCharsets.UTF_8));
+            entries.put(CONTENT_TYPES_ENTRY, ensurePngContentType(new String(TEMPLATE_ENTRIES.get(CONTENT_TYPES_ENTRY), StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8));
         }
 
         entries.put(DOCUMENT_ENTRY, xml.getBytes(StandardCharsets.UTF_8));
@@ -244,14 +286,18 @@ public class PayslipDocxTemplateService {
         xml = insertAfterShape(xml, "Rectangle 64", rows.toString());
 
         if (includeQr) {
-            String pic = "<pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
-                    + "<pic:nvPicPr><pic:cNvPr id=\"9999\" name=\"Verification QR Code\"/><pic:cNvPicPr/></pic:nvPicPr>"
-                    + "<pic:blipFill><a:blip r:embed=\"" + QR_RELATIONSHIP_ID + "\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"
-                    + "<pic:spPr><a:xfrm><a:off x=\"" + QR_X + "\" y=\"" + QR_Y + "\"/><a:ext cx=\"" + QR_SIZE + "\" cy=\"" + QR_SIZE + "\"/></a:xfrm>"
-                    + "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>";
-            xml = insertAfterShape(xml, "Rectangle 64", pic);
+            xml = insertAfterShape(xml, "Rectangle 64", picture(QR_RELATIONSHIP_ID, "Verification QR Code", QR_X, QR_Y, QR_SIZE, QR_SIZE));
         }
         return xml;
+    }
+
+    /** A DrawingML picture referencing an already-added image relationship, positioned in EMU. */
+    private String picture(String relationshipId, String name, long x, long y, long cx, long cy) {
+        return "<pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
+                + "<pic:nvPicPr><pic:cNvPr id=\"" + nextShapeId() + "\" name=\"" + xmlEscape(name) + "\"/><pic:cNvPicPr/></pic:nvPicPr>"
+                + "<pic:blipFill><a:blip r:embed=\"" + relationshipId + "\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"
+                + "<pic:spPr><a:xfrm><a:off x=\"" + x + "\" y=\"" + y + "\"/><a:ext cx=\"" + cx + "\" cy=\"" + cy + "\"/></a:xfrm>"
+                + "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>";
     }
 
     /** One label/value textbox shape, styled exactly like the template's own row shapes. */
@@ -286,11 +332,10 @@ public class PayslipDocxTemplateService {
         return xml.substring(0, insertAt) + newShapesXml + xml.substring(insertAt);
     }
 
-    private String addImageRelationship(String rels) {
-        String relationship = "<Relationship Id=\"" + QR_RELATIONSHIP_ID + "\" "
+    private String imageRelationship(String relationshipId, String target) {
+        return "<Relationship Id=\"" + relationshipId + "\" "
                 + "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" "
-                + "Target=\"media/verification-qr.png\"/>";
-        return rels.replace("</Relationships>", relationship + "</Relationships>");
+                + "Target=\"" + target + "\"/>";
     }
 
     private String ensurePngContentType(String contentTypes) {
@@ -325,6 +370,44 @@ public class PayslipDocxTemplateService {
             return out.toByteArray();
         } catch (IOException e) {
             throw new RuntimeException("Failed to encode verification QR code", e);
+        }
+    }
+
+    private record LogoAsset(byte[] png, long width, long height) {}
+
+    /**
+     * Fetches the company's configured logo and re-encodes it as PNG, sized (preserving aspect
+     * ratio) to fit within the footer slot the template's "Sage VIP" credit used to occupy.
+     * Non-fatal on any failure — no logo configured, unreachable URL, or an unreadable image all
+     * just mean that footer stays blank rather than the whole payslip failing to generate.
+     */
+    private LogoAsset fetchLogoAsset(String logoUrl) {
+        if (logoUrl == null || logoUrl.isBlank()) {
+            return null;
+        }
+        try {
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(logoUrl)).timeout(Duration.ofSeconds(10)).GET().build();
+            HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn("Could not fetch company logo for payslip ({}): HTTP {}", logoUrl, response.statusCode());
+                return null;
+            }
+            BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(response.body()));
+            if (image == null) {
+                log.warn("Company logo URL did not return a readable image: {}", logoUrl);
+                return null;
+            }
+            double scale = Math.min((double) LOGO_MAX_W / image.getWidth(), (double) LOGO_MAX_H / image.getHeight());
+            long width = Math.round(image.getWidth() * scale);
+            long height = Math.round(image.getHeight() * scale);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(image, "png", out);
+            return new LogoAsset(out.toByteArray(), width, height);
+        } catch (Exception e) {
+            log.warn("Could not fetch company logo for payslip ({}): {}", logoUrl, e.getMessage());
+            return null;
         }
     }
 

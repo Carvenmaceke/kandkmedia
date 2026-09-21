@@ -6,6 +6,7 @@ import co.za.kandkmedia.payroll.domain.LeaveRequest;
 import co.za.kandkmedia.payroll.dto.LeaveDecisionDto;
 import co.za.kandkmedia.payroll.repository.EmployeeRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
+import co.za.kandkmedia.payroll.service.SalaryVisibilityService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,13 +21,15 @@ public class ManagerController {
 
     private final LeaveService leaveService;
     private final EmployeeRepository employeeRepository;
+    private final SalaryVisibilityService salaryVisibilityService;
 
     /** A manager's own direct reports only — deliberately narrower than
      *  /api/hr/employees (the whole company), since a manager shouldn't see
-     *  everyone's records, just their team's. */
+     *  everyone's records, just their team's. Salary is stripped unless
+     *  the caller is HR — a manager doesn't get to see what their reports earn. */
     @GetMapping("/team")
     public List<Employee> team(@AuthenticationPrincipal AppUser user) {
-        return employeeRepository.findByManagerId(user.getEmployee().getId());
+        return salaryVisibilityService.redact(employeeRepository.findByManagerId(user.getEmployee().getId()), user);
     }
 
     @GetMapping("/team-leave")

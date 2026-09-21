@@ -14,11 +14,13 @@ import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
 import co.za.kandkmedia.payroll.service.PayrollService;
 import co.za.kandkmedia.payroll.service.OnboardingDocumentPdfService;
+import co.za.kandkmedia.payroll.service.SalaryVisibilityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -40,6 +42,13 @@ public class HrController {
     private final co.za.kandkmedia.payroll.service.EmployeeProfileService employeeProfileService;
     private final AppUserRepository appUserRepository;
     private final OnboardingDocumentPdfService onboardingDocumentPdfService;
+    private final SalaryVisibilityService salaryVisibilityService;
+
+    /** Internal lookup — returns the real entity, salary included. Never expose this return value directly from an endpoint; use employeeDetail() for that. */
+    private Employee employee(Long id) {
+        return employeeRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found."));
+    }
 
     @GetMapping("/levels")
     public List<EmployeeLevel> levels() {
@@ -66,14 +75,14 @@ public class HrController {
      *  changing this (or several employees' requirements at once) to
      *  re-run the balancing algorithm. */
     @PutMapping("/employees/{id}/schedule")
-    public Employee setDaysPerWeek(@PathVariable Long id, @RequestBody java.util.Map<String, Integer> body) {
+    public Employee setDaysPerWeek(@PathVariable Long id, @RequestBody java.util.Map<String, Integer> body, @AuthenticationPrincipal AppUser user) {
         Employee e = employee(id);
         Integer days = body.get("daysPerWeek");
         if (days == null || days < 0 || days > 5) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "daysPerWeek must be between 0 and 5.");
         }
         e.setDaysPerWeek(days);
-        return employeeRepository.save(e);
+        return salaryVisibilityService.redact(employeeRepository.save(e), user);
     }
 
     /** Re-runs the day-balancing algorithm for every employee with a
@@ -81,8 +90,8 @@ public class HrController {
      *  a new employee gets their requirement set, or an office's capacity
      *  changes. */
     @PostMapping("/schedule/auto-assign")
-    public List<Employee> autoAssignSchedule() {
-        return workScheduleService.autoAssignAll();
+    public List<Employee> autoAssignSchedule(@AuthenticationPrincipal AppUser user) {
+        return salaryVisibilityService.redact(workScheduleService.autoAssignAll(), user);
     }
 
     /** Per-weekday headcount for one office — how full each day currently
@@ -117,8 +126,8 @@ public class HrController {
     }
 
     @GetMapping("/employees")
-    public List<Employee> employees() {
-        return employeeRepository.findAll();
+    public List<Employee> employees(@AuthenticationPrincipal AppUser user) {
+        return salaryVisibilityService.redact(employeeRepository.findAll(), user);
     }
 
     /**
@@ -139,14 +148,13 @@ public class HrController {
     }
 
     @GetMapping("/employees/{id}")
-    public Employee employee(@PathVariable Long id) {
-        return employeeRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found."));
+    public Employee employeeDetail(@PathVariable Long id, @AuthenticationPrincipal AppUser user) {
+        return salaryVisibilityService.redact(employee(id), user);
     }
 
     @PutMapping("/employees/{id}/profile")
-    public Employee updateEmployeeProfile(@PathVariable Long id, @RequestBody co.za.kandkmedia.payroll.dto.EmployeeProfileDto dto) {
-        return employeeProfileService.updateProfile(id, dto);
+    public Employee updateEmployeeProfile(@PathVariable Long id, @RequestBody co.za.kandkmedia.payroll.dto.EmployeeProfileDto dto, @AuthenticationPrincipal AppUser user) {
+        return employeeProfileService.updateProfile(id, dto, salaryVisibilityService.canSeeSalary(user));
     }
 
     /**
@@ -156,25 +164,25 @@ public class HrController {
      * and must survive for compliance purposes even after departure.
      */
     @PutMapping("/employees/{id}/deactivate")
-    public Employee deactivateEmployee(@PathVariable Long id, @RequestBody(required = false) java.util.Map<String, String> body) {
+    public Employee deactivateEmployee(@PathVariable Long id, @RequestBody(required = false) java.util.Map<String, String> body, @AuthenticationPrincipal AppUser user) {
         Employee e = employee(id);
         e.setActive(false);
         String date = body != null ? body.get("terminationDate") : null;
         e.setTerminationDate(date != null && !date.isBlank() ? java.time.LocalDate.parse(date) : java.time.LocalDate.now());
         employeeRepository.save(e);
         appUserRepository.findByEmployeeId(id).ifPresent(u -> { u.setEnabled(false); appUserRepository.save(u); });
-        return e;
+        return salaryVisibilityService.redact(e, user);
     }
 
     /** Reverses a deactivation — e.g. a rehire, or an accidental deactivation. */
     @PutMapping("/employees/{id}/reactivate")
-    public Employee reactivateEmployee(@PathVariable Long id) {
+    public Employee reactivateEmployee(@PathVariable Long id, @AuthenticationPrincipal AppUser user) {
         Employee e = employee(id);
         e.setActive(true);
         e.setTerminationDate(null);
         employeeRepository.save(e);
         appUserRepository.findByEmployeeId(id).ifPresent(u -> { u.setEnabled(true); appUserRepository.save(u); });
-        return e;
+        return salaryVisibilityService.redact(e, user);
     }
 
     @GetMapping("/employees/{id}/onboarding-document")
@@ -203,7 +211,10 @@ public class HrController {
         return leaveService.decide(id, false, user.getEmployee(), decision.getSignature(), decision.getReason());
     }
 
+    /** Payroll processing is HR-exclusive — figures here show what people earn, and running
+     *  payroll is HR's job, not Master's/Admin's/IT Support's despite their broader /api/hr/** access. */
     @GetMapping("/payroll")
+    @PreAuthorize("hasRole('HR')")
     public List<Payroll> payrollForPeriod(@RequestParam(required = false) String payPeriod) {
         String period = payPeriod != null ? payPeriod : Payroll.currentPeriod();
         return payrollRepository.findByPayPeriod(period);
@@ -213,6 +224,7 @@ public class HrController {
      *  Returns 409 if this employee's salary hasn't been set by HR yet — no payslip should exist
      *  for someone still sitting at the signup default of zero. */
     @PostMapping("/payroll/{employeeId}/draft")
+    @PreAuthorize("hasRole('HR')")
     public Payroll generateDraft(@PathVariable Long employeeId,
                                   @RequestParam(defaultValue = "0") BigDecimal overtime,
                                   @RequestParam(defaultValue = "0") BigDecimal bonus) {
@@ -223,6 +235,7 @@ public class HrController {
     }
 
     @PostMapping("/payroll/advance")
+    @PreAuthorize("hasRole('HR')")
     public List<Payroll> advanceStage(@RequestParam(required = false) String payPeriod) {
         String period = payPeriod != null ? payPeriod : Payroll.currentPeriod();
         return payrollService.advanceStage(period);
@@ -230,12 +243,14 @@ public class HrController {
 
     /** Retry a payslip email that previously failed (or resend one that already succeeded). */
     @PostMapping("/payroll/{id}/resend-email")
+    @PreAuthorize("hasRole('HR')")
     public Payroll resendEmail(@PathVariable Long id) {
         return payrollService.resendEmail(id);
     }
 
     /** Removes a payroll record — only while it's still in DRAFT. */
     @DeleteMapping("/payroll/{id}")
+    @PreAuthorize("hasRole('HR')")
     public void deleteDraft(@PathVariable Long id) {
         payrollService.deleteDraft(id);
     }
@@ -250,7 +265,7 @@ public class HrController {
      * a single gatekeeper for an action that can erase real history.
      */
     @DeleteMapping("/payroll/{id}/force")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('MASTER')")
+    @PreAuthorize("hasRole('MASTER')")
     public void forceDeletePayroll(@PathVariable Long id) {
         payrollService.forceDelete(id);
     }

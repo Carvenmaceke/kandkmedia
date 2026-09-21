@@ -20,9 +20,21 @@ public class EmployeeProfileService {
     private final EmployeeRepository employeeRepository;
     private final PayrollService payrollService;
 
-    public Employee updateProfile(Long employeeId, EmployeeProfileDto dto) {
+    /**
+     * @param allowSalaryEdit whether this call may change salary/rateType —
+     *                        only ever true for an HR user editing someone
+     *                        else's profile through the HR employee screens.
+     *                        Self-service profile edits (including HR
+     *                        editing their own profile) must always pass
+     *                        false: nobody sets their own salary.
+     */
+    public Employee updateProfile(Long employeeId, EmployeeProfileDto dto, boolean allowSalaryEdit) {
         Employee e = employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found."));
+
+        if (!allowSalaryEdit && (dto.getSalary() != null || dto.getRateType() != null)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only HR can set an employee's salary.");
+        }
 
         if (dto.getTitle() != null) e.setTitle(dto.getTitle());
         if (dto.getFirstName() != null) e.setFirstName(dto.getFirstName());

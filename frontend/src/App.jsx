@@ -940,7 +940,7 @@ function DecisionModal({ target, decider, onClose, onConfirm }) {
 }
 
 
-function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo }) {
+function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo, canSeeSalary }) {
   if (!emp) return null;
   const mgr = emp.manager ? empById(emp.manager) : null;
   const managers = EMPLOYEES.filter((e) => e.role === "manager" && e.id !== emp.id);
@@ -955,7 +955,7 @@ function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo }) {
         <div style={{ fontSize: 12.5, color: T.muted, fontFamily: mono }}>{emp.id}</div>
         <div style={{ marginTop: 6, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
-          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Employment Type", emp.employmentType || "—"], ["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]].map(([k, v]) => (
+          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Employment Type", emp.employmentType || "—"], ...(canSeeSalary ? [["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]] : [])].map(([k, v]) => (
             <div key={k}>
               <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{k}</div>
               <div style={{ marginTop: 2 }}>{v}</div>
@@ -2174,7 +2174,7 @@ function EditSalaryModal({ employee, onClose, onSave }) {
   );
 }
 
-function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate }) {
+function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate, canSeeSalary }) {
   const [q, setQ] = useState("");
   const [salaryTarget, setSalaryTarget] = useState(null);
   const [statusFilter, setStatusFilter] = useState("active");
@@ -2209,9 +2209,9 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
       </div>
       <Card style={{ overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Level", "Position", "Department", "Salary", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+          <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Level", "Position", "Department", ...(canSeeSalary ? ["Salary"] : []), "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={9} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees match this view.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={canSeeSalary ? 9 : 8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees match this view.</td></tr>}
             {filtered.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}`, opacity: e.active === false ? 0.6 : 1 }}>
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
@@ -2220,9 +2220,11 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
                 <td style={{ padding: "10px 14px" }}>{e.level ? <Pill tone="teal">{e.level}</Pill> : <span style={{ color: T.muted }}>—</span>}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.dept}</td>
-                <td style={{ padding: "10px 14px" }}>
-                  <button onClick={() => setSalaryTarget(e)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: mono, color: e.salary > 0 ? T.text : T.amber, fontWeight: e.salary > 0 ? 400 : 700, textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: T.muted }}>{e.salary > 0 ? money(e.salary) : "Not set"}</button>
-                </td>
+                {canSeeSalary && (
+                  <td style={{ padding: "10px 14px" }}>
+                    <button onClick={() => setSalaryTarget(e)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: mono, color: e.salary > 0 ? T.text : T.amber, fontWeight: e.salary > 0 ? 400 : 700, textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: T.muted }}>{e.salary > 0 ? money(e.salary) : "Not set"}</button>
+                  </td>
+                )}
                 <td style={{ padding: "10px 14px" }}>
                   {e.active === false
                     ? <Pill tone="red">Terminated{e.terminationDate ? ` ${e.terminationDate}` : ""}</Pill>
@@ -2243,8 +2245,8 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
           </tbody>
         </table>
       </Card>
-      <EditSalaryModal employee={salaryTarget} onClose={() => setSalaryTarget(null)}
-        onSave={(id, salary) => { onUpdateSalary(id, salary); setSalaryTarget(null); }} />
+      {canSeeSalary && <EditSalaryModal employee={salaryTarget} onClose={() => setSalaryTarget(null)}
+        onSave={(id, salary) => { onUpdateSalary(id, salary); setSalaryTarget(null); }} />}
     </div>
   );
 }
@@ -2367,7 +2369,7 @@ function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAut
   );
 }
 
-function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslipEmail, deletePayrollDraft, forceDeletePayroll, isMaster, payrollLoading, advanceStage }) {
+function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslipEmail, deletePayrollDraft, payrollLoading, advanceStage }) {
   const hasRealRecords = API_BASE_URL && Object.keys(payrollRecords || {}).length > 0;
   const stageIdx = STAGES.indexOf(payrollStage);
   // When connected to the real backend, an employee with no record here
@@ -2419,11 +2421,6 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
                       )}
                       {real && real.status === "DRAFT" && deletePayrollDraft && (
                         <button onClick={() => { if (window.confirm(`Remove this DRAFT payroll record for ${e.name}? This can't be undone.`)) deletePayrollDraft(real._dbId); }} title="Remove this draft" style={{ background: "none", border: "none", cursor: "pointer", color: T.red }}>
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                      {real && real.status !== "DRAFT" && isMaster && forceDeletePayroll && (
-                        <button onClick={() => { if (window.confirm(`This payroll record for ${e.name} has already reached ${real.status}${real.status === "SENT" ? " — a payslip email may already have gone out with these figures" : ""}. Delete it anyway? This is meant for correcting a record that was wrong from the start, not for undoing a legitimate payslip. This can't be undone.`)) forceDeletePayroll(real._dbId); }} title={`Force-delete this ${real.status} record (Master only)`} style={{ background: "none", border: "none", cursor: "pointer", color: T.red }}>
                           <Trash2 size={16} />
                         </button>
                       )}
@@ -3264,22 +3261,6 @@ export default function App() {
     }
   };
 
-  const forceDeletePayroll = async (payrollDbId) => {
-    if (!API_BASE_URL || !payrollDbId) return;
-    try {
-      await apiFetch(`/api/hr/payroll/${payrollDbId}/force`, { method: "DELETE" });
-      setPayrollRecords((pr) => {
-        const next = { ...pr };
-        for (const key of Object.keys(next)) {
-          if (next[key]._dbId === payrollDbId) delete next[key];
-        }
-        return next;
-      });
-    } catch (e) {
-      alert(`Couldn't remove this record: ${e.message}`);
-    }
-  };
-
   const fetchLeaveForRole = async (r, employeeId) => {
     if (!API_BASE_URL) return;
     try {
@@ -3581,7 +3562,9 @@ export default function App() {
             setAppUserIdByEmployeeCode(map);
             setEmployeesState((es) => es.map((e) => (roleByCode2[e.id] ? { ...e, role: roleByCode2[e.id] } : e)));
           }
-          fetchPayrollForPeriod(mappedList);
+          // Payroll processing (and the amounts it shows) is HR-only now — Admin/Master/IT
+          // Support don't have a payroll screen to feed, and the endpoint would 403 for them.
+          if (mapped.role === "hr") fetchPayrollForPeriod(mappedList);
         } catch (e) { /* non-fatal — HR/Admin screens fall back to whatever's already known locally */ }
       }
       if (mapped.role === "manager") {
@@ -3964,7 +3947,7 @@ export default function App() {
   ];
   const masterNav = [
     { id: "users", label: "User Accounts", icon: ShieldCheck }, { id: "employees", label: "Employees", icon: Users },
-    { id: "payroll", label: "Payroll", icon: Banknote }, { id: "leave", label: "Leave", icon: CalendarDays },
+    { id: "leave", label: "Leave", icon: CalendarDays },
     { id: "workSchedule", label: "Work Schedule", icon: Clock },
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
@@ -4096,7 +4079,7 @@ export default function App() {
         )}
 
         {viewMode === "role" && role === "hr" && hrTab === "dashboard" && <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} />}
-        {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} />}
+        {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} canSeeSalary={true} />}
         {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
         {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "hr" && hrTab === "salaryStructure" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
@@ -4117,8 +4100,7 @@ export default function App() {
         {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
 
         {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} />}
-        {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} />}
-        {viewMode === "role" && role === "master" && masterTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} forceDeletePayroll={forceDeletePayroll} isMaster={true} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
+        {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} canSeeSalary={false} />}
         {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "master" && masterTab === "workSchedule" && <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} />}
         {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
@@ -4140,7 +4122,7 @@ export default function App() {
         )}
       </div>
 
-      {profileEmp && <ProfileDrawer emp={profileEmp} onClose={() => setProfileEmp(null)} onUpdateManager={updateEmployeeManager} onOpenPersonalInfo={setPersonalInfoTarget} />}
+      {profileEmp && <ProfileDrawer emp={profileEmp} onClose={() => setProfileEmp(null)} onUpdateManager={updateEmployeeManager} onOpenPersonalInfo={setPersonalInfoTarget} canSeeSalary={role === "hr"} />}
       {personalInfoTarget && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.45)", zIndex: 50, display: "flex", justifyContent: "center", alignItems: "flex-start", overflowY: "auto", padding: "40px 20px" }} onClick={() => setPersonalInfoTarget(null)}>
           <div style={{ width: "100%", maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>

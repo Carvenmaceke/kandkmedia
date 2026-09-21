@@ -68,9 +68,10 @@ public class MeController {
         return result;
     }
 
+    /** Self-service — salary/rateType are never editable here, not even by HR editing their own profile. */
     @PutMapping("/profile")
     public Employee updateMyProfile(@AuthenticationPrincipal AppUser user, @RequestBody EmployeeProfileDto dto) {
-        return employeeProfileService.updateProfile(employeeOf(user).getId(), dto);
+        return employeeProfileService.updateProfile(employeeOf(user).getId(), dto, false);
     }
 
     /**

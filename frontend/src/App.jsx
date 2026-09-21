@@ -1238,8 +1238,16 @@ async function apiFetch(path, options = {}) {
 
 /** Fetches the real, backend-generated payslip PDF (built from the actual
  *  company template) and either opens it in a new tab or triggers a save —
- *  never a client-side mockup. */
+ *  never a client-side mockup.
+ *
+ *  For "preview" the new tab is opened FIRST, synchronously, before the
+ *  await below — opening it after an await (i.e. after the fetch resolves)
+ *  is no longer considered part of the original click by the browser's
+ *  popup blocker, so it gets silently blocked with no error at all. This
+ *  is the standard workaround: open a blank tab while still inside the
+ *  click's call stack, then point it at the real URL once ready. */
 async function openRealPayslipPdf(path, filename, mode) {
+  const previewTab = mode === "preview" ? window.open("", "_blank") : null;
   const token = getStoredToken();
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -1247,6 +1255,7 @@ async function openRealPayslipPdf(path, filename, mode) {
   try {
     res = await fetch(`${API_BASE_URL}${path}`, { headers });
   } catch (e) {
+    if (previewTab) previewTab.close();
     alert("Couldn't reach the server — check your connection and try again.");
     return;
   }
@@ -1256,6 +1265,7 @@ async function openRealPayslipPdf(path, filename, mode) {
       const body = await res.json();
       if (body && body.message) message = body.message;
     } catch (e) { /* body wasn't JSON */ }
+    if (previewTab) previewTab.close();
     alert(message);
     return;
   }
@@ -1269,9 +1279,14 @@ async function openRealPayslipPdf(path, filename, mode) {
     link.click();
     document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-  } else {
-    window.open(url, "_blank");
+  } else if (previewTab) {
+    previewTab.location.href = url;
     setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } else {
+    // previewTab is null when the popup was blocked even on the synchronous
+    // open attempt (e.g. browser setting set to always block) — fall back
+    // to a same-tab navigation, which no popup blocker touches.
+    window.location.href = url;
   }
 }
 

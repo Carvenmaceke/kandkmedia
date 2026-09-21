@@ -17,15 +17,23 @@ WORKDIR /app
 #
 # libreoffice-writer pulls in NO font package at all (checked via `apt-cache
 # depends` — not even as a Recommends/Suggests), and this base image starts
-# with none either, so without this the container has no usable Latin font
-# and LibreOffice's substitution for the template's "Microsoft Sans Serif"
-# runs falls back to something with wildly different glyph widths —
-# producing exactly the "text overflows the page / words wrap onto
-# different lines than they should" breakage this was seen to cause.
-# fonts-dejavu-core is the specific font verified (via `fc-match "Microsoft
-# Sans Serif"`) to substitute cleanly and render the template correctly.
-RUN apt-get update && apt-get install -y --no-install-recommends libreoffice-writer fonts-dejavu-core \
+# with none either, so without a font package the container has no usable
+# Latin font at all. fonts-liberation is installed for that base coverage;
+# fonts-dejavu-core is kept alongside it as a broader-Unicode fallback for
+# any glyph Liberation Sans doesn't cover.
+#
+# The template's own font, "Microsoft Sans Serif", is Windows-only and has
+# no Linux equivalent, so some substitution is unavoidable — but fontconfig's
+# default pick for it (DejaVu Sans) is measurably wider, wide enough that
+# several of the template's tightly laid-out label boxes (e.g. the "Amount"
+# / "Opening Balance" column headers) visibly overlapped when rendered.
+# docker/fontconfig/51-microsoft-sans-serif.conf forces the substitution to
+# Liberation Sans instead — verified, by auditing every static label's text
+# width against its box width, to fit the whole template with a positive
+# margin where DejaVu Sans did not.
+RUN apt-get update && apt-get install -y --no-install-recommends libreoffice-writer fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+COPY docker/fontconfig/51-microsoft-sans-serif.conf /etc/fonts/conf.d/51-microsoft-sans-serif.conf
 
 COPY --from=build /app/target/*.jar app.jar
 

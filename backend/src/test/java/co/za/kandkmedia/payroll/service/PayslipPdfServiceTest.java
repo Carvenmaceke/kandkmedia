@@ -136,6 +136,9 @@ class PayslipPdfServiceTest {
         int choiceStart = documentXml.indexOf("<mc:Choice");
         int choiceEnd = documentXml.indexOf("</mc:Choice>") + "</mc:Choice>".length();
         assertThat(documentXml.substring(choiceStart, choiceEnd)).doesNotContain("Sage VIP");
+        // The template resource's static company address text was truncated mid-word
+        // ("...OFFIC") — regression check for that fix.
+        assertThat(documentXml.substring(choiceStart, choiceEnd)).contains("CONSTANTIA SQUARE OFFICE");
 
         javax.xml.parsers.DocumentBuilderFactory factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);

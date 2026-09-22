@@ -13,10 +13,12 @@ import co.za.kandkmedia.payroll.repository.AppUserRepository;
 import co.za.kandkmedia.payroll.repository.CompanyRepository;
 import co.za.kandkmedia.payroll.repository.DepartmentRepository;
 import co.za.kandkmedia.payroll.repository.EmployeeLevelRepository;
+import co.za.kandkmedia.payroll.service.EmailService;
 import co.za.kandkmedia.payroll.service.SupportService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -34,6 +36,7 @@ public class AdminController {
     private final SupportService supportService;
     private final OfficeIssueService officeIssueService;
     private final PayrollSettingsRepository payrollSettingsRepository;
+    private final EmailService emailService;
 
     @GetMapping("/company")
     public Company company() {
@@ -176,5 +179,17 @@ public class AdminController {
         settings.setDeliveryHour(update.getDeliveryHour());
         settings.setDeliveryMinute(update.getDeliveryMinute());
         return payrollSettingsRepository.save(settings);
+    }
+
+    /**
+     * Sends a real email, through the same Resend path every payslip and
+     * notification in this app uses, to the caller's own address — the
+     * point is to answer "is email actually working in this environment"
+     * on demand, with Resend's own error message if not, rather than
+     * needing Render log access to find out.
+     */
+    @PostMapping("/email/test")
+    public EmailService.EmailSendResult testEmail(@AuthenticationPrincipal AppUser user) {
+        return emailService.sendTestEmail(user.getEmail());
     }
 }

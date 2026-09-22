@@ -2689,6 +2689,22 @@ function AdminCompanySettings({ onUpdateCompany, payrollSettings, onUpdatePayrol
   const [psForm, setPsForm] = useState(payrollSettings);
   const [psSaving, setPsSaving] = useState(false);
   const [psSaved, setPsSaved] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState(null); // null | { ok, message }
+
+  const testEmail = async () => {
+    setTestingEmail(true);
+    setEmailTestResult(null);
+    try {
+      const result = await apiFetch("/api/admin/email/test", { method: "POST" });
+      setEmailTestResult(result.ok
+        ? { ok: true, message: "Sent — check your inbox (and spam folder)." }
+        : { ok: false, message: result.errorMessage || "Failed, but the server didn't say why." });
+    } catch (e) {
+      setEmailTestResult({ ok: false, message: e.message });
+    }
+    setTestingEmail(false);
+  };
   const field = (label, key, placeholder) => (
     <div style={{ marginBottom: 14 }}>
       <label style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</label>
@@ -2755,6 +2771,30 @@ function AdminCompanySettings({ onUpdateCompany, payrollSettings, onUpdatePayrol
             <Button variant="teal" small onClick={savePs} disabled={psSaving}>{psSaving ? "Saving…" : "Save Changes"}</Button>
             {psSaved && <Pill tone="green">Saved</Pill>}
           </div>
+        </Card>
+        <Card style={{ padding: 20, flex: "1 1 320px" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Email Delivery</div>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>
+            Sends a real test email, through the same system that sends payslips and account verification codes, to your own account's inbox — confirms mail is actually configured without needing to check server logs.
+          </div>
+          {API_BASE_URL ? (
+            <>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <Button variant="teal" small onClick={testEmail} disabled={testingEmail}>{testingEmail ? "Sending…" : "Send Test Email"}</Button>
+              </div>
+              {emailTestResult && (
+                <div style={{
+                  marginTop: 10, fontSize: 12, padding: "8px 10px", borderRadius: 6,
+                  color: emailTestResult.ok ? T.teal : T.red,
+                  background: emailTestResult.ok ? T.bg : T.redBg,
+                }}>
+                  {emailTestResult.message}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 11, color: T.muted }}>Not connected to a backend — nothing to test.</div>
+          )}
         </Card>
       </div>
     </div>

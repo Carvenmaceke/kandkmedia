@@ -225,4 +225,26 @@ public class EmailService {
     private String nullToDash(String s) {
         return s == null || s.isBlank() ? "-" : s;
     }
+
+    /** The outcome of a diagnostic send — errorMessage carries Resend's own response body
+     *  verbatim (e.g. "domain not verified", "invalid API key") when ok is false, so a
+     *  misconfiguration is diagnosable from the API response itself, not just server logs. */
+    public record EmailSendResult(boolean ok, String errorMessage) {}
+
+    /**
+     * Sends a real email through the exact same Resend path every other
+     * email in this app uses, to the caller's own address — lets whoever's
+     * testing confirm mail is actually configured (a real API key, a
+     * verified sending domain) without needing Render log access, and see
+     * Resend's exact error if it isn't. Never sends to an address other
+     * than the authenticated caller's own, so it can't be used to spam
+     * anyone else.
+     */
+    public EmailSendResult sendTestEmail(String toEmail) {
+        String subject = "K and K Media — test email";
+        String text = "This confirms the payroll system's email delivery (via Resend) is working.\n\n" +
+                "Sent at " + java.time.LocalDateTime.now() + ".";
+        SendResult result = sendViaResend(toEmail, null, subject, text, null, null);
+        return new EmailSendResult(result.ok(), result.errorMessage());
+    }
 }

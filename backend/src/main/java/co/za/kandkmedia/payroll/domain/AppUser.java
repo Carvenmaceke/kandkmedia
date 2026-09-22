@@ -54,6 +54,29 @@ public class AppUser implements UserDetails {
     @Builder.Default
     private boolean enabled = true;
 
+    /**
+     * Whether this account's email has been confirmed via a code sent at
+     * signup. Defaults to true at the database level (columnDefinition
+     * below) so existing accounts, created before this check existed,
+     * are never retroactively locked out — only AuthService.signup()
+     * explicitly sets this false for a brand-new account, which then
+     * clears once {@link #verificationCode} is confirmed.
+     */
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private boolean emailVerified = true;
+
+    /** The most recently sent code, cleared once verified. Never logged or exposed in any response. */
+    @JsonIgnore
+    private String verificationCode;
+
+    @JsonIgnore
+    private java.time.LocalDateTime verificationCodeExpiresAt;
+
+    /** Lets resend-verification throttle to one send per cooldown window. */
+    @JsonIgnore
+    private java.time.LocalDateTime verificationCodeSentAt;
+
     @JsonIgnore
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

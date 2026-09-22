@@ -157,6 +157,23 @@ public class EmailService {
     }
 
     /**
+     * Sends the 6-digit code a new signup needs to confirm they actually
+     * own the company email address they signed up with, before their
+     * account can log in. Same sendViaResend path as every other email
+     * this service sends — no separate mail configuration to maintain.
+     */
+    public boolean sendVerificationCode(String toEmail, String firstName, String code) {
+        String subject = "Verify your K and K Media account";
+        String text = "Hi " + firstName + ",\n\n" +
+                "Your verification code is: " + code + "\n\n" +
+                "Enter this code to finish creating your account. It expires in 15 minutes.\n\n" +
+                "If you didn't try to sign up, you can ignore this email.\n\n" +
+                "Regards,\nK and K Media";
+        SendResult result = sendViaResend(toEmail, null, subject, text, null, null);
+        return result.ok();
+    }
+
+    /**
      * Sends a support ticket straight to the support inbox — this is the
      * "press Send, nothing opens" path: the browser calls the backend, the
      * backend sends the mail server-side. No mailto:, no user email client

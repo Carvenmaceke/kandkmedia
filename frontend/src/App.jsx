@@ -1196,6 +1196,76 @@ function SignupScreen({ onSignup, goLogin }) {
   );
 }
 
+function VerifyEmailScreen({ email, onVerify, onResend, goLogin }) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [resending, setResending] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!code.trim()) { setError("Enter the 6-digit code we emailed you."); return; }
+    setError(""); setNotice(""); setSubmitting(true);
+    const err = await onVerify(code.trim());
+    setSubmitting(false);
+    if (err) setError(err);
+  };
+
+  const resend = async () => {
+    setError(""); setNotice(""); setResending(true);
+    const err = await onResend();
+    setResending(false);
+    if (err) setError(err); else setNotice("A new code is on its way — check your inbox.");
+  };
+
+  return (
+    <AuthShell>
+      <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Verify your email</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>
+        We've sent a 6-digit code to <strong style={{ color: T.text }}>{email}</strong>. Enter it below to finish creating your account.
+      </div>
+      <form onSubmit={submit}>
+        <Field label="Verification Code">
+          <div style={{ position: "relative" }}>
+            <Mail size={14} color={T.muted} style={{ position: "absolute", left: 10, top: 11 }} />
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              style={{ ...inputStyle, paddingLeft: 30, letterSpacing: 3, fontSize: 16, fontWeight: 600 }}
+              maxLength={6}
+              required
+            />
+          </div>
+        </Field>
+        {error && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 14 }}>
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
+        {notice && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.teal, background: T.bg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 14 }}>
+            <ShieldCheck size={14} /> {notice}
+          </div>
+        )}
+        <Button type="submit" variant="teal" full disabled={submitting}>{submitting ? "Verifying…" : "Verify & Continue"}</Button>
+      </form>
+      <div style={{ marginTop: 16, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
+        Didn't get it?{" "}
+        <button onClick={resend} disabled={resending} style={{ background: "none", border: "none", color: T.teal, fontWeight: 700, cursor: resending ? "default" : "pointer", fontSize: 12.5, padding: 0 }}>
+          {resending ? "Sending…" : "Resend code"}
+        </button>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
+        <button onClick={goLogin} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 12.5, padding: 0, textDecoration: "underline" }}>Back to log in</button>
+      </div>
+    </AuthShell>
+  );
+}
+
 /* ---------------------------------------------------------------------- */
 /* ---------------------------------------------------------------------- */
 /* REAL API CLIENT — used when API_BASE_URL is set (i.e. a backend is     */
@@ -1214,7 +1284,8 @@ function setStoredToken(token) {
 /** Throws with a human-readable message on any non-2xx response, so
  *  callers can just try/catch and show err.message. */
 async function apiFetch(path, options = {}) {
-  const isAuthEndpoint = path === "/api/auth/login" || path === "/api/auth/signup";
+  const isAuthEndpoint = path === "/api/auth/login" || path === "/api/auth/signup"
+    || path === "/api/auth/verify-email" || path === "/api/auth/resend-verification";
   const token = isAuthEndpoint ? null : getStoredToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -3263,7 +3334,8 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
 /* APP SHELL                                                              */
 /* ---------------------------------------------------------------------- */
 export default function App() {
-  const [screen, setScreen] = useState("login"); // "login" | "signup" | "app"
+  const [screen, setScreen] = useState("login"); // "login" | "signup" | "verify-email" | "app"
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [portalChoice, setPortalChoice] = useState(null); // null | "leave" | "itSupport"
   const [appUserIdByEmployeeCode, setAppUserIdByEmployeeCode] = useState({});
@@ -3628,6 +3700,11 @@ export default function App() {
     }
     try {
       const auth = await apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      if (auth.emailVerificationRequired) {
+        setPendingVerificationEmail(auth.email);
+        setScreen("verify-email");
+        return null;
+      }
       setStoredToken(auth.token);
       const be = await apiFetch("/api/me");
       const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
@@ -3741,18 +3818,56 @@ export default function App() {
     };
     try {
       const auth = await apiFetch("/api/auth/signup", { method: "POST", body: JSON.stringify(payload) });
-      setStoredToken(auth.token);
-      const be = await apiFetch("/api/me");
-      const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
-      setEmployeesState((es) => [...es, mapped]);
-      fetchLeaveForRole(mapped.role, mapped.id);
-      fetchOfficeAvailability();
-      fetchMyPayslips(mapped.id);
-      fetchMySchedule();
-      setCurrentUserId(mapped.id);
-      setViewMode("role");
-      setPortalChoice(null);
-      setScreen("app");
+      if (auth.emailVerificationRequired) {
+        setPendingVerificationEmail(auth.email);
+        setScreen("verify-email");
+        return null;
+      }
+      await completeEmployeeSession(auth);
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  };
+
+  /** Shared by a fresh signup and a just-verified account — both are the
+   *  same case: a brand-new Employee-role session with no HR/manager data
+   *  to warm up yet. */
+  const completeEmployeeSession = async (auth) => {
+    setStoredToken(auth.token);
+    const be = await apiFetch("/api/me");
+    const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
+    setEmployeesState((es) => (es.some((e) => e.id === mapped.id) ? es.map((e) => (e.id === mapped.id ? mapped : e)) : [...es, mapped]));
+    fetchLeaveForRole(mapped.role, mapped.id);
+    fetchOfficeAvailability();
+    fetchMyPayslips(mapped.id);
+    fetchMySchedule();
+    setCurrentUserId(mapped.id);
+    setViewMode("role");
+    setPortalChoice(null);
+    setScreen("app");
+  };
+
+  const handleVerifyEmail = async (code) => {
+    try {
+      const auth = await apiFetch("/api/auth/verify-email", {
+        method: "POST",
+        body: JSON.stringify({ email: pendingVerificationEmail, code }),
+      });
+      await completeEmployeeSession(auth);
+      setPendingVerificationEmail(null);
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  };
+
+  const handleResendVerification = async () => {
+    try {
+      await apiFetch("/api/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ email: pendingVerificationEmail }),
+      });
       return null;
     } catch (e) {
       return e.message;
@@ -3924,6 +4039,14 @@ export default function App() {
 
   if (screen === "login") return <LoginScreen onLogin={handleLogin} goSignup={() => setScreen("signup")} />;
   if (screen === "signup") return <SignupScreen onSignup={handleSignup} goLogin={() => setScreen("login")} />;
+  if (screen === "verify-email") return (
+    <VerifyEmailScreen
+      email={pendingVerificationEmail}
+      onVerify={handleVerifyEmail}
+      onResend={handleResendVerification}
+      goLogin={() => setScreen("login")}
+    />
+  );
 
   const loginEmp = employeesState.find((e) => e.id === currentUserId);
   const role = loginEmp.role;

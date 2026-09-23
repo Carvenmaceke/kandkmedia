@@ -50,6 +50,12 @@ public class MeController {
     private final ItAssistantService itAssistantService;
 
     /** IT Assistant chat — answered by the Groq-hosted model when GROQ_API_KEY is set (503 otherwise, and the frontend falls back to its keyword answers). */
+    /** Lets the chat show the "AI" badge only when the server actually has a Groq key. */
+    @GetMapping("/assistant/status")
+    public java.util.Map<String, Object> assistantStatus() {
+        return java.util.Map.of("configured", itAssistantService.isConfigured(), "model", itAssistantService.model());
+    }
+
     @PostMapping("/assistant")
     public java.util.Map<String, String> askAssistant(@AuthenticationPrincipal AppUser user, @RequestBody AssistantRequest request) {
         return java.util.Map.of("reply", itAssistantService.reply(employeeOf(user), request));

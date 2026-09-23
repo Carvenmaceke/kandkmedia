@@ -40,6 +40,7 @@ public class ItAssistantService {
     private static final int MAX_HISTORY = 12;
     private static final int MAX_MESSAGE_CHARS = 2000;
     private static final int MAX_REQUESTS_PER_MINUTE = 15;
+    private static final List<String> FALLBACK_MODELS = List.of("llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.1-8b-instant");
 
     /** K and K Media's IT Operations Documentation, condensed — the same guidance the keyword fallback uses. */
     private static final String SYSTEM_PROMPT = """
@@ -90,6 +91,10 @@ public class ItAssistantService {
     @Value("${app.groq.model:llama-3.3-70b-versatile}")
     private String model;
 
+    public String model() {
+        return model;
+    }
+
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
     }
@@ -104,29 +109,62 @@ public class ItAssistantService {
         }
         checkRateLimit(employee.getId());
 
-        try {
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("model", model);
-            body.put("messages", messages);
-            body.put("temperature", 0.3);
-            body.put("max_tokens", 500);
+        // The configured model first, then known-good Groq fallbacks, so a model
+        // Groq has retired (or one this account can't use) doesn't break the chat.
+        List<String> candidates = new ArrayList<>();
+        candidates.add(model);
+        for (String m : FALLBACK_MODELS) if (!candidates.contains(m)) candidates.add(m);
 
-            GroqResponse response = send(objectMapper.writeValueAsString(body));
-            if (response.status() < 200 || response.status() >= 300) {
-                log.error("Groq API returned {}: {}", response.status(), response.body());
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "The AI assistant is unavailable right now (" + response.status() + ").");
+        String lastError = null;
+        for (String candidate : candidates) {
+            GroqResponse response;
+            try {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("model", candidate);
+                body.put("messages", messages);
+                body.put("temperature", 0.3);
+                body.put("max_tokens", 500);
+                response = send(objectMapper.writeValueAsString(body));
+            } catch (Exception e) {
+                log.error("Groq request failed", e);
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Couldn't reach the AI service (Groq): " + e.getMessage());
             }
-            JsonNode content = objectMapper.readTree(response.body()).path("choices").path(0).path("message").path("content");
-            if (content.isMissingNode() || content.asText().isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "The AI assistant returned an empty answer.");
+            if (response.status() >= 200 && response.status() < 300) {
+                String content = contentOf(response.body());
+                if (content == null || content.isBlank()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "The AI returned an empty answer.");
+                }
+                return content.trim();
             }
-            return content.asText().trim();
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Groq request failed", e);
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Couldn't reach the AI assistant.");
+            lastError = groqErrorMessage(response);
+            log.error("Groq API returned {} for model {}: {}", response.status(), candidate, response.body());
+            if (!isModelProblem(response)) break; // bad key, quota, etc. — another model won't help
         }
+        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "The AI service (Groq) returned an error: " + lastError);
+    }
+
+    private String contentOf(String body) {
+        try {
+            JsonNode content = objectMapper.readTree(body).path("choices").path(0).path("message").path("content");
+            return content.isMissingNode() ? null : content.asText();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Groq's own error text, e.g. "Invalid API Key" — never includes the key itself. */
+    private String groqErrorMessage(GroqResponse response) {
+        try {
+            String msg = objectMapper.readTree(response.body()).path("error").path("message").asText("");
+            if (!msg.isBlank()) return msg + " (HTTP " + response.status() + ")";
+        } catch (Exception ignored) { /* not JSON */ }
+        return "HTTP " + response.status();
+    }
+
+    private boolean isModelProblem(GroqResponse response) {
+        String body = response.body() == null ? "" : response.body().toLowerCase();
+        return response.status() == 404 || body.contains("model_not_found") || body.contains("decommissioned")
+                || body.contains("does not exist") || body.contains("model_permission") || body.contains("not supported");
     }
 
     /** System prompt + the last few turns, trimmed, with only user/assistant roles allowed through. */

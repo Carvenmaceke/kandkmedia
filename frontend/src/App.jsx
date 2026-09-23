@@ -3228,10 +3228,21 @@ function ITAssistantChat() {
   ]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
-  // Whether the AI (Groq, via the backend) answered last time — flips off
-  // when the server has no key configured, so we stop trying and use the
-  // built-in keyword answers for the rest of the chat.
-  const [aiAvailable, setAiAvailable] = useState(Boolean(API_BASE_URL));
+  // null = still checking; true/false = whether the server has a Groq key.
+  // The "AI" badge only shows once the server confirms it's set up.
+  const [aiAvailable, setAiAvailable] = useState(API_BASE_URL ? null : false);
+  const [aiProblem, setAiProblem] = useState("");
+  useEffect(() => {
+    if (!API_BASE_URL) return;
+    apiFetch("/api/me/assistant/status")
+      .then((s) => { setAiAvailable(Boolean(s && s.configured)); if (!s?.configured) setAiProblem("AI is off — GROQ_API_KEY isn't set on the server, so built-in answers are used."); })
+      .catch((e) => {
+        setAiAvailable(false);
+        setAiProblem(/\(404\)|No static resource/i.test(e.message)
+          ? "AI is off — the server hasn't been updated with the AI assistant yet (redeploy the backend on Render)."
+          : `AI is off — ${e.message}`);
+      });
+  }, []);
   const listRef = useRef(null);
 
   useEffect(() => {
@@ -3253,7 +3264,7 @@ function ITAssistantChat() {
     const history = [...messages, { from: "user", text }];
     setMessages(history);
     setInput("");
-    if (!aiAvailable) {
+    if (aiAvailable === false) {
       setMessages((m) => [...m, { from: "bot", text: findAnswer(text) }]);
       return;
     }
@@ -3261,14 +3272,17 @@ function ITAssistantChat() {
     try {
       const res = await apiFetch("/api/me/assistant", {
         method: "POST",
-        body: JSON.stringify({ messages: history.map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text })) }),
+        body: JSON.stringify({ messages: history.filter((m) => !m.notice).map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text })) }),
       });
+      setAiProblem("");
       setMessages((m) => [...m, { from: "bot", text: res.reply, ai: true }]);
     } catch (e) {
-      // Not configured / unreachable → quietly fall back to the built-in answers.
-      if (/\(503\)|isn't configured/i.test(e.message)) setAiAvailable(false);
+      // Say what went wrong instead of silently swapping in a canned answer.
       const tooFast = /too quickly/i.test(e.message);
-      setMessages((m) => [...m, { from: "bot", text: tooFast ? e.message : findAnswer(text) }]);
+      setAiProblem(tooFast ? "" : `AI couldn't answer: ${e.message}`);
+      setMessages((m) => [...m, tooFast
+        ? { from: "bot", text: e.message }
+        : { from: "bot", notice: true, text: `The AI couldn't answer (${e.message}). Built-in answer:\n\n${findAnswer(text)}` }]);
     }
     setThinking(false);
   };
@@ -3278,7 +3292,7 @@ function ITAssistantChat() {
       <div style={{ background: T.navy, padding: "12px 16px", display: "flex", alignItems: "center", gap: 8 }}>
         <Bot size={16} color="#fff" />
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 13.5, flex: 1 }}>IT Assistant</span>
-        {aiAvailable && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#fff", background: "rgba(255,255,255,0.12)", padding: "2px 8px", borderRadius: 999 }}><Sparkles size={11} /> AI</span>}
+        {aiAvailable === true && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#fff", background: "rgba(255,255,255,0.12)", padding: "2px 8px", borderRadius: 999 }}><Sparkles size={11} /> AI</span>}
       </div>
       <div ref={listRef} style={{ padding: 16, height: 340, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
         {messages.map((m, i) => (
@@ -3301,6 +3315,11 @@ function ITAssistantChat() {
         <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(input); }} style={{ ...inputStyle, flex: 1 }} placeholder="Describe your issue…" maxLength={2000} />
         <Button variant="teal" small onClick={() => send(input)} disabled={thinking || !input.trim()}>Send</Button>
       </div>
+      {aiProblem && (
+        <div style={{ margin: "0 12px 8px", display: "flex", gap: 6, alignItems: "flex-start", color: T.amber, background: T.amberBg, padding: "7px 10px", borderRadius: 8, fontSize: 11.5, lineHeight: 1.45 }}>
+          <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{aiProblem}</span>
+        </div>
+      )}
       <div style={{ padding: "0 12px 10px", fontSize: 10.5, color: T.muted }}>
         {aiAvailable ? "AI answers can be wrong — never share passwords here. Still stuck? Log a ticket." : "Never share passwords here. Still stuck? Log a ticket."}
       </div>

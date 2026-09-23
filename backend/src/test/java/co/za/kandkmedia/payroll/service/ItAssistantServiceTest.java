@@ -68,16 +68,35 @@ class ItAssistantServiceTest {
     }
 
     @Test
-    void groqErrorBecomesBadGatewayWithoutLeakingDetails() {
+    void groqErrorIsReportedWithGroqsOwnMessage() {
         FakeGroq s = service("gsk_test");
-        s.next = new ItAssistantService.GroqResponse(401, "{\"error\":{\"message\":\"Invalid API Key\"}}");
+        s.next = new ItAssistantService.GroqResponse(401, "{\"error\":{\"message\":\"Invalid API Key\",\"code\":\"invalid_api_key\"}}");
         assertThatThrownBy(() -> s.reply(employee, ask("hi")))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(e -> {
                     ResponseStatusException r = (ResponseStatusException) e;
                     assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
-                    assertThat(r.getReason()).doesNotContain("Invalid API Key");
+                    assertThat(r.getReason()).contains("Invalid API Key").doesNotContain("gsk_test");
                 });
+        assertThat(s.sent).hasSize(1); // a bad key isn't retried with other models
+    }
+
+    @Test
+    void retiredModelFallsBackToTheNextOne() throws Exception {
+        FakeGroq s = new FakeGroq() {
+            @Override GroqResponse send(String json) {
+                sent.add(json);
+                return json.contains("\"llama-old\"")
+                        ? new GroqResponse(400, "{\"error\":{\"message\":\"The model `llama-old` has been decommissioned\",\"code\":\"model_decommissioned\"}}")
+                        : next;
+            }
+        };
+        ReflectionTestUtils.setField(s, "apiKey", "gsk_test");
+        ReflectionTestUtils.setField(s, "model", "llama-old");
+
+        assertThat(s.reply(employee, ask("printer broken"))).isEqualTo("Restart Outlook in safe mode.");
+        assertThat(s.sent).hasSize(2);
+        assertThat(new ObjectMapper().readTree(s.sent.get(1)).path("model").asText()).isEqualTo("llama-3.3-70b-versatile");
     }
 
     @Test

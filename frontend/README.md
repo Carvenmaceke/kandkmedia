@@ -50,6 +50,33 @@ README for exactly what's needed.
   record (personal info, tax, banking details, residential/postal
   address) in a dedicated "Personal & Payroll Information" section.
 
+## Design & how the app works
+
+- **Design system** — all colours, radii and shadows are CSS custom
+  properties in `src/styles.css`; `App.jsx` reads them through the `T`
+  token object. Typography is Inter (UI) + JetBrains Mono (IDs/figures).
+- **Light / dark mode** — the theme button in the top bar cycles
+  Light → Dark → System. The choice is remembered per browser and applied
+  before first paint (no flash).
+- **Responsive shell** — full-height sidebar + sticky top bar on desktop;
+  on phones/tablets the sidebar becomes a slide-out menu and tables
+  scroll horizontally.
+- **Stay signed in** — refreshing the page restores your session from the
+  stored JWT (until it expires) instead of sending you back to log in.
+- **Real URLs** — every page has its own address (e.g. `#/payroll`,
+  `#/settings`, `#/me/leave`), so the browser's Back/Forward buttons and
+  refresh work as expected.
+- **Toasts** — success/error messages appear as non-blocking toasts
+  instead of browser `alert()` pop-ups.
+- **Single page registry** — back-office pages are defined once in
+  `PAGES` inside `App`, and each role's sidebar is just a list of page ids
+  in `NAV_BY_ROLE`.
+- **Smaller initial download** — the PDF library is loaded only when a
+  PDF is actually generated.
+
+Stack: React 19, Vite 8, lucide-react, jsPDF (lazy-loaded). Requires
+Node.js 20.19+ or 22.12+.
+
 ## Running locally
 
 ```bash
@@ -61,8 +88,11 @@ Then open the local URL Vite prints (typically `http://localhost:5173`).
 
 ## Connecting to the real backend
 
-`API_BASE_URL` in `src/App.jsx` currently points at the deployed backend
-(`https://kandkmedia.onrender.com`). When it's set:
+`API_BASE_URL` in `src/App.jsx` defaults to the deployed backend
+(`https://kandkmedia.onrender.com`). Override it per build with the
+`VITE_API_BASE_URL` environment variable (e.g. in `.env.local`) — set it
+to an empty string (`VITE_API_BASE_URL=`) for the offline, in-memory
+mode. When it's set:
 
 - **Login and Sign Up** call the real backend, store a JWT
   (`localStorage`), and fetch the logged-in person's real profile

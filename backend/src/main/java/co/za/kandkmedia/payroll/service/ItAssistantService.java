@@ -45,7 +45,7 @@ public class ItAssistantService {
     /** K and K Media's IT Operations Documentation, condensed — the same guidance the keyword fallback uses. */
     private static final String SYSTEM_PROMPT = """
             You are the IT Assistant for K and K Media (Pty) Ltd, a South African media company with offices in \
-            Midrand and Sandton. You help employees fix everyday IT problems quickly. Be friendly, concise and \
+            Midrand, Sandton and Rosebank. You help employees fix everyday IT problems quickly. Be friendly, concise and \
             practical: give short numbered steps, at most about 150 words, in plain English.
 
             Company-specific guidance (from the internal IT Operations Documentation):

@@ -89,7 +89,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://kandkmedia.on
 const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payslip Issue", "Leave Application Issue", "Account / Access Issue", "Other"];
 const OFFICE_ISSUE_TYPES = ["Hardware / Equipment", "Network / WiFi", "Printer / Scanner", "Workstation / Computer", "Other"];
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
-const OFFICES = ["Midrand", "Sandton"];
+const OFFICES = ["Midrand", "Sandton", "Rosebank"];
 const TICKET_STATUSES = ["Open", "In Progress", "Resolved"];
 
 // Sourced from K and K Media's internal "IT Operations Documentation"
@@ -1654,7 +1654,7 @@ const CURRENT_PAY_PERIOD = "2026-09";
 /** "2026-09" -> "September 2026", matching the existing month-label convention. */
 /** Returns this week's Monday-Friday as [{day: "MONDAY", date: "16 Sep", label: "Mon"}, ...],
  *  matching the DayOfWeek names the backend stores in assignedWorkDays. */
-function thisWeekDates() {
+function thisWeekDates(weekOffset = 0) {
   const days = [
     { day: "MONDAY", label: "Mon" }, { day: "TUESDAY", label: "Tue" }, { day: "WEDNESDAY", label: "Wed" },
     { day: "THURSDAY", label: "Thu" }, { day: "FRIDAY", label: "Fri" },
@@ -1663,13 +1663,36 @@ function thisWeekDates() {
   const jsDay = now.getDay(); // 0 = Sunday, 1 = Monday, ...
   const diffToMonday = jsDay === 0 ? -6 : 1 - jsDay;
   const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMonday);
+  monday.setDate(now.getDate() + diffToMonday + weekOffset * 7);
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return days.map((d, i) => {
     const date = new Date(monday);
     date.setDate(monday.getDate() + i);
-    return { ...d, date: `${date.getDate()} ${monthNames[date.getMonth()]}` };
+    const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    return { ...d, date: `${date.getDate()} ${monthNames[date.getMonth()]}`, iso, year: date.getFullYear() };
   });
+}
+
+/* Office colours used by every schedule view. */
+const OFFICE_STYLE = {
+  Midrand: { fg: T.teal, bg: T.tealLight },
+  Sandton: { fg: T.indigo, bg: T.indigoBg },
+  Rosebank: { fg: T.purple, bg: T.purpleBg },
+};
+function OfficeChip({ office, full }) {
+  const st = OFFICE_STYLE[office] || { fg: T.muted, bg: T.neutralBg };
+  return (
+    <span title={office} style={{ display: "inline-block", minWidth: full ? 0 : 38, padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: st.fg, background: st.bg, whiteSpace: "nowrap" }}>
+      {full ? office : office.slice(0, 3)}
+    </span>
+  );
+}
+/** Which office (if any) someone is in on a day, from /api/me/schedule — the
+ *  new per-day map, falling back to the older day list + home office. */
+function officeOnDay(schedule, day) {
+  if (!schedule) return null;
+  if (schedule.days && Object.keys(schedule.days).length) return schedule.days[day] || null;
+  return (schedule.assignedWorkDays || []).includes(day) ? (schedule.office || "Office") : null;
 }
 
 function formatPayPeriod(payPeriod) {
@@ -2613,77 +2636,270 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
 const WEEKDAY_LABELS = { MONDAY: "Mon", TUESDAY: "Tue", WEDNESDAY: "Wed", THURSDAY: "Thu", FRIDAY: "Fri" };
 const WEEKDAY_ORDER = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
 
-function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAutoAssign, onResetAll }) {
-  const [capForm, setCapForm] = useState(capacity);
-  const [capSaving, setCapSaving] = useState(false);
-  const [assigning, setAssigning] = useState(false);
-  const [officeFilter, setOfficeFilter] = useState("All");
+const WEEKDAY_FULL = { MONDAY: "Monday", TUESDAY: "Tuesday", WEDNESDAY: "Wednesday", THURSDAY: "Thursday", FRIDAY: "Friday" };
+const hasThreeInARow = (days) => WEEKDAY_ORDER.some((d, i) => i + 2 < WEEKDAY_ORDER.length && days.includes(d) && days.includes(WEEKDAY_ORDER[i + 1]) && days.includes(WEEKDAY_ORDER[i + 2]));
 
-  const filtered = EMPLOYEES.filter((e) => e.active !== false).filter((e) => officeFilter === "All" || e.office === officeFilter);
-  const hasSchedule = (e) => e.daysPerWeek != null || (e.assignedWorkDays || []).length > 0;
-  const anySet = EMPLOYEES.some(hasSchedule);
+/** One-line description of a schedule plan from /api/hr/schedule/week. */
+function planSummary(row) {
+  if (!row || !row.mode) return "Not set";
+  if (row.mode === "FIXED") {
+    const entries = WEEKDAY_ORDER.filter((d) => row.fixedDays[d]).map((d) => [d, row.fixedDays[d]]);
+    const offices = [...new Set(entries.map(([, o]) => o))];
+    if (entries.length === 5 && offices.length === 1) return `Every day · ${offices[0]}`;
+    return `Fixed · ${offices.map((o) => `${entries.filter(([, x]) => x === o).map(([d]) => WEEKDAY_LABELS[d]).join(", ")} (${o})`).join(" · ")}`;
+  }
+  const parts = Object.entries(row.officeDays || {}).filter(([, n]) => n > 0);
+  const total = parts.reduce((t, [, n]) => t + n, 0);
+  const split = parts.length === 1 ? parts[0][0] : parts.map(([o, n]) => `${n} ${o}`).join(" + ");
+  return `${total} day${total === 1 ? "" : "s"}/week · rotating · ${split}`;
+}
 
-  // Headcount per office/day, computed straight from each employee's
-  // currently assigned days — always in sync with what's actually shown.
-  const headcount = {};
-  OFFICES.forEach((o) => { headcount[o] = {}; WEEKDAY_ORDER.forEach((d) => { headcount[o][d] = 0; }); });
-  EMPLOYEES.filter((e) => e.active !== false).forEach((e) => {
-    (e.assignedWorkDays || []).forEach((d) => { if (headcount[e.office]) headcount[e.office][d] = (headcount[e.office][d] || 0) + 1; });
+/** Edit one person's plan: rotating per-office day counts, every day, or exact fixed days. */
+function ScheduleEditor({ row, onClose, onSaved }) {
+  const home = OFFICES.includes(row.office) ? row.office : OFFICES[0];
+  const fixedEntries = Object.entries(row.fixedDays || {});
+  const isEveryDay = row.mode === "FIXED" && fixedEntries.length === 5 && new Set(fixedEntries.map(([, o]) => o)).size === 1;
+  const [mode, setMode] = useState(isEveryDay ? "everyday" : row.mode === "FIXED" ? "fixed" : "rotating");
+  const [counts, setCounts] = useState(() => {
+    const c = Object.fromEntries(OFFICES.map((o) => [o, 0]));
+    if (row.mode === "ROTATING") Object.entries(row.officeDays || {}).forEach(([o, n]) => { c[o] = n; });
+    else c[home] = 2;
+    return c;
   });
+  const [everydayOffice, setEverydayOffice] = useState(isEveryDay ? fixedEntries[0][1] : home);
+  const [fixed, setFixed] = useState(() => Object.fromEntries(WEEKDAY_ORDER.map((d) => [d, (row.mode === "FIXED" && !isEveryDay && row.fixedDays[d]) || ""])));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const total = Object.values(counts).reduce((t, n) => t + (Number(n) || 0), 0);
+  const fixedDays = WEEKDAY_ORDER.filter((d) => fixed[d]);
+
+  const save = async () => {
+    let body;
+    if (mode === "rotating") {
+      if (total < 1 || total > 5) { setError("Pick between 1 and 5 office days in total."); return; }
+      body = { mode: "ROTATING", officeDays: Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0)) };
+    } else if (mode === "everyday") {
+      body = { mode: "FIXED", fixedDays: Object.fromEntries(WEEKDAY_ORDER.map((d) => [d, everydayOffice])) };
+    } else {
+      if (fixedDays.length === 0) { setError("Pick at least one day."); return; }
+      body = { mode: "FIXED", fixedDays: Object.fromEntries(fixedDays.map((d) => [d, fixed[d]])) };
+    }
+    setSaving(true); setError("");
+    try {
+      await apiFetch(`/api/hr/employees/${row.id}/schedule`, { method: "PUT", body: JSON.stringify(body) });
+      onSaved(`${row.name}'s schedule saved.`);
+    } catch (e) {
+      setError(e.message);
+      setSaving(false);
+    }
+  };
+
+  const modes = [
+    { id: "rotating", title: "Rotating", desc: "Set days per office — the system picks the days and rotates them every week." },
+    { id: "everyday", title: "Every day", desc: "In the office Monday to Friday." },
+    { id: "fixed", title: "Specific days", desc: "Exact days and offices, for mandatory days." },
+  ];
+
+  return (
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div className="kk-pop" style={{ background: T.surface, width: 520, maxWidth: "100%", maxHeight: "92vh", overflowY: "auto", borderRadius: 16, padding: 24, boxShadow: "var(--kk-shadow-lg)", border: `1px solid ${T.border}` }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Office schedule</div>
+            <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{row.name} · home office {home}</div>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "grid", gap: 8, marginBottom: 18 }}>
+          {modes.map((m) => (
+            <label key={m.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: `1px solid ${mode === m.id ? T.teal : T.border}`, background: mode === m.id ? T.tealLight : T.surface }}>
+              <input type="radio" name="mode" checked={mode === m.id} onChange={() => { setMode(m.id); setError(""); }} style={{ marginTop: 2 }} />
+              <span><span style={{ fontWeight: 650, fontSize: 13.5 }}>{m.title}</span><br /><span style={{ fontSize: 12, color: T.muted }}>{m.desc}</span></span>
+            </label>
+          ))}
+        </div>
+
+        {mode === "rotating" && (
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text2, marginBottom: 8 }}>Days per week at each office</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+              {OFFICES.map((o) => (
+                <div key={o}>
+                  <OfficeChip office={o} full />
+                  <select value={counts[o]} onChange={(e) => setCounts({ ...counts, [o]: Number(e.target.value) })} style={{ ...inputStyle, marginTop: 6 }}>
+                    {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12.5, color: total > 5 ? T.red : T.muted }}>
+              Total: <strong>{total}</strong> day{total === 1 ? "" : "s"}/week{total > 5 && " — maximum is 5"}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 8, lineHeight: 1.5 }}>
+              Never 3 days in a row, and the days change every week. {total === 4 && "4 days is always Mon, Tue, Thu, Fri (the only way to avoid 3 in a row)."}{total === 5 && "5 days means every day."}
+            </div>
+          </div>
+        )}
+
+        {mode === "everyday" && (
+          <Field label="Office">
+            <select value={everydayOffice} onChange={(e) => setEverydayOffice(e.target.value)} style={inputStyle}>
+              {OFFICES.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </Field>
+        )}
+
+        {mode === "fixed" && (
+          <div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {WEEKDAY_ORDER.map((d) => (
+                <div key={d} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ width: 92, fontSize: 13, fontWeight: 600 }}>{WEEKDAY_FULL[d]}</span>
+                  <select value={fixed[d]} onChange={(e) => setFixed({ ...fixed, [d]: e.target.value })} style={{ ...inputStyle, flex: 1 }}>
+                    <option value="">Not in office</option>
+                    {OFFICES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            {hasThreeInARow(fixedDays) && fixedDays.length < 5 && (
+              <div style={{ marginTop: 10, display: "flex", gap: 6, color: T.amber, background: T.amberBg, padding: "8px 10px", borderRadius: 8, fontSize: 12 }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> This is 3 days in a row — only use it if those days are mandatory.
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && <div style={{ marginTop: 14 }}><FormError>{error}</FormError></div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <Button variant="teal" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save schedule"}</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HrWorkSchedule() {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [officeFilter, setOfficeFilter] = useState("All");
+  const [capForm, setCapForm] = useState(null);
+  const [capSaving, setCapSaving] = useState(false);
+  const week = thisWeekDates(weekOffset);
+
+  const load = async () => {
+    try {
+      const d = await apiFetch(`/api/hr/schedule/week?start=${week[0].iso}`);
+      setData(d); setLoadError("");
+      setCapForm((c) => c || d.capacity);
+    } catch (e) { setLoadError(e.message); }
+  };
+  useEffect(() => { if (API_BASE_URL) load(); }, [weekOffset]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!API_BASE_URL) {
+    return (
+      <div>
+        <SectionTitle sub="Office days per employee">Work Schedule</SectionTitle>
+        <Card style={{ padding: 24, color: T.muted, fontSize: 13.5 }}>The work schedule needs the server connection — it isn't available in offline mode.</Card>
+      </div>
+    );
+  }
+
+  const offices = data?.offices || OFFICES;
+  const rows = (data?.employees || [])
+    .filter((r) => officeFilter === "All" || r.office === officeFilter || Object.values(r.days || {}).includes(officeFilter))
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const anySet = (data?.employees || []).some((r) => r.mode);
 
   const saveCapacity = async () => {
     setCapSaving(true);
-    await onUpdateCapacity(capForm);
+    try {
+      const updated = await apiFetch("/api/hr/schedule/capacity", { method: "PUT", body: JSON.stringify(capForm) });
+      setCapForm(updated); notify("Office capacity saved."); await load();
+    } catch (e) { notify(`Couldn't save office capacity: ${e.message}`); }
     setCapSaving(false);
   };
-
-  const runAutoAssign = async () => {
-    setAssigning(true);
-    await onAutoAssign();
-    setAssigning(false);
+  const clearRow = async (r) => {
+    try {
+      await apiFetch(`/api/hr/employees/${r.id}/schedule`, { method: "PUT", body: JSON.stringify({ daysPerWeek: null }) });
+      notify(`${r.name}'s schedule cleared.`); await load();
+    } catch (e) { notify(`Couldn't clear this schedule: ${e.message}`); }
   };
+  const resetAll = async () => {
+    if (!window.confirm("Reset the whole work schedule?\n\nThis clears every employee's plan. You can set them again afterwards.")) return;
+    try {
+      await apiFetch("/api/hr/schedule", { method: "DELETE" });
+      notify("Work schedule reset — every employee's plan has been cleared."); await load();
+    } catch (e) { notify(`Couldn't reset the schedule: ${e.message}`); }
+  };
+
+  const weekLabel = `${week[0].date} – ${week[4].date} ${week[4].year}`;
 
   return (
     <div>
-      <SectionTitle sub="Set how many days/week each employee needs in-office — the system spreads specific days across the week to keep within desk capacity">Work Schedule</SectionTitle>
+      <SectionTitle sub="Rotating plans never put anyone in 3 days in a row, and their days change every week. Use Every day or Specific days for people whose days are fixed.">Work Schedule</SectionTitle>
 
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 20 }}>
-        <Card style={{ padding: 18, flex: "1 1 280px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>Office Desk Capacity</div>
-          {OFFICES.map((o) => (
-            <div key={o} style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11.5, fontWeight: 700, color: T.muted }}>{o}</label>
-              <input type="number" min={0} value={capForm[o]} onChange={(e) => setCapForm({ ...capForm, [o]: Number(e.target.value) })} style={{ ...inputStyle, marginTop: 4 }} />
-            </div>
-          ))}
-          <Button variant="teal" small onClick={saveCapacity} disabled={capSaving}>{capSaving ? "Saving…" : "Save Capacity"}</Button>
-        </Card>
-
-        <Card style={{ padding: 18, flex: "2 1 380px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>This Week's Headcount vs Capacity</div>
-          {OFFICES.map((o) => (
-            <div key={o} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>{o}</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {WEEKDAY_ORDER.map((d) => {
-                  const count = headcount[o][d] || 0;
-                  const over = count > capForm[o];
-                  return (
-                    <div key={d} style={{ flex: 1, textAlign: "center", padding: "6px 4px", borderRadius: 6, background: over ? T.redBg : T.bg, border: `1px solid ${over ? T.red : T.border}` }}>
-                      <div style={{ fontSize: 10, color: T.muted, fontWeight: 700 }}>{WEEKDAY_LABELS[d]}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: over ? T.red : T.text }}>{count}/{capForm[o]}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </Card>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <Button variant="ghost" small icon={ArrowLeft} onClick={() => setWeekOffset((w) => w - 1)}>Previous</Button>
+        <div style={{ fontWeight: 700, fontSize: 14, minWidth: 170, textAlign: "center" }}>{weekLabel}</div>
+        <Button variant="ghost" small onClick={() => setWeekOffset((w) => w + 1)}>Next <ChevronRight size={14} /></Button>
+        {weekOffset !== 0 && <Button variant="ghost" small onClick={() => setWeekOffset(0)}>This week</Button>}
       </div>
 
+      {loadError && <FormError>{`Couldn't load the schedule: ${loadError}`}</FormError>}
+      {(data?.warnings || []).length > 0 && (
+        <div style={{ display: "flex", gap: 8, color: T.amber, background: T.amberBg, padding: "10px 12px", borderRadius: 10, fontSize: 12.5, marginBottom: 16 }}>
+          <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div>{data.warnings.map((w) => <div key={w}>{w}</div>)}<div style={{ marginTop: 4, color: T.muted }}>Raise that office's capacity, or move someone to another office or to fewer days.</div></div>
+        </div>
+      )}
+
+      <Card style={{ padding: 18, marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 650 }}>Headcount vs desk capacity</div>
+          <Button variant="teal" small onClick={saveCapacity} disabled={capSaving || !capForm}>{capSaving ? "Saving…" : "Save capacity"}</Button>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table" style={{ minWidth: 520 }}>
+            <thead>
+              <tr style={{ background: T.bg, textAlign: "left" }}>
+                <th style={{ padding: "8px 12px" }}>Office</th>
+                <th style={{ padding: "8px 12px" }}>Desks</th>
+                {week.map((w) => <th key={w.day} style={{ padding: "8px 6px", textAlign: "center" }}>{w.label} {w.date.split(" ")[0]}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {offices.map((o) => (
+                <tr key={o}>
+                  <td style={{ padding: "8px 12px" }}><OfficeChip office={o} full /></td>
+                  <td style={{ padding: "8px 12px" }}>
+                    <input type="number" min={0} value={capForm?.[o] ?? ""} onChange={(e) => setCapForm({ ...capForm, [o]: Number(e.target.value) })} style={{ ...inputStyle, width: 72, padding: "5px 8px" }} />
+                  </td>
+                  {week.map((w) => {
+                    const n = data?.headcount?.[o]?.[w.day] || 0;
+                    const cap = data?.capacity?.[o] ?? 0;
+                    const over = n > cap;
+                    return (
+                      <td key={w.day} style={{ padding: "8px 6px", textAlign: "center" }}>
+                        <span className="num" style={{ fontWeight: 700, fontSize: 13, color: over ? T.red : n === 0 ? T.muted : T.text, background: over ? T.redBg : "transparent", padding: "2px 6px", borderRadius: 6 }}>{n}/{cap}</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          {["All", ...OFFICES].map((o) => (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {["All", ...offices].map((o) => (
             <button key={o} onClick={() => setOfficeFilter(o)} style={{
               background: officeFilter === o ? T.navy : T.surface, color: officeFilter === o ? T.onNavy : T.muted,
               border: `1px solid ${officeFilter === o ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
@@ -2691,48 +2907,39 @@ function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAut
             }}>{o}</button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant="ghost" small icon={Trash2} disabled={!anySet}
-            title="Clear every employee's days/week and assigned days"
-            onClick={() => { if (window.confirm("Reset the whole work schedule?\n\nThis clears every employee's days/week and their assigned office days. You can set them again afterwards.")) onResetAll(); }}>
-            Reset All
-          </Button>
-          <Button variant="teal" small icon={RefreshCw} onClick={runAutoAssign} disabled={assigning}>{assigning ? "Generating…" : "Auto-Generate Schedule"}</Button>
-        </div>
+        <Button variant="ghost" small icon={Trash2} disabled={!anySet} onClick={resetAll}>Reset All</Button>
       </div>
 
       <Card style={{ overflow: "hidden" }}>
         <table className="data-table">
           <thead>
             <tr style={{ background: T.bg, textAlign: "left" }}>
-              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Employee</th>
-              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Office</th>
-              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Days/Week</th>
-              {WEEKDAY_ORDER.map((d) => <th key={d} style={{ padding: "10px 8px", fontSize: 11.5, color: T.muted, fontWeight: 700, textAlign: "center" }}>{WEEKDAY_LABELS[d]}</th>)}
+              <th style={{ padding: "10px 14px" }}>Employee</th>
+              <th style={{ padding: "10px 14px" }}>Plan</th>
+              {week.map((w) => <th key={w.day} style={{ padding: "10px 6px", textAlign: "center" }}>{w.label}</th>)}
               <th style={{ padding: "10px 8px" }} />
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={9} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees to show.</td></tr>}
-            {filtered.map((e) => (
-              <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600 }}>{e.name}</div><div style={{ fontFamily: mono, fontSize: 11, color: T.muted }}>{e.id}</div></td>
-                <td style={{ padding: "10px 14px", color: T.muted }}>{e.office}</td>
+            {!data && !loadError && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>Loading…</td></tr>}
+            {data && rows.length === 0 && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees to show.</td></tr>}
+            {rows.map((r) => (
+              <tr key={r.id}>
                 <td style={{ padding: "10px 14px" }}>
-                  <select value={e.daysPerWeek ?? ""} onChange={(ev) => onUpdateDaysPerWeek(e.id, ev.target.value === "" ? null : Number(ev.target.value))} style={{ ...inputStyle, padding: "5px 8px", width: 80 }}>
-                    <option value="">— Not set</option>
-                    {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
+                  <div style={{ fontWeight: 600 }}>{r.name}</div>
+                  <div style={{ fontSize: 11.5, color: T.muted }}>{r.employeeCode} · {r.office || "—"}</div>
                 </td>
-                {WEEKDAY_ORDER.map((d) => (
-                  <td key={d} style={{ padding: "10px 8px", textAlign: "center" }}>
-                    {(e.assignedWorkDays || []).includes(d) ? <span style={{ color: T.teal, fontWeight: 700 }}>●</span> : <span style={{ color: T.border }}>—</span>}
+                <td style={{ padding: "10px 14px", fontSize: 12.5, color: r.mode ? T.text2 : T.muted, maxWidth: 260 }}>{planSummary(r)}</td>
+                {week.map((w) => (
+                  <td key={w.day} style={{ padding: "10px 6px", textAlign: "center" }}>
+                    {r.days?.[w.day] ? <OfficeChip office={r.days[w.day]} /> : <span style={{ color: T.border }}>—</span>}
                   </td>
                 ))}
-                <td style={{ padding: "10px 8px", textAlign: "right" }}>
-                  {hasSchedule(e) && (
-                    <button onClick={() => onUpdateDaysPerWeek(e.id, null)} title={`Clear ${e.name}'s days`} aria-label={`Clear ${e.name}'s days`}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600 }}>
+                <td style={{ padding: "10px 8px", whiteSpace: "nowrap", textAlign: "right" }}>
+                  <Button variant="ghost" small icon={PenLine} onClick={() => setEditing(r)}>{r.mode ? "Edit" : "Set"}</Button>
+                  {r.mode && (
+                    <button onClick={() => clearRow(r)} title={`Clear ${r.name}'s schedule`} aria-label={`Clear ${r.name}'s schedule`}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, marginLeft: 4, fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
                       <X size={14} /> Clear
                     </button>
                   )}
@@ -2742,6 +2949,8 @@ function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAut
           </tbody>
         </table>
       </Card>
+
+      {editing && <ScheduleEditor row={editing} onClose={() => setEditing(null)} onSaved={async (msg) => { setEditing(null); notify(msg); await load(); }} />}
     </div>
   );
 }
@@ -3365,6 +3574,32 @@ function ChoicePortalCard({ icon: Icon, title, desc, onClick }) {
   );
 }
 
+/** Mon-Fri strip showing which office (if any) someone is in each day. */
+function MyWeekGrid({ schedule, weekOffset = 0 }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8 }}>
+      {thisWeekDates(weekOffset).map(({ day, date, label }) => {
+        const office = officeOnDay(schedule, day);
+        const st = OFFICE_STYLE[office] || { fg: T.teal, bg: T.tealLight };
+        return (
+          <div key={day} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 10, background: office ? st.bg : T.bg, border: `1px solid ${office ? st.fg : T.border}` }}>
+            <div style={{ fontSize: 10.5, color: T.muted, fontWeight: 700, letterSpacing: 0.3 }}>{label}</div>
+            <div style={{ fontSize: 10, color: T.muted, marginBottom: 6 }}>{date}</div>
+            {office ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                <Building2 size={14} color={st.fg} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: st.fg, overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{office}</span>
+              </div>
+            ) : (
+              <span style={{ fontSize: 11, color: T.muted }}>Remote</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PortalChooser({ empName, mySchedule, onChoose }) {
   return (
     <div style={{ maxWidth: 640 }}>
@@ -3377,20 +3612,9 @@ function PortalChooser({ empName, mySchedule, onChoose }) {
         <Card style={{ padding: 18, marginTop: 18 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>This Week's Office Schedule</div>
-            <div style={{ fontSize: 11.5, color: T.muted }}>{mySchedule.daysPerWeek} day{mySchedule.daysPerWeek === 1 ? "" : "s"}/week · {mySchedule.office}</div>
+            <div style={{ fontSize: 11.5, color: T.muted }}>{mySchedule.daysPerWeek} day{mySchedule.daysPerWeek === 1 ? "" : "s"} this week</div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
-            {thisWeekDates().map(({ day, date, label }) => {
-              const inOffice = (mySchedule.assignedWorkDays || []).includes(day);
-              return (
-                <div key={day} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 8, background: inOffice ? T.tealLight : T.bg, border: `1px solid ${inOffice ? T.teal : T.border}` }}>
-                  <div style={{ fontSize: 10.5, color: T.muted, fontWeight: 700, letterSpacing: 0.3 }}>{label}</div>
-                  <div style={{ fontSize: 10, color: T.muted, marginBottom: 6 }}>{date}</div>
-                  {inOffice ? <Building2 size={14} color={T.teal} style={{ margin: "0 auto" }} /> : <span style={{ fontSize: 13, color: T.border }}>—</span>}
-                </div>
-              );
-            })}
-          </div>
+          <MyWeekGrid schedule={mySchedule} />
         </Card>
       )}
     </div>
@@ -3588,37 +3812,23 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
       )}
       {tab === "mySchedule" && (
         <Card style={{ padding: 20 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>This Week's Office Schedule</div>
-          <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>
-            {mySchedule && mySchedule.daysPerWeek != null
-              ? `You're scheduled for ${mySchedule.daysPerWeek} day${mySchedule.daysPerWeek === 1 ? "" : "s"}/week at ${mySchedule.office || "your office"}.`
-              : "HR hasn't set your in-office schedule yet."}
-          </div>
-          {mySchedule && mySchedule.daysPerWeek != null ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-              {thisWeekDates().map(({ day, date, label }) => {
-                const inOffice = (mySchedule.assignedWorkDays || []).includes(day);
-                return (
-                  <div key={day} style={{ textAlign: "center", padding: "14px 6px", borderRadius: 8, background: inOffice ? T.tealLight : T.bg, border: `1px solid ${inOffice ? T.teal : T.border}` }}>
-                    <div style={{ fontSize: 11, color: T.muted, fontWeight: 700 }}>{label}</div>
-                    <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{date}</div>
-                    {inOffice ? (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                        <Building2 size={16} color={T.teal} />
-                        <span style={{ fontSize: 11, fontWeight: 700, color: T.teal }}>In Office</span>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                        <span style={{ fontSize: 16, color: T.muted }}>—</span>
-                        <span style={{ fontSize: 11, color: T.muted }}>Remote</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          {mySchedule && (Object.keys(mySchedule.days || {}).length > 0 || Object.keys(mySchedule.nextWeekDays || {}).length > 0 || mySchedule.daysPerWeek != null) ? (
+            <>
+              <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>This week</div>
+              <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Your office days rotate each week — check here before heading in.</div>
+              <MyWeekGrid schedule={mySchedule} />
+              {mySchedule.nextWeekDays && (
+                <>
+                  <div style={{ fontSize: 13.5, fontWeight: 650, margin: "22px 0 12px" }}>Next week</div>
+                  <MyWeekGrid schedule={{ days: mySchedule.nextWeekDays }} weekOffset={1} />
+                </>
+              )}
+            </>
           ) : (
-            <div style={{ fontSize: 12.5, color: T.muted }}>Once HR sets how many days/week you need to be in-office, your specific days will show here.</div>
+            <>
+              <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Office schedule</div>
+              <div style={{ fontSize: 12.5, color: T.muted }}>HR hasn't set your office days yet. Once they do, your days (and which office) will show here.</div>
+            </>
           )}
         </Card>
       )}
@@ -3649,7 +3859,6 @@ export default function App() {
   const [levelsState, setLevelsState] = useState(LEVELS);
   const [companyState, setCompanyState] = useState(COMPANY);
   const [payrollSettingsState, setPayrollSettingsState] = useState({ autoSendEnabled: true, sendOn: "LAST_DAY_OF_MONTH", deliveryHour: 18, deliveryMinute: 0 });
-  const [scheduleCapacityState, setScheduleCapacityState] = useState({ Midrand: 15, Sandton: 10 });
   const [myScheduleState, setMyScheduleState] = useState(null);
   const [viewMode, setViewMode] = useState("role"); // "role" | "selfService" | "settings"
   const [roleTab, setRoleTab] = useState(null); // active sidebar page for HR/Admin/IT Support/Master; null = that role's default
@@ -3793,82 +4002,6 @@ export default function App() {
         return Array.from(byName.values());
       });
     } catch (e) { /* non-fatal — falls back to the built-in default levels */ }
-  };
-
-  const fetchScheduleCapacity = async () => {
-    if (!API_BASE_URL) return;
-    try {
-      const c = await apiFetch("/api/hr/schedule/capacity");
-      setScheduleCapacityState({ Midrand: c.Midrand ?? 15, Sandton: c.Sandton ?? 10 });
-    } catch (e) { /* non-fatal — falls back to the built-in default capacity */ }
-  };
-
-  const updateScheduleCapacity = async (fields) => {
-    if (API_BASE_URL) {
-      try {
-        const updated = await apiFetch("/api/hr/schedule/capacity", { method: "PUT", body: JSON.stringify(fields) });
-        setScheduleCapacityState({ Midrand: updated.Midrand ?? 15, Sandton: updated.Sandton ?? 10 });
-        return true;
-      } catch (e) {
-        notify(`Couldn't save office capacity: ${e.message}`);
-        return false;
-      }
-    }
-    setScheduleCapacityState((c) => ({ ...c, ...fields }));
-    return true;
-  };
-
-  const updateEmployeeDaysPerWeek = async (employeeId, days) => {
-    if (API_BASE_URL) {
-      const target = employeesState.find((e) => e.id === employeeId);
-      if (target && target._dbId) {
-        try {
-          await apiFetch(`/api/hr/employees/${target._dbId}/schedule`, { method: "PUT", body: JSON.stringify({ daysPerWeek: days }) });
-        } catch (e) {
-          notify(`Couldn't save this employee's schedule: ${e.message}`);
-          return;
-        }
-      }
-    }
-    // null = cleared: the requirement and the specific days both go.
-    setEmployeesState((es) => es.map((e) => (e.id === employeeId
-      ? { ...e, daysPerWeek: days, ...(days == null ? { assignedWorkDays: [] } : {}) }
-      : e)));
-  };
-
-  const resetAllSchedules = async () => {
-    if (API_BASE_URL) {
-      try {
-        await apiFetch("/api/hr/schedule", { method: "DELETE" });
-      } catch (e) {
-        notify(`Couldn't reset the schedule: ${e.message}`);
-        return;
-      }
-    }
-    setEmployeesState((es) => es.map((e) => ({ ...e, daysPerWeek: null, assignedWorkDays: [] })));
-    notify("Work schedule reset — every employee's days have been cleared.");
-  };
-
-  const autoAssignSchedule = async () => {
-    if (!API_BASE_URL) {
-      notify("Auto-assign needs a connected backend.");
-      return;
-    }
-    try {
-      const updated = await apiFetch("/api/hr/schedule/auto-assign", { method: "POST" });
-      const mapped = updated.map(mapBackendEmployee);
-      setEmployeesState((es) => {
-        const byId = new Map(es.map((e) => [e.id, e]));
-        mapped.forEach((m) => {
-          const existing = byId.get(m.id);
-          byId.set(m.id, existing ? { ...existing, daysPerWeek: m.daysPerWeek, assignedWorkDays: m.assignedWorkDays } : m);
-        });
-        return Array.from(byId.values());
-      });
-      notify("Schedule generated for everyone with a days/week requirement set.");
-    } catch (e) {
-      notify(`Couldn't generate the schedule: ${e.message}`);
-    }
   };
 
   const fetchMySchedule = async () => {
@@ -4069,7 +4202,6 @@ export default function App() {
     }
     if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
       fetchLevels();
-      fetchScheduleCapacity();
     }
     if (["admin", "master", "it_support"].includes(mapped.role)) {
       fetchSupportTickets();
@@ -4529,7 +4661,7 @@ export default function App() {
     payroll: { label: "Payroll", icon: Banknote, render: () => <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} /> },
     leave: { label: "Leave", icon: CalendarDays, render: () => <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} /> },
     salaryStructure: { label: "Salary Structure", icon: SlidersHorizontal, render: () => <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} /> },
-    workSchedule: { label: "Work Schedule", icon: Clock, render: () => <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} onResetAll={resetAllSchedules} /> },
+    workSchedule: { label: "Work Schedule", icon: Clock, render: () => <HrWorkSchedule /> },
     overview: { label: "Overview", icon: LayoutDashboard, render: () => <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} /> },
     settings: { label: "Company & Settings", icon: SlidersHorizontal, render: () => <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} /> },
     levels: { label: "Levels & Departments", icon: Building2, render: () => <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} /> },

@@ -38,4 +38,6 @@ public class Company {
     private int midrandCapacity = 15;
     @Builder.Default
     private int sandtonCapacity = 10;
+    /** Nullable so existing rows (created before Rosebank existed) load fine — null means the default of 10. */
+    private Integer rosebankCapacity;
 }

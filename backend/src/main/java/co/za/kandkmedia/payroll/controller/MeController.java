@@ -48,6 +48,7 @@ public class MeController {
     private final CompanyRepository companyRepository;
     private final PayslipPdfService payslipPdfService;
     private final ItAssistantService itAssistantService;
+    private final co.za.kandkmedia.payroll.service.WorkScheduleService workScheduleService;
 
     /** IT Assistant chat — answered by the Groq-hosted model when GROQ_API_KEY is set (503 otherwise, and the frontend falls back to its keyword answers). */
     /** Lets the chat show the "AI" badge only when the server actually has a Groq key. */
@@ -81,10 +82,17 @@ public class MeController {
     @GetMapping("/schedule")
     public java.util.Map<String, Object> mySchedule(@AuthenticationPrincipal AppUser user) {
         Employee e = employeeOf(user);
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.util.Map<String, String> thisWeek = new java.util.LinkedHashMap<>();
+        workScheduleService.daysFor(e, today).forEach((d, o) -> thisWeek.put(d.name(), o));
+        java.util.Map<String, String> nextWeek = new java.util.LinkedHashMap<>();
+        workScheduleService.daysFor(e, today.plusWeeks(1)).forEach((d, o) -> nextWeek.put(d.name(), o));
         java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("office", e.getOffice());
-        result.put("daysPerWeek", e.getDaysPerWeek());
-        result.put("assignedWorkDays", e.getAssignedWorkDays() == null ? java.util.List.of() : java.util.Arrays.asList(e.getAssignedWorkDays().split(",")));
+        result.put("daysPerWeek", thisWeek.isEmpty() ? null : thisWeek.size());
+        result.put("assignedWorkDays", new java.util.ArrayList<>(thisWeek.keySet()));
+        result.put("days", thisWeek);
+        result.put("nextWeekDays", nextWeek);
         return result;
     }
 

@@ -4066,15 +4066,19 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // How many in-app pages are behind the current one, so on-screen "Back"
+  // buttons can step back exactly like the browser's Back button.
+  const inAppDepth = useRef(0);
   // Keep the URL in step with where you are, so the browser's Back/Forward
   // buttons and a refresh both land on the same page.
   useEffect(() => {
     if (screen !== "app") return;
     const hash = buildRoute({ viewMode, portalChoice, roleTab });
-    if (window.location.hash !== hash) window.history.pushState(null, "", hash);
+    if (window.location.hash !== hash) { window.history.pushState(null, "", hash); inAppDepth.current += 1; }
   }, [screen, viewMode, portalChoice, roleTab]);
   useEffect(() => {
     const onPop = () => {
+      inAppDepth.current = Math.max(0, inAppDepth.current - 1);
       const route = parseRoute(window.location.hash);
       if (!route) return;
       setViewMode(route.viewMode); setPortalChoice(route.portalChoice); setRoleTab(route.roleTab);
@@ -4517,6 +4521,14 @@ export default function App() {
   const showPortal = (viewMode === "role" && role === "employee") || (viewMode === "selfService" && role !== "employee");
 
   const go = (fn) => { fn(); setNavOpen(false); };
+  // Return to the previous screen (e.g. from Support back to the IT Support
+  // portal it was opened from), not to the role's home page. Falls back to
+  // the screen this one was opened from when there's no in-app history
+  // (e.g. the page was refreshed).
+  const goBack = () => {
+    if (inAppDepth.current > 0) { window.history.back(); return; }
+    setViewMode(role !== "employee" && portalChoice ? "selfService" : "role");
+  };
   const goRoleTab = (id) => go(() => { setRoleTab(id); setViewMode("role"); });
   const portalLabel = { leave: "Payroll & Leave", itSupport: "IT Support" };
 
@@ -4563,7 +4575,7 @@ export default function App() {
         ) : (
           <>
             <div className="kk-nav-label">Navigate</div>
-            <NavItem icon={ArrowLeft} label={role === "employee" ? "Back to Home" : `Back to ${roleTitle}`} onClick={() => go(() => { setViewMode(role === "employee" ? "role" : (portalChoice ? "selfService" : "role")); })} />
+            <NavItem icon={ArrowLeft} label="Back" onClick={() => go(goBack)} />
           </>
         )}
 
@@ -4625,9 +4637,9 @@ export default function App() {
 
         {/* CONTENT */}
         <main className="kk-content kk-page" key={`${viewMode}-${activeTab}-${portalChoice}`}>
-          {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} onBack={() => setViewMode("role")} />}
-          {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={() => setViewMode("role")} isAdminView={false} onUpdateTicket={updateSupportTicket} />}
-          {viewMode === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} onBack={() => setViewMode("role")} isAdminView={false} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
+          {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} onBack={goBack} />}
+          {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={goBack} isAdminView={false} onUpdateTicket={updateSupportTicket} />}
+          {viewMode === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} onBack={goBack} isAdminView={false} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
           {showPortal && portalChoice === null && (
             <PortalChooser empName={loginEmp.name} mySchedule={myScheduleState} onChoose={setPortalChoice} />

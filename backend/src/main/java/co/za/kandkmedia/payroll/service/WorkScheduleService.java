@@ -124,6 +124,18 @@ public class WorkScheduleService {
         return employeeRepository.saveAll(updated);
     }
 
+    /** Clears every employee's days/week requirement and assigned days. */
+    public List<Employee> resetAll() {
+        List<Employee> withSchedule = employeeRepository.findAll().stream()
+                .filter(e -> e.getDaysPerWeek() != null || (e.getAssignedWorkDays() != null && !e.getAssignedWorkDays().isBlank()))
+                .toList();
+        withSchedule.forEach(e -> {
+            e.setDaysPerWeek(null);
+            e.setAssignedWorkDays(null);
+        });
+        return employeeRepository.saveAll(withSchedule);
+    }
+
     private List<Employee> assignForOffice(List<Employee> employees) {
         Map<DayOfWeek, Integer> headcount = new EnumMap<>(DayOfWeek.class);
         for (DayOfWeek d : WEEKDAYS) headcount.put(d, 0);

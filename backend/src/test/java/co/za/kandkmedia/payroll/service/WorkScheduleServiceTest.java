@@ -149,4 +149,23 @@ class WorkScheduleServiceTest {
         assertThat(assignedDays(sandtonOnly)).hasSize(3);
         assertThat(assignedDays(midrandFirst)).hasSize(3);
     }
+
+    @Test
+    void resetAllClearsEveryonesDaysAndAssignments() {
+        Employee a = employee("EMP-1", "Midrand", 3);
+        a.setAssignedWorkDays("MONDAY,WEDNESDAY,FRIDAY");
+        Employee b = employee("EMP-2", "Sandton", 2);
+        Employee untouched = employee("EMP-3", "Sandton", 0);
+        untouched.setDaysPerWeek(null);
+        Mockito.when(employeeRepository.findAll()).thenReturn(List.of(a, b, untouched));
+        Mockito.when(employeeRepository.saveAll(Mockito.anyList())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<Employee> reset = service.resetAll();
+
+        org.assertj.core.api.Assertions.assertThat(reset).containsExactly(a, b);
+        for (Employee e : List.of(a, b)) {
+            org.assertj.core.api.Assertions.assertThat(e.getDaysPerWeek()).isNull();
+            org.assertj.core.api.Assertions.assertThat(e.getAssignedWorkDays()).isNull();
+        }
+    }
 }

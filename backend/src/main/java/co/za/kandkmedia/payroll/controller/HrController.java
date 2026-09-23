@@ -80,11 +80,24 @@ public class HrController {
     public Employee setDaysPerWeek(@PathVariable Long id, @RequestBody java.util.Map<String, Integer> body, @AuthenticationPrincipal AppUser user) {
         Employee e = employee(id);
         Integer days = body.get("daysPerWeek");
-        if (days == null || days < 0 || days > 5) {
+        if (days == null) {
+            // {"daysPerWeek": null} clears the requirement and the days it was assigned.
+            e.setDaysPerWeek(null);
+            e.setAssignedWorkDays(null);
+            return salaryVisibilityService.redact(employeeRepository.save(e), user);
+        }
+        if (days < 0 || days > 5) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "daysPerWeek must be between 0 and 5.");
         }
         e.setDaysPerWeek(days);
         return salaryVisibilityService.redact(employeeRepository.save(e), user);
+    }
+
+    /** Resets the whole office schedule: clears every employee's days/week
+     *  requirement and assigned days, so HR can start over. */
+    @DeleteMapping("/schedule")
+    public List<Employee> resetSchedule(@AuthenticationPrincipal AppUser user) {
+        return salaryVisibilityService.redact(workScheduleService.resetAll(), user);
     }
 
     /** Re-runs the day-balancing algorithm for every employee with a

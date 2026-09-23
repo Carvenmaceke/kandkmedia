@@ -250,6 +250,19 @@ top of `frontend/src/App.jsx` to wherever this backend ends up running
 frontend. It's empty by default — the Support form says plainly that it
 isn't connected yet rather than pretending a click did something.
 
+## Payslip layout
+
+`PayslipPdfService` draws every payslip with PDFBox in the approved
+K & K Media design (US Letter): a navy **PAYSLIP** header bar, a grey
+details panel (company, employee code/name/address, company address,
+payment date, date engaged, bank account and branch code), side-by-side
+**EARNINGS** / **DEDUCTIONS** boxes with shaded totals, a navy **NETT PAY**
+bar, **YEAR TO DATE TOTALS** (South African tax year, from March) with the
+employer's UIF contribution, and an **ADDITIONAL INFO** box with the pay
+period, job title, department, tax number and — once finalized — the
+payslip ID, verification code and QR code. It uses the PDF standard
+Helvetica fonts, so the server needs no office software or system fonts.
+
 ## Payslip document security
 
 Each payslip PDF, once finalized, carries:

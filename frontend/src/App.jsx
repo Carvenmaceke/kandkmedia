@@ -3224,14 +3224,19 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
 /* ---------------------------------------------------------------------- */
 function ITAssistantChat() {
   const [messages, setMessages] = useState([
-    { from: "bot", text: "Hi! I can help with common IT issues — Outlook, Teams, printers, email setup, WiFi, and more. Try asking, or use the quick suggestions below." },
+    { from: "bot", text: "Hi! I can help with common IT issues — Outlook, Teams, printers, email setup, WiFi, and more. Ask me anything, or use the quick suggestions below." },
   ]);
   const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
+  // Whether the AI (Groq, via the backend) answered last time — flips off
+  // when the server has no key configured, so we stop trying and use the
+  // built-in keyword answers for the rest of the chat.
+  const [aiAvailable, setAiAvailable] = useState(Boolean(API_BASE_URL));
   const listRef = useRef(null);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [messages]);
+  }, [messages, thinking]);
 
   const findAnswer = (text) => {
     const lower = text.toLowerCase();
@@ -3243,35 +3248,61 @@ function ITAssistantChat() {
     return match ? match.answer : "I don't have guidance for that yet. Please log a Support or Office Issue ticket and IT support will help you directly.";
   };
 
-  const send = (text) => {
-    if (!text.trim()) return;
-    setMessages((m) => [...m, { from: "user", text }, { from: "bot", text: findAnswer(text) }]);
+  const send = async (text) => {
+    if (!text.trim() || thinking) return;
+    const history = [...messages, { from: "user", text }];
+    setMessages(history);
     setInput("");
+    if (!aiAvailable) {
+      setMessages((m) => [...m, { from: "bot", text: findAnswer(text) }]);
+      return;
+    }
+    setThinking(true);
+    try {
+      const res = await apiFetch("/api/me/assistant", {
+        method: "POST",
+        body: JSON.stringify({ messages: history.map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text })) }),
+      });
+      setMessages((m) => [...m, { from: "bot", text: res.reply, ai: true }]);
+    } catch (e) {
+      // Not configured / unreachable → quietly fall back to the built-in answers.
+      if (/\(503\)|isn't configured/i.test(e.message)) setAiAvailable(false);
+      const tooFast = /too quickly/i.test(e.message);
+      setMessages((m) => [...m, { from: "bot", text: tooFast ? e.message : findAnswer(text) }]);
+    }
+    setThinking(false);
   };
 
   return (
-    <Card style={{ padding: 0, maxWidth: 540, overflow: "hidden" }}>
+    <Card style={{ padding: 0, maxWidth: 620, overflow: "hidden" }}>
       <div style={{ background: T.navy, padding: "12px 16px", display: "flex", alignItems: "center", gap: 8 }}>
         <Bot size={16} color="#fff" />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 13.5 }}>IT Assistant</span>
+        <span style={{ color: "#fff", fontWeight: 700, fontSize: 13.5, flex: 1 }}>IT Assistant</span>
+        {aiAvailable && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#fff", background: "rgba(255,255,255,0.12)", padding: "2px 8px", borderRadius: 999 }}><Sparkles size={11} /> AI</span>}
       </div>
-      <div ref={listRef} style={{ padding: 16, height: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div ref={listRef} style={{ padding: 16, height: 340, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
         {messages.map((m, i) => (
           <div key={i} style={{
             alignSelf: m.from === "user" ? "flex-end" : "flex-start",
             background: m.from === "user" ? T.navy : T.bg, color: m.from === "user" ? T.onNavy : T.text,
-            padding: "8px 12px", borderRadius: 10, maxWidth: "82%", fontSize: 13, lineHeight: 1.5,
+            padding: "8px 12px", borderRadius: 12, maxWidth: "85%", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap",
           }}>{m.text}</div>
         ))}
+        {thinking && (
+          <div style={{ alignSelf: "flex-start", background: T.bg, color: T.muted, padding: "8px 12px", borderRadius: 12, fontSize: 13 }}>Thinking…</div>
+        )}
       </div>
       <div style={{ padding: "10px 12px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 6, flexWrap: "wrap" }}>
         {["Outlook frozen", "Teams won't load", "Printer not working", "Set up email"].map((q) => (
-          <button key={q} onClick={() => send(q)} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.surface, cursor: "pointer", color: T.text2, fontWeight: 500 }}>{q}</button>
+          <button key={q} onClick={() => send(q)} disabled={thinking} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.surface, cursor: "pointer", color: T.text2, fontWeight: 500 }}>{q}</button>
         ))}
       </div>
       <div style={{ padding: 12, borderTop: `1px solid ${T.border}`, display: "flex", gap: 8 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(input); }} style={{ ...inputStyle, flex: 1 }} placeholder="Describe your issue…" />
-        <Button variant="teal" small onClick={() => send(input)}>Send</Button>
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(input); }} style={{ ...inputStyle, flex: 1 }} placeholder="Describe your issue…" maxLength={2000} />
+        <Button variant="teal" small onClick={() => send(input)} disabled={thinking || !input.trim()}>Send</Button>
+      </div>
+      <div style={{ padding: "0 12px 10px", fontSize: 10.5, color: T.muted }}>
+        {aiAvailable ? "AI answers can be wrong — never share passwords here. Still stuck? Log a ticket." : "Never share passwords here. Still stuck? Log a ticket."}
       </div>
     </Card>
   );
@@ -4535,7 +4566,7 @@ export default function App() {
             <Avatar name={loginEmp.name} size={34} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#fff" }}>{loginEmp.name}</div>
-              <div style={{ fontSize: 11.5, color: "var(--kk-chrome-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{roleTitle} · {loginEmp.position || loginEmp.dept}</div>
+              <div style={{ fontSize: 11.5, color: "var(--kk-chrome-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{[roleTitle, loginEmp.position || loginEmp.dept].filter(Boolean).join(" · ")}</div>
             </div>
           </div>
           <div style={{ textAlign: "center", marginTop: 12, fontSize: 11 }}>

@@ -14,6 +14,8 @@ import co.za.kandkmedia.payroll.repository.PayrollRepository;
 import co.za.kandkmedia.payroll.service.LeaveService;
 import co.za.kandkmedia.payroll.service.EmployeeProfileService;
 import co.za.kandkmedia.payroll.service.PayslipPdfService;
+import co.za.kandkmedia.payroll.service.ItAssistantService;
+import co.za.kandkmedia.payroll.dto.AssistantRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -45,6 +47,13 @@ public class MeController {
     private final PasswordEncoder passwordEncoder;
     private final CompanyRepository companyRepository;
     private final PayslipPdfService payslipPdfService;
+    private final ItAssistantService itAssistantService;
+
+    /** IT Assistant chat — answered by the Groq-hosted model when GROQ_API_KEY is set (503 otherwise, and the frontend falls back to its keyword answers). */
+    @PostMapping("/assistant")
+    public java.util.Map<String, String> askAssistant(@AuthenticationPrincipal AppUser user, @RequestBody AssistantRequest request) {
+        return java.util.Map.of("reply", itAssistantService.reply(employeeOf(user), request));
+    }
 
     @GetMapping
     public Employee myProfile(@AuthenticationPrincipal AppUser user) {

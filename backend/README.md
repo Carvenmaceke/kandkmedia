@@ -250,6 +250,22 @@ top of `frontend/src/App.jsx` to wherever this backend ends up running
 frontend. It's empty by default — the Support form says plainly that it
 isn't connected yet rather than pretending a click did something.
 
+## IT Assistant (Groq AI)
+
+The IT Assistant chat calls `POST /api/me/assistant`, which asks a
+Groq-hosted model (`ItAssistantService`, Groq's OpenAI-compatible API)
+using a system prompt built from the company's IT Operations
+Documentation. The API key lives **only** on the server:
+
+```bash
+export GROQ_API_KEY=gsk_...                 # from console.groq.com/keys — never commit it
+export GROQ_MODEL=llama-3.3-70b-versatile   # optional; any Groq chat model id
+```
+
+Without `GROQ_API_KEY` the endpoint returns 503 and the chat falls back to
+its built-in keyword answers. Each person is limited to 15 messages a
+minute, and only the last 12 turns are sent to the model.
+
 ## Payslip layout
 
 `PayslipPdfService` draws every payslip with PDFBox in the approved

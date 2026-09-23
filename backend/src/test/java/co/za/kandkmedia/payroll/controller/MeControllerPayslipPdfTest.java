@@ -41,7 +41,8 @@ class MeControllerPayslipPdfTest {
             Mockito.mock(AppUserRepository.class),
             Mockito.mock(PasswordEncoder.class),
             Mockito.mock(CompanyRepository.class),
-            payslipPdfService
+            payslipPdfService,
+            Mockito.mock(co.za.kandkmedia.payroll.service.ItAssistantService.class)
     );
 
     private Employee employee(long id, String code) {

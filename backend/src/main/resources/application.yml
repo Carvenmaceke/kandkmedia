@@ -65,6 +65,12 @@ app:
   # "Document Verified" webpage yet, so scanning it shows raw JSON for now.
   verification-base-url: ${VERIFICATION_BASE_URL:http://localhost:8080/api/public/verify}
   support-email: ${SUPPORT_EMAIL:itsupport@kandkmedia.co.za}
+  # IT Assistant chatbot (Groq). Set GROQ_API_KEY as an environment variable
+  # on the server — never commit it. Unset = the chat uses its built-in
+  # keyword answers instead.
+  groq:
+    api-key: ${GROQ_API_KEY:}
+    model: ${GROQ_MODEL:llama-3.3-70b-versatile}
   payslip-delivery:
     auto-send: ${PAYSLIP_AUTO_SEND:true}
     # The job checks daily at this hour:minute (server time) whether today

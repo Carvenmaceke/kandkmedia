@@ -3238,7 +3238,7 @@ function ITAssistantChat() {
       .then((s) => { setAiAvailable(Boolean(s && s.configured)); if (!s?.configured) setAiProblem("AI is off — GROQ_API_KEY isn't set on the server, so built-in answers are used."); })
       .catch((e) => {
         setAiAvailable(false);
-        setAiProblem(/\(404\)|No static resource/i.test(e.message)
+        setAiProblem(/\((403|404)\)|No static resource/i.test(e.message)
           ? "AI is off — the server hasn't been updated with the AI assistant yet (redeploy the backend on Render)."
           : `AI is off — ${e.message}`);
       });

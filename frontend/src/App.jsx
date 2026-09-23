@@ -253,28 +253,77 @@ function Card({ children, style, className = "", ...rest }) {
     </div>
   );
 }
-function SectionTitle({ children, sub, actions }) {
+/* Page-level headers get a banner with the page's icon and accent colour;
+ * anything else rendered with SectionTitle stays a simple sub-heading. */
+const PAGE_HEADERS = [
+  ["HR Dashboard", "LayoutDashboard", "brand"], ["Employees", "Users", "indigo"], ["Payroll", "Banknote", "green"],
+  ["Leave Requests", "CalendarDays", "amber"],
+  ["Salary Structure", "SlidersHorizontal", "purple"], ["Work Schedule", "Clock", "indigo"],
+  ["System Overview", "LayoutDashboard", "purple"], ["Company & Settings", "Building2", "brand"],
+  ["User Accounts", "ShieldCheck", "purple"], ["Support", "LifeBuoy", "indigo"], ["Office Issues", "MapPin", "amber"],
+  ["Settings", "SettingsIcon", "brand"], ["My Team", "Users", "green"], ["IT Support", "LifeBuoy", "indigo"],
+  ["Employee Dashboard", "LayoutDashboard", "brand"], ["My Profile", "UserCircle2", "brand"],
+];
+const PAGE_ICON_COMPONENTS = { LayoutDashboard, Users, Banknote, ClipboardList, CalendarDays, SlidersHorizontal, Clock, Building2, ShieldCheck, LifeBuoy, MapPin, SettingsIcon, UserCircle2 };
+const ACCENTS = { brand: "var(--kk-brand)", indigo: "var(--kk-indigo)", green: "var(--kk-green)", amber: "var(--kk-amber)", purple: "var(--kk-purple)", red: "var(--kk-red)" };
+
+/** Table row shown when a table has nothing in it yet. */
+function EmptyRow({ colSpan, icon: Icon = ClipboardList, children }) {
   return (
-    <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+    <tr className="kk-empty-row">
+      <td colSpan={colSpan}>
+        <div className="kk-empty">
+          <div className="kk-empty-icon"><Icon size={20} /></div>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: T.text2 }}>{children}</div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function SectionTitle({ children, sub, actions, icon, accent }) {
+  const text = React.Children.toArray(children).map((c) => (typeof c === "string" || typeof c === "number" ? c : "")).join("");
+  const match = PAGE_HEADERS.find(([t]) => text === t || text.startsWith(`${t} —`));
+  if (match || icon) {
+    const Icon = icon || PAGE_ICON_COMPONENTS[match[1]];
+    const color = ACCENTS[accent || match?.[2] || "brand"];
+    return (
+      <div className="kk-page-hero" style={{ "--accent": color }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0, flex: "1 1 320px" }}>
+          <div className="kk-page-hero-icon"><Icon size={22} color="#fff" /></div>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: "-0.025em", color: T.text, lineHeight: 1.2 }}>{children}</h1>
+            {sub && <div style={{ marginTop: 5, fontSize: 13.5, color: T.muted, lineHeight: 1.5, maxWidth: 760 }}>{sub}</div>}
+          </div>
+        </div>
+        {actions && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", position: "relative" }}>{actions}</div>}
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginBottom: 14, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
       <div style={{ minWidth: 0 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.015em", color: T.text }}>{children}</h2>
-        {sub && <div style={{ marginTop: 4, fontSize: 13.5, color: T.muted, lineHeight: 1.5, maxWidth: 720 }}>{sub}</div>}
+        <h2 className="kk-subheading">{children}</h2>
+        {sub && <div style={{ marginTop: 4, fontSize: 13, color: T.muted, lineHeight: 1.5, maxWidth: 720 }}>{sub}</div>}
       </div>
       {actions && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{actions}</div>}
     </div>
   );
 }
-function StatCard({ icon: Icon, label, value, tone, title }) {
-  const c = tone || T.text;
+function StatCard({ icon: Icon, label, value, tone, title, progress }) {
+  const accent = tone || T.teal;
   return (
-    <Card className="kk-stat" style={{ padding: "18px 20px", flex: "1 1 180px", minWidth: 160 }} title={title}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
+    <div className="kk-stat-card" style={{ "--accent": accent }} title={title}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <span style={{ fontSize: 12.5, color: T.muted, fontWeight: 600 }}>{label}</span>
-        <div style={{ width: 32, height: 32, borderRadius: 10, background: T.tealLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={16} color={T.teal} /></div>
+        <div className="kk-stat-icon"><Icon size={17} color="#fff" /></div>
       </div>
-      <div className="num" style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: c, lineHeight: 1.1 }}>{value}</div>
-      {title && <div style={{ fontSize: 11.5, color: T.muted, marginTop: 8, lineHeight: 1.45 }}>{title}</div>}
-    </Card>
+      <div className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em", color: T.text, lineHeight: 1.1, marginTop: 10 }}>{value}</div>
+      {progress != null && (
+        <div className="kk-progress" style={{ marginTop: 12 }}><div style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></div>
+      )}
+      {title && <div style={{ fontSize: 11.5, color: T.muted, marginTop: 10, lineHeight: 1.45 }}>{title}</div>}
+    </div>
   );
 }
 function Button({ children, onClick, variant = "primary", small, disabled, icon: Icon, type = "button", full, title }) {
@@ -305,6 +354,7 @@ const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, bord
 
 /** Segmented-control tabs used by every in-page tab bar. */
 function Tabs({ tabs, active, onChange }) {
+  if (tabs.length < 2) return null;
   return (
     <div className="kk-tabs" role="tablist">
       {tabs.map((t) => (
@@ -1097,22 +1147,22 @@ function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo, canS
   const managers = EMPLOYEES.filter((e) => e.role === "manager" && e.id !== emp.id);
   return (
     <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 40, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
-      <div className="kk-drawer" style={{ width: 380, maxWidth: "100%", background: T.surface, height: "100%", padding: 28, boxSizing: "border-box", overflowY: "auto", borderLeft: `1px solid ${T.border}`, boxShadow: "var(--kk-shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <Avatar name={emp.name} size={52} />
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
+      <div className="kk-drawer" style={{ width: 420, maxWidth: "100%", background: T.surface, height: "100%", padding: 20, boxSizing: "border-box", overflowY: "auto", borderLeft: `1px solid ${T.border}`, boxShadow: "var(--kk-shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="kk-drawer-hero">
+          <button onClick={onClose} aria-label="Close" style={{ position: "absolute", right: 14, top: 14, background: "rgba(255,255,255,0.12)", border: "none", cursor: "pointer", color: "#fff", borderRadius: 8, padding: 6, lineHeight: 0 }}><X size={16} /></button>
+          <Avatar name={emp.name} size={56} />
+          <div style={{ marginTop: 12, fontSize: 19, fontWeight: 750, color: "#fff", letterSpacing: "-0.01em" }}>{emp.name}</div>
+          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.65)", fontFamily: mono }}>{emp.id}{emp.position ? ` · ${emp.position}` : ""}</div>
+          <div style={{ marginTop: 10, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
         </div>
-        <div style={{ marginTop: 14, fontSize: 17, fontWeight: 700 }}>{emp.name}</div>
-        <div style={{ fontSize: 12.5, color: T.muted, fontFamily: mono }}>{emp.id}</div>
-        <div style={{ marginTop: 6, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
-        <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
+        <div className="kk-detail-grid">
           {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Employment Type", emp.employmentType || "—"], ...(canSeeSalary ? [["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]] : [])].map(([k, v]) => (
-            <div key={k}>
+            <div key={k} className="kk-detail">
               <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{k}</div>
-              <div style={{ marginTop: 2 }}>{v}</div>
+              <div style={{ marginTop: 3, fontWeight: 550, overflowWrap: "anywhere" }}>{v}</div>
             </div>
           ))}
-          <div>
+          <div className="kk-detail kk-detail--wide">
             <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>Reports To</div>
             {onUpdateManager ? (
               <select value={emp.manager || ""} onChange={(e) => onUpdateManager(emp.id, e.target.value)} style={{ ...inputStyle, marginTop: 4, padding: "6px 8px" }}>
@@ -2023,7 +2073,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
           <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Category", "Priority", "Status", "Response", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {myTickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {myTickets.length === 0 && <EmptyRow colSpan={6} icon={LifeBuoy}>No support requests yet.</EmptyRow>}
               {myTickets.map((t) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.subject}</td>
@@ -2049,7 +2099,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
           <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Subject", "Category", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {sortedTickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {sortedTickets.length === 0 && <EmptyRow colSpan={6} icon={LifeBuoy}>No support requests yet.</EmptyRow>}
               {sortedTickets.map((t) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>{t.empName}</td>
@@ -2217,7 +2267,7 @@ function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availab
           <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Type", "Office", "Priority", "Status", "Response", "Reported"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {myIssues.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No office issues reported yet.</td></tr>}
+              {myIssues.length === 0 && <EmptyRow colSpan={7} icon={MapPin}>No office issues reported yet.</EmptyRow>}
               {myIssues.map((i) => (
                 <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px", fontWeight: 600 }}>{i.subject}</td>
@@ -2244,7 +2294,7 @@ function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availab
           <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Office", "Subject", "Type", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {sortedIssues.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No office issues reported yet.</td></tr>}
+              {sortedIssues.length === 0 && <EmptyRow colSpan={7} icon={MapPin}>No office issues reported yet.</EmptyRow>}
               {sortedIssues.map((i) => (
                 <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>{i.empName}</td>
@@ -2339,7 +2389,7 @@ function PersonalInfoSection({ emp, onSave }) {
 
   return (
     <Card style={{ padding: 20 }}>
-      <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Personal & Payroll Information</div>
+      <div className="kk-card-title" style={{ marginBottom: 4 }}>Personal & Payroll Information</div>
       <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>
         Used for tax, banking, and emergency contact purposes. Fill in as much as you have on hand — you can always come back and finish the rest later.
       </div>
@@ -2423,7 +2473,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
       <SectionTitle sub="Update your personal information, password and notification preferences">Settings</SectionTitle>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>My Profile</div>
+          <div className="kk-card-title" style={{ marginBottom: 14 }}>My Profile</div>
           <form onSubmit={saveProfile}>
             <Field label="Full Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} /></Field>
             <Field label="Email"><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} type="email" style={inputStyle} /></Field>
@@ -2454,7 +2504,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: "1 1 320px" }}>
           <Card style={{ padding: 20 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Change Password</div>
+            <div className="kk-card-title" style={{ marginBottom: 14 }}>Change Password</div>
             <form onSubmit={savePassword}>
               <Field label="Current Password"><input value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} type="password" style={inputStyle} /></Field>
               <Field label="New Password"><input value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} type="password" style={inputStyle} /></Field>
@@ -2467,7 +2517,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
           </Card>
 
           <Card style={{ padding: 20 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Notification Preferences</div>
+            <div className="kk-card-title" style={{ marginBottom: 4 }}>Notification Preferences</div>
             <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>Choose what gets emailed to you.</div>
             {[["leave", "notifyLeave", "Email me when my leave is approved or rejected"], ["payslip", "notifyPayslip", "Email me when a new payslip is available"]].map(([k, field, label]) => (
               <label key={k} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, marginBottom: 10, cursor: "pointer" }}>
@@ -2482,7 +2532,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
           </Card>
 
           <Card style={{ padding: 20 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 10 }}>Account</div>
+            <div className="kk-card-title" style={{ marginBottom: 10 }}>Account</div>
             {[["Employee ID", emp.id], ["Role", ROLE_LABEL[emp.role]], ["Start Date", emp.start]].map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13 }}>
                 <span style={{ color: T.muted }}>{k}</span><span style={{ fontFamily: k === "Employee ID" ? mono : sans }}>{v}</span>
@@ -2502,6 +2552,23 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
 /* ---------------------------------------------------------------------- */
 /* HR AREA                                                                */
 /* ---------------------------------------------------------------------- */
+/** Horizontal step tracker for the payroll batch (DRAFT → … → SENT). */
+function PipelineStepper({ stages, current }) {
+  return (
+    <div className="kk-stepper">
+      {stages.map((st, i) => {
+        const state = i < current ? "done" : i === current ? "current" : "todo";
+        return (
+          <div key={st} className={`kk-step kk-step--${state}`}>
+            <div className="kk-step-dot">{state === "done" ? <CheckCircle2 size={14} /> : i + 1}</div>
+            <div className="kk-step-label">{st.charAt(0) + st.slice(1).toLowerCase()}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
   const counts = LEVELS.reduce((acc, l) => { acc[l.name] = EMPLOYEES.filter((e) => e.level === l.name).length; return acc; }, {});
   const pending = leaveRequests.filter((r) => r.status === "Pending").length;
@@ -2509,35 +2576,28 @@ function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
   return (
     <div>
       <SectionTitle sub="People and payroll operations for K and K Media">HR Dashboard</SectionTitle>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-        <StatCard icon={Users} label="Total Employees" value={EMPLOYEES.length} />
+      <div className="kk-stat-grid">
+        <StatCard icon={Users} label="Total Employees" value={EMPLOYEES.length} tone={T.indigo} />
         <StatCard icon={ClipboardList} label="Pending Leave" value={pending} tone={T.amber} />
         <StatCard icon={Banknote} label="Payroll Status" value={payrollStage} tone={T.teal} />
         <StatCard icon={FileText} label="Payslips Sent (Aug)" value={`${EMPLOYEES.length}/${EMPLOYEES.length}`} tone={T.green} />
       </div>
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <Card style={{ padding: 18, flex: "1 1 420px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Employees by Level</div>
+          <div className="kk-card-title" style={{ marginBottom: 14 }}>Employees by Level</div>
           {LEVELS.map((l) => (
             <div key={l.name} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
                 <span style={{ color: T.muted }}>{l.name}</span><span style={{ fontFamily: mono, fontWeight: 600 }}>{counts[l.name]}</span>
               </div>
-              <div style={{ height: 6, background: T.neutralBg, borderRadius: 3 }}><div style={{ height: 6, borderRadius: 3, background: T.teal, width: `${(counts[l.name] / EMPLOYEES.length) * 100}%` }} /></div>
+              <div className="kk-progress"><div style={{ width: `${EMPLOYEES.length ? (counts[l.name] / EMPLOYEES.length) * 100 : 0}%` }} /></div>
             </div>
           ))}
         </Card>
         <Card style={{ padding: 18, flex: "1 1 420px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Payroll Pipeline — {CURRENT_MONTH}</div>
+          <div className="kk-card-title" style={{ marginBottom: 4 }}>Payroll Pipeline — {CURRENT_MONTH}</div>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Advance the batch through review and approval before payslips are sent.</div>
-          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4, marginBottom: 16 }}>
-            {STAGES.map((s, i) => (
-              <React.Fragment key={s}>
-                <div style={{ fontSize: 11, fontWeight: 700, padding: "5px 9px", borderRadius: 5, background: i <= stageIdx ? T.navy : T.neutralBg, color: i <= stageIdx ? T.onNavy : T.muted }}>{s}</div>
-                {i < STAGES.length - 1 && <ArrowRight size={12} color={T.muted} />}
-              </React.Fragment>
-            ))}
-          </div>
+          <PipelineStepper stages={STAGES} current={stageIdx} />
           {stageIdx < STAGES.length - 1 ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1]}</Button> : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>}
         </Card>
       </div>
@@ -2900,7 +2960,7 @@ function HrWorkSchedule() {
 
       <Card style={{ padding: 18, marginBottom: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650 }}>Headcount vs desk capacity</div>
+          <div className="kk-card-title" style={{  }}>Headcount vs desk capacity</div>
           <Button variant="teal" small onClick={saveCapacity} disabled={capSaving || !capForm}>{capSaving ? "Saving…" : "Save capacity"}</Button>
         </div>
         <div className="table-wrap">
@@ -2961,7 +3021,7 @@ function HrWorkSchedule() {
           </thead>
           <tbody>
             {!data && !loadError && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>Loading…</td></tr>}
-            {data && rows.length === 0 && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees to show.</td></tr>}
+            {data && rows.length === 0 && <EmptyRow colSpan={8} icon={Users}>No employees to show.</EmptyRow>}
             {rows.map((r) => (
               <tr key={r.id}>
                 <td style={{ padding: "10px 14px" }}>
@@ -3005,8 +3065,11 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
   return (
     <div>
       <SectionTitle sub={`Reviewing variable earnings and deductions for ${CURRENT_MONTH}`}>Payroll — {CURRENT_MONTH}</SectionTitle>
+      <Card style={{ padding: "20px 22px 4px", marginBottom: 16 }}>
+        <div className="kk-card-title">Batch progress</div>
+        <PipelineStepper stages={STAGES} current={stageIdx} />
+      </Card>
       <div style={{ marginBottom: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <Pill tone="teal">Status: {payrollStage}</Pill>
         {payrollLoading && <span style={{ fontSize: 12, color: T.muted }}>Loading real payroll data…</span>}
         {API_BASE_URL && !payrollLoading && !hasRealRecords && <Pill tone="amber">Showing estimated figures — couldn't load real payroll data</Pill>}
         {API_BASE_URL && !payrollLoading && EMPLOYEES.length > visibleEmployees.length && (
@@ -3021,7 +3084,7 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Basic", "Overtime", "Bonus", "Gross", "Deductions", "Net Pay", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
             {visibleEmployees.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees have a salary set yet — add one under Employees to generate their payslip.</td></tr>
+              <EmptyRow colSpan={8} icon={Banknote}>No employees have a salary set yet — add one under Employees to generate their payslip.</EmptyRow>
             )}
             {visibleEmployees.map((e) => {
               const real = hasRealRecords ? payrollRecords[e.id] : null;
@@ -3126,20 +3189,20 @@ function AdminOverview({ supportTickets, officeIssues }) {
   return (
     <div>
       <SectionTitle sub="System-level status for the whole platform">System Overview</SectionTitle>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-        <StatCard icon={Users} label="User Accounts" value={EMPLOYEES.length} />
-        <StatCard icon={Building2} label="Departments" value={DEPARTMENTS.length} />
+      <div className="kk-stat-grid">
+        <StatCard icon={Users} label="User Accounts" value={EMPLOYEES.length} tone={T.purple} />
+        <StatCard icon={Building2} label="Departments" value={DEPARTMENTS.length} tone={T.indigo} />
         <StatCard icon={LifeBuoy} label="Open Support Tickets" value={openTickets} tone={openTickets > 0 ? T.amber : T.green} />
         <StatCard icon={MapPin} label="Open Office Issues" value={openOfficeIssues} tone={openOfficeIssues > 0 ? T.amber : T.green} />
       </div>
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Accounts by Role</div>
+        <div className="kk-card-title" style={{ marginBottom: 14 }}>Accounts by Role</div>
         {roleCounts.map((r) => (
           <div key={r.role} style={{ marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
               <span style={{ color: T.muted }}>{ROLE_LABEL[r.role]}</span><span style={{ fontFamily: mono, fontWeight: 600 }}>{r.count}</span>
             </div>
-            <div style={{ height: 6, background: T.neutralBg, borderRadius: 3 }}><div style={{ height: 6, borderRadius: 3, background: T.purple, width: `${(r.count / EMPLOYEES.length) * 100}%` }} /></div>
+            <div className="kk-progress" style={{ "--accent": { master: "var(--kk-red)", it_support: "var(--kk-indigo)", admin: "var(--kk-purple)", hr: "var(--kk-brand)", manager: "var(--kk-amber)", employee: "var(--kk-green)" }[r.role] }}><div style={{ width: `${EMPLOYEES.length ? (r.count / EMPLOYEES.length) * 100 : 0}%` }} /></div>
           </div>
         ))}
       </Card>
@@ -3194,7 +3257,7 @@ function AdminCompanySettings({ onUpdateCompany, payrollSettings, onUpdatePayrol
       <SectionTitle sub="Company profile and automated payslip delivery">Company & Settings</SectionTitle>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Company Profile</div>
+          <div className="kk-card-title" style={{ marginBottom: 14 }}>Company Profile</div>
           {field("Company Name", "name")}
           {field("Registration No.", "regNo", "Enter your CIPC registration number")}
           {field("Address", "address")}
@@ -3208,7 +3271,7 @@ function AdminCompanySettings({ onUpdateCompany, payrollSettings, onUpdatePayrol
           {!API_BASE_URL && <div style={{ fontSize: 11, color: T.muted, marginTop: 8 }}>Not connected to a backend — changes are kept locally for this session only.</div>}
         </Card>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Payslip Delivery</div>
+          <div className="kk-card-title" style={{ marginBottom: 4 }}>Payslip Delivery</div>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>Automatic monthly payslip generation and email delivery.</div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <span style={{ fontSize: 13 }}>Automatic Sending</span>
@@ -3238,7 +3301,7 @@ function AdminCompanySettings({ onUpdateCompany, payrollSettings, onUpdatePayrol
           </div>
         </Card>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Email Delivery</div>
+          <div className="kk-card-title" style={{ marginBottom: 4 }}>Email Delivery</div>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>
             Sends a real test email, through the same system that sends payslips and account verification codes, to your own account's inbox — confirms mail is actually configured without needing to check server logs.
           </div>
@@ -3356,7 +3419,7 @@ function AdminLevels({ onUpdateLevel, onAddLevel }) {
           </div>
         </div>
         <Card style={{ padding: 18, flex: "1 1 220px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>Departments</div>
+          <div className="kk-card-title" style={{ marginBottom: 12 }}>Departments</div>
           {DEPARTMENTS.map((d) => (
             <div key={d} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
               <span>{d}</span><span style={{ fontFamily: mono, color: T.muted }}>{EMPLOYEES.filter((e) => e.dept === d).length}</span>
@@ -3420,8 +3483,8 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
   return (
     <div>
       <SectionTitle sub={`Signed in as ${manager.name} · ${manager.position}`}>My Team</SectionTitle>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-        <StatCard icon={Users} label="Team Members" value={team.length} />
+      <div className="kk-stat-grid">
+        <StatCard icon={Users} label="Team Members" value={team.length} tone={T.green} />
         <StatCard icon={Clock} label="Pending Approvals" value={pending.length} tone={T.amber} />
       </div>
       <SectionTitle>Team Members</SectionTitle>
@@ -3445,7 +3508,7 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
         <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Type", "Dates", "Days", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
-            {teamRequests.length === 0 && <tr><td colSpan={6} style={{ padding: 18, color: T.muted, textAlign: "center" }}>No leave requests from your team.</td></tr>}
+            {teamRequests.length === 0 && <EmptyRow colSpan={6} icon={CalendarDays}>No leave requests from your team.</EmptyRow>}
             {teamRequests.map((r) => {
               const e = empById(r.emp);
               return (
@@ -3828,18 +3891,39 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
 
       {tab === "dashboard" && (
         <div>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-            {Object.entries(balances).map(([k, v]) => <StatCard key={k} icon={CalendarDays} label={k} value={`${v}d`} title={LEAVE_POLICY[k]} />)}
+          <div className="kk-stat-grid">
+            {Object.entries(balances).map(([k, v]) => {
+              const full = { "Annual Leave": 15, "Sick Leave": 30, "Family Responsibility Leave": 3 }[k];
+              const tone = { "Annual Leave": T.teal, "Sick Leave": T.indigo, "Family Responsibility Leave": T.purple }[k] || T.green;
+              return <StatCard key={k} icon={CalendarDays} label={k} value={`${v} days`} tone={tone} progress={full ? (v / full) * 100 : null} title={LEAVE_POLICY[k]} />;
+            })}
           </div>
-          <Card style={{ padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}><Bell size={15} color={T.teal} /><span style={{ fontWeight: 650, fontSize: 13.5 }}>Notifications</span></div>
-            <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 13, color: T.muted, lineHeight: 1.9 }}>
-              {myHistory.length > 0 && <li>Your {myHistory[myHistory.length - 1].month} payslip has been emailed to {emp.email}</li>}
+          <Card style={{ padding: 22 }}>
+            <div className="kk-card-title"><Bell size={16} color={T.teal} /> Recent activity</div>
+            <div className="kk-activity">
+              {myHistory.length > 0 && (
+                <div className="kk-activity-item" style={{ "--accent": "var(--kk-green)" }}>
+                  <div className="kk-activity-icon"><Banknote size={15} /></div>
+                  <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>{myHistory[myHistory.length - 1].month} payslip sent</div><div style={{ fontSize: 12.5, color: T.muted }}>Emailed to {emp.email}</div></div>
+                </div>
+              )}
               {myRequests.filter((r) => r.status !== "Pending").slice(-1).map((r) => (
-                <li key={r.id}>Your {r.type} request ({r.start} – {r.end}) was <strong style={{ color: r.status === "Approved" ? T.green : T.red }}>{r.status.toLowerCase()}</strong></li>
+                <div key={r.id} className="kk-activity-item" style={{ "--accent": r.status === "Approved" ? "var(--kk-green)" : "var(--kk-red)" }}>
+                  <div className="kk-activity-icon">{r.status === "Approved" ? <CheckCircle2 size={15} /> : <XCircle size={15} />}</div>
+                  <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.type} {r.status.toLowerCase()}</div><div style={{ fontSize: 12.5, color: T.muted }}>{r.start} – {r.end}</div></div>
+                </div>
               ))}
-              <li>Leave balance updated for the new leave cycle</li>
-            </ul>
+              {myRequests.filter((r) => r.status === "Pending").slice(0, 2).map((r) => (
+                <div key={r.id} className="kk-activity-item" style={{ "--accent": "var(--kk-amber)" }}>
+                  <div className="kk-activity-icon"><Clock size={15} /></div>
+                  <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.type} awaiting approval</div><div style={{ fontSize: 12.5, color: T.muted }}>{r.start} – {r.end} · {r.days} day{r.days === 1 ? "" : "s"}</div></div>
+                </div>
+              ))}
+              <div className="kk-activity-item" style={{ "--accent": "var(--kk-indigo)" }}>
+                <div className="kk-activity-icon"><CalendarDays size={15} /></div>
+                <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>Leave balances updated</div><div style={{ fontSize: 12.5, color: T.muted }}>For the new leave cycle</div></div>
+              </div>
+            </div>
           </Card>
         </div>
       )}
@@ -3880,7 +3964,9 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
       )}
 
       {tab === "applyLeave" && (
-        <Card style={{ padding: 22, maxWidth: 460 }}>
+        <div className="kk-split">
+        <Card style={{ padding: 24 }}>
+          <div className="kk-card-title">New leave application</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Leave Type</label>
@@ -3914,6 +4000,32 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
             <Button variant="teal" onClick={submit}>Submit Application</Button>
           </div>
         </Card>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Card style={{ padding: 22 }}>
+            <div className="kk-card-title">Your balances</div>
+            {Object.entries(balances).map(([k, v]) => {
+              const full = { "Annual Leave": 15, "Sick Leave": 30, "Family Responsibility Leave": 3 }[k] || v || 1;
+              return (
+                <div key={k} style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                    <span style={{ color: T.text2, fontWeight: 600 }}>{k}</span><span className="num" style={{ fontWeight: 700 }}>{v} days</span>
+                  </div>
+                  <div className="kk-progress" style={{ "--accent": k === form.type ? "var(--kk-brand)" : "var(--kk-indigo)" }}><div style={{ width: `${Math.min(100, (v / full) * 100)}%` }} /></div>
+                </div>
+              );
+            })}
+          </Card>
+          <Card style={{ padding: 22 }}>
+            <div className="kk-card-title">How it works</div>
+            <ol className="kk-steps-list">
+              <li>Pick the leave type and dates.</li>
+              <li>Attach proof if the type needs it (e.g. a medical certificate).</li>
+              <li>Sign and submit — {emp.role === "employee" ? "your manager or HR" : "HR"} reviews it.</li>
+              <li>You'll get a signed decision letter by email.</li>
+            </ol>
+          </Card>
+        </div>
+        </div>
       )}
 
       {tab === "leaveHistory" && (
@@ -3921,7 +4033,7 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
           <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Type", "Dates", "Days", "Reason", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {myRequests.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No leave history yet.</td></tr>}
+              {myRequests.length === 0 && <EmptyRow colSpan={6} icon={CalendarDays}>No leave history yet.</EmptyRow>}
               {myRequests.map((r) => (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>
@@ -3949,19 +4061,19 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
         <Card style={{ padding: 20 }}>
           {mySchedule && (Object.keys(mySchedule.days || {}).length > 0 || Object.keys(mySchedule.nextWeekDays || {}).length > 0 || mySchedule.daysPerWeek != null) ? (
             <>
-              <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>This week</div>
+              <div className="kk-card-title" style={{ marginBottom: 4 }}>This week</div>
               <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Your office days rotate each week — check here before heading in.</div>
               <MyWeekGrid schedule={mySchedule} />
               {mySchedule.nextWeekDays && (
                 <>
-                  <div style={{ fontSize: 13.5, fontWeight: 650, margin: "22px 0 12px" }}>Next week</div>
+                  <div className="kk-card-title" style={{ margin: "22px 0 12px" }}>Next week</div>
                   <MyWeekGrid schedule={{ days: mySchedule.nextWeekDays }} weekOffset={1} />
                 </>
               )}
             </>
           ) : (
             <>
-              <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Office schedule</div>
+              <div className="kk-card-title" style={{ marginBottom: 4 }}>Office schedule</div>
               <div style={{ fontSize: 12.5, color: T.muted }}>HR hasn't set your office days yet. Once they do, your days (and which office) will show here.</div>
             </>
           )}

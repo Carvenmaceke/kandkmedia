@@ -2613,13 +2613,15 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
 const WEEKDAY_LABELS = { MONDAY: "Mon", TUESDAY: "Tue", WEDNESDAY: "Wed", THURSDAY: "Thu", FRIDAY: "Fri" };
 const WEEKDAY_ORDER = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
 
-function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAutoAssign }) {
+function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAutoAssign, onResetAll }) {
   const [capForm, setCapForm] = useState(capacity);
   const [capSaving, setCapSaving] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [officeFilter, setOfficeFilter] = useState("All");
 
   const filtered = EMPLOYEES.filter((e) => e.active !== false).filter((e) => officeFilter === "All" || e.office === officeFilter);
+  const hasSchedule = (e) => e.daysPerWeek != null || (e.assignedWorkDays || []).length > 0;
+  const anySet = EMPLOYEES.some(hasSchedule);
 
   // Headcount per office/day, computed straight from each employee's
   // currently assigned days — always in sync with what's actually shown.
@@ -2689,7 +2691,14 @@ function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAut
             }}>{o}</button>
           ))}
         </div>
-        <Button variant="teal" small icon={RefreshCw} onClick={runAutoAssign} disabled={assigning}>{assigning ? "Generating…" : "Auto-Generate Schedule"}</Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant="ghost" small icon={Trash2} disabled={!anySet}
+            title="Clear every employee's days/week and assigned days"
+            onClick={() => { if (window.confirm("Reset the whole work schedule?\n\nThis clears every employee's days/week and their assigned office days. You can set them again afterwards.")) onResetAll(); }}>
+            Reset All
+          </Button>
+          <Button variant="teal" small icon={RefreshCw} onClick={runAutoAssign} disabled={assigning}>{assigning ? "Generating…" : "Auto-Generate Schedule"}</Button>
+        </div>
       </div>
 
       <Card style={{ overflow: "hidden" }}>
@@ -2700,17 +2709,18 @@ function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAut
               <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Office</th>
               <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Days/Week</th>
               {WEEKDAY_ORDER.map((d) => <th key={d} style={{ padding: "10px 8px", fontSize: 11.5, color: T.muted, fontWeight: 700, textAlign: "center" }}>{WEEKDAY_LABELS[d]}</th>)}
+              <th style={{ padding: "10px 8px" }} />
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees to show.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={9} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees to show.</td></tr>}
             {filtered.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
                 <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600 }}>{e.name}</div><div style={{ fontFamily: mono, fontSize: 11, color: T.muted }}>{e.id}</div></td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.office}</td>
                 <td style={{ padding: "10px 14px" }}>
-                  <select value={e.daysPerWeek ?? ""} onChange={(ev) => onUpdateDaysPerWeek(e.id, Number(ev.target.value))} style={{ ...inputStyle, padding: "5px 8px", width: 80 }}>
-                    <option value="">—</option>
+                  <select value={e.daysPerWeek ?? ""} onChange={(ev) => onUpdateDaysPerWeek(e.id, ev.target.value === "" ? null : Number(ev.target.value))} style={{ ...inputStyle, padding: "5px 8px", width: 80 }}>
+                    <option value="">— Not set</option>
                     {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </td>
@@ -2719,6 +2729,14 @@ function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAut
                     {(e.assignedWorkDays || []).includes(d) ? <span style={{ color: T.teal, fontWeight: 700 }}>●</span> : <span style={{ color: T.border }}>—</span>}
                   </td>
                 ))}
+                <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                  {hasSchedule(e) && (
+                    <button onClick={() => onUpdateDaysPerWeek(e.id, null)} title={`Clear ${e.name}'s days`} aria-label={`Clear ${e.name}'s days`}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600 }}>
+                      <X size={14} /> Clear
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -3812,7 +3830,23 @@ export default function App() {
         }
       }
     }
-    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, daysPerWeek: days } : e)));
+    // null = cleared: the requirement and the specific days both go.
+    setEmployeesState((es) => es.map((e) => (e.id === employeeId
+      ? { ...e, daysPerWeek: days, ...(days == null ? { assignedWorkDays: [] } : {}) }
+      : e)));
+  };
+
+  const resetAllSchedules = async () => {
+    if (API_BASE_URL) {
+      try {
+        await apiFetch("/api/hr/schedule", { method: "DELETE" });
+      } catch (e) {
+        notify(`Couldn't reset the schedule: ${e.message}`);
+        return;
+      }
+    }
+    setEmployeesState((es) => es.map((e) => ({ ...e, daysPerWeek: null, assignedWorkDays: [] })));
+    notify("Work schedule reset — every employee's days have been cleared.");
   };
 
   const autoAssignSchedule = async () => {
@@ -4495,7 +4529,7 @@ export default function App() {
     payroll: { label: "Payroll", icon: Banknote, render: () => <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} /> },
     leave: { label: "Leave", icon: CalendarDays, render: () => <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} /> },
     salaryStructure: { label: "Salary Structure", icon: SlidersHorizontal, render: () => <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} /> },
-    workSchedule: { label: "Work Schedule", icon: Clock, render: () => <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} /> },
+    workSchedule: { label: "Work Schedule", icon: Clock, render: () => <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} onResetAll={resetAllSchedules} /> },
     overview: { label: "Overview", icon: LayoutDashboard, render: () => <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} /> },
     settings: { label: "Company & Settings", icon: SlidersHorizontal, render: () => <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} /> },
     levels: { label: "Levels & Departments", icon: Building2, render: () => <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} /> },

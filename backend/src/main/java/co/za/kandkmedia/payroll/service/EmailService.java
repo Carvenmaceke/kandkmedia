@@ -163,6 +163,11 @@ public class EmailService {
      * this service sends — no separate mail configuration to maintain.
      */
     public boolean sendVerificationCode(String toEmail, String firstName, String code) {
+        return verificationCodeSendError(toEmail, firstName, code) == null;
+    }
+
+    /** Same as sendVerificationCode, but returns why sending failed (null on success). */
+    public String verificationCodeSendError(String toEmail, String firstName, String code) {
         String subject = "Verify your K and K Media account";
         String text = "Hi " + firstName + ",\n\n" +
                 "Your verification code is: " + code + "\n\n" +
@@ -170,7 +175,7 @@ public class EmailService {
                 "If you didn't try to sign up, you can ignore this email.\n\n" +
                 "Regards,\nK and K Media";
         SendResult result = sendViaResend(toEmail, null, subject, text, null, null);
-        return result.ok();
+        return result.ok() ? null : (result.errorMessage() == null ? "unknown error" : result.errorMessage());
     }
 
     /**

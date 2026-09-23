@@ -290,3 +290,73 @@ input[type="checkbox"]:focus, input[type="radio"]:focus { box-shadow: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ------------------------------------------------------------------------ */
+/* Home / portal chooser                                                    */
+/* ------------------------------------------------------------------------ */
+.kk-hero {
+  position: relative; overflow: hidden; border-radius: 20px; padding: 30px 32px;
+  background:
+    radial-gradient(600px 300px at 0% 0%, rgba(225, 29, 46, .55), transparent 60%),
+    radial-gradient(500px 300px at 100% 120%, rgba(99, 102, 241, .35), transparent 60%),
+    linear-gradient(135deg, #111827, #030712);
+  box-shadow: var(--kk-shadow);
+}
+.kk-hero::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .45;
+  background-image: linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 32px 32px; mask-image: linear-gradient(90deg, transparent, #000 70%);
+}
+.kk-hero-status {
+  padding: 14px 18px; border-radius: 14px; min-width: 240px;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+
+.kk-portal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.kk-portal-card {
+  position: relative; overflow: hidden; display: flex; flex-direction: column; text-align: left; cursor: pointer;
+  padding: 22px; min-height: 250px; border-radius: 18px; font: inherit; color: inherit;
+  background: var(--kk-surface); border: 1px solid var(--kk-border); box-shadow: var(--kk-shadow-sm);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.kk-portal-card:hover { transform: translateY(-3px); box-shadow: var(--kk-shadow); border-color: color-mix(in srgb, var(--accent) 45%, var(--kk-border)); }
+.kk-portal-card > * { position: relative; }
+.kk-portal-glow {
+  position: absolute !important; right: -60px; top: -60px; width: 200px; height: 200px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 22%, transparent), transparent); transition: transform .3s ease;
+}
+.kk-portal-card:hover .kk-portal-glow { transform: scale(1.25); }
+.kk-portal-icon {
+  width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 65%, #000));
+  box-shadow: 0 8px 20px -8px var(--accent);
+}
+.kk-portal-arrow {
+  width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--kk-text-2); background: var(--kk-surface-2); border: 1px solid var(--kk-border); transition: all .2s ease;
+}
+.kk-portal-card:hover .kk-portal-arrow { background: var(--accent); color: #fff; border-color: transparent; transform: translateX(3px); }
+.kk-portal-tag {
+  font-size: 11.5px; font-weight: 600; color: var(--kk-text-2); padding: 4px 10px; border-radius: 999px;
+  background: var(--kk-surface-2); border: 1px solid var(--kk-border);
+}
+
+.kk-week { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.kk-day {
+  padding: 12px 14px; border-radius: 14px; background: var(--kk-surface-2); border: 1px solid var(--kk-border);
+  transition: transform .15s ease;
+}
+.kk-day--office { background: var(--office-bg); border-color: color-mix(in srgb, var(--office-fg) 35%, transparent); }
+.kk-day--today { box-shadow: 0 0 0 2px var(--kk-brand); }
+.kk-today-pill { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #fff; background: var(--kk-brand); padding: 2px 7px; border-radius: 999px; }
+
+@media (max-width: 640px) {
+  .kk-hero { padding: 22px 18px; border-radius: 16px; }
+  .kk-hero h1 { font-size: 24px !important; }
+  .kk-hero-status { min-width: 0; width: 100%; }
+  .kk-week { grid-template-columns: 1fr; gap: 8px; }
+  .kk-day { display: grid; grid-template-columns: 112px 44px 1fr; align-items: center; padding: 10px 14px; }
+  .kk-day > div:first-child { justify-content: flex-start !important; gap: 8px; }
+  .kk-day > div:nth-child(2) { margin: 0 !important; font-size: 18px !important; }
+}

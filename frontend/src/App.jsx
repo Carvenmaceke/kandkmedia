@@ -62,8 +62,14 @@ let COMPANY = {
   officeAvailability: "",
 };
 
-const ALLOWED_EMAIL_DOMAIN = "kandkmedia.co.za";
-const isCompanyEmail = (email) => (email || "").toLowerCase().trim().endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
+// Company email domains accepted at signup (mirrors the backend's app.allowed-email-domains).
+const ALLOWED_EMAIL_DOMAINS = ["kandkmedia.co.za", "insideeducation.co.za"];
+const ALLOWED_EMAIL_DOMAIN = ALLOWED_EMAIL_DOMAINS[0];
+const DOMAINS_TEXT = ALLOWED_EMAIL_DOMAINS.map((d) => `@${d}`).join(" or ");
+const isCompanyEmail = (email) => {
+  const e = (email || "").toLowerCase().trim();
+  return ALLOWED_EMAIL_DOMAINS.some((d) => e.endsWith(`@${d}`) && e.length > d.length + 1);
+};
 
 // `let`, not `const` — App syncs this from React state each render (same
 // pattern as EMPLOYEES/LEAVE_BALANCES) so HR's salary-structure edits and
@@ -1258,12 +1264,36 @@ function SignupScreen({ onSignup, goLogin, theme }) {
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  // Checks the email as it's typed: company domain, and no existing account.
+  const [emailCheck, setEmailCheck] = useState({ state: "idle", message: "" });
+  useEffect(() => {
+    const email = form.email.trim();
+    if (!email || !email.includes("@") || !email.split("@")[1]?.includes(".")) { setEmailCheck({ state: "idle", message: "" }); return; }
+    if (!isCompanyEmail(email)) { setEmailCheck({ state: "bad", message: `Use your work email — ${DOMAINS_TEXT}.` }); return; }
+    if (!API_BASE_URL) {
+      const taken = EMPLOYEES.some((emp) => emp.email.toLowerCase() === email.toLowerCase());
+      setEmailCheck(taken ? { state: "taken", message: "An account with that email already exists." } : { state: "ok", message: "Looks good." });
+      return;
+    }
+    setEmailCheck({ state: "checking", message: "" });
+    const t = setTimeout(async () => {
+      try {
+        const r = await apiFetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`);
+        setEmailCheck(r.ok ? { state: "ok", message: "Looks good — we'll send a code to this address." } : { state: r.exists ? "taken" : "bad", message: r.message });
+      } catch (e) {
+        setEmailCheck({ state: "idle", message: "" }); // older server without the check — signup still validates
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [form.email]);
+
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.password) { setError("Please fill in all required fields."); return; }
-    if (!isCompanyEmail(form.email)) { setError(`Please use your company email address, ending in @${ALLOWED_EMAIL_DOMAIN}.`); return; }
+    if (!isCompanyEmail(form.email)) { setError(`Please use your company email address, ending in ${DOMAINS_TEXT}.`); return; }
+    if (emailCheck.state === "taken") { setError(emailCheck.message); return; }
     if (form.password !== form.confirm) { setError("Passwords do not match."); return; }
     if (EMPLOYEES.some((emp) => emp.email.toLowerCase() === form.email.toLowerCase())) { setError("An account with that email already exists."); return; }
     if (!agreedToTerms) { setError("Please agree to the Terms & Conditions to continue."); return; }
@@ -1278,7 +1308,7 @@ function SignupScreen({ onSignup, goLogin, theme }) {
 
   return (
     <AuthShell theme={theme}>
-      <AuthHeading title="Create your account" sub={`Use your @${ALLOWED_EMAIL_DOMAIN} email. It takes about two minutes.`} />
+      <AuthHeading title="Create your account" sub={`Use your work email (${DOMAINS_TEXT}). We'll send a code to confirm it's yours.`} />
       <form onSubmit={submit}>
         <Field label="Full Name">
           <input value={form.name} onChange={set("name")} style={inputStyle} placeholder="e.g. Zanele Khumalo" required />
@@ -1286,8 +1316,17 @@ function SignupScreen({ onSignup, goLogin, theme }) {
         <div className="kk-stack-sm" style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}>
             <Field label="Email Address">
-              <input value={form.email} onChange={set("email")} type="email" style={inputStyle} placeholder={`you@${ALLOWED_EMAIL_DOMAIN}`} required />
-              <div style={{ fontSize: 10.5, color: T.muted, marginTop: 4 }}>Must be a @{ALLOWED_EMAIL_DOMAIN} company email.</div>
+              <div style={{ position: "relative" }}>
+                <input value={form.email} onChange={set("email")} type="email" autoComplete="email" style={{ ...inputStyle, paddingRight: 34, borderColor: emailCheck.state === "taken" || emailCheck.state === "bad" ? T.red : emailCheck.state === "ok" ? T.green : undefined }} placeholder={`you@${ALLOWED_EMAIL_DOMAIN}`} required />
+                <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", lineHeight: 0 }}>
+                  {emailCheck.state === "ok" && <CheckCircle2 size={16} color={T.green} />}
+                  {(emailCheck.state === "taken" || emailCheck.state === "bad") && <AlertCircle size={16} color={T.red} />}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, marginTop: 4, color: emailCheck.state === "taken" || emailCheck.state === "bad" ? T.red : emailCheck.state === "ok" ? T.green : T.muted }}>
+                {emailCheck.state === "checking" ? "Checking…" : emailCheck.message || `Must be a ${DOMAINS_TEXT} email.`}
+                {emailCheck.state === "taken" && <> <button type="button" onClick={goLogin} style={{ background: "none", border: "none", color: T.teal, fontWeight: 650, cursor: "pointer", fontSize: 11, padding: 0 }}>Log in</button></>}
+              </div>
             </Field>
           </div>
           <div style={{ flex: 1 }}>
@@ -1492,7 +1531,7 @@ function setStoredToken(token) {
  *  callers can just try/catch and show err.message. */
 async function apiFetch(path, options = {}) {
   const isAuthEndpoint = path === "/api/auth/login" || path === "/api/auth/signup"
-    || path === "/api/auth/verify-email" || path === "/api/auth/resend-verification";
+    || path === "/api/auth/verify-email" || path === "/api/auth/resend-verification" || path.startsWith("/api/auth/check-email");
   const token = isAuthEndpoint ? null : getStoredToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -3558,18 +3597,27 @@ function ITAssistantChat() {
 /* PORTAL CHOOSER — first thing shown after login (for the employee-      */
 /* facing side): choose Payroll & Leave, or IT Support                    */
 /* ---------------------------------------------------------------------- */
-function ChoicePortalCard({ icon: Icon, title, desc, onClick }) {
+function ChoicePortalCard({ icon: Icon, title, desc, tags, stat, statLabel, accent, onClick }) {
   return (
-    <button onClick={onClick} className="kk-card kk-card--interactive" style={{
-      flex: "1 1 240px", textAlign: "left", background: T.surface, border: `1px solid ${T.border}`,
-      borderRadius: "var(--kk-radius)", padding: 22, boxShadow: "var(--kk-shadow-sm)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 10,
-    }}>
-      <div style={{ width: 38, height: 38, borderRadius: 8, background: T.tealLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Icon size={19} color={T.teal} />
+    <button onClick={onClick} className="kk-portal-card" style={{ "--accent": accent }}>
+      <div className="kk-portal-glow" />
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        <div className="kk-portal-icon"><Icon size={22} color="#fff" /></div>
+        <span className="kk-portal-arrow"><ArrowRight size={18} /></span>
       </div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{title}</div>
-      <div style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.5 }}>{desc}</div>
-      <div style={{ fontSize: 12.5, color: T.teal, fontWeight: 600, marginTop: 4 }}>Continue →</div>
+      <div style={{ marginTop: 18 }}>
+        <div style={{ fontSize: 18, fontWeight: 750, letterSpacing: "-0.015em", color: T.text }}>{title}</div>
+        <div style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.55, marginTop: 6 }}>{desc}</div>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 14 }}>
+        {tags.map((t) => <span key={t} className="kk-portal-tag">{t}</span>)}
+      </div>
+      <div style={{ marginTop: "auto", paddingTop: 18 }}>
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 14, display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span className="num" style={{ fontSize: 20, fontWeight: 750, color: T.text, letterSpacing: "-0.02em" }}>{stat}</span>
+          <span style={{ fontSize: 12.5, color: T.muted }}>{statLabel}</span>
+        </div>
+      </div>
     </button>
   );
 }
@@ -3600,21 +3648,108 @@ function MyWeekGrid({ schedule, weekOffset = 0 }) {
   );
 }
 
-function PortalChooser({ empName, mySchedule, onChoose }) {
+function PortalChooser({ empName, emp, mySchedule, onChoose, annualLeaveLeft, pendingLeave, latestPayslip }) {
+  const [showNextWeek, setShowNextWeek] = useState(false);
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const firstName = (empName || "").split(" ")[0];
+  const dateLabel = now.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const week = thisWeekDates(showNextWeek ? 1 : 0);
+  const todayIso = now.getDay() >= 1 && now.getDay() <= 5 ? WEEKDAY_ORDER[now.getDay() - 1] : null;
+  const scheduleThisWeek = mySchedule || null;
+  const scheduleShown = showNextWeek ? { days: mySchedule?.nextWeekDays || {} } : scheduleThisWeek;
+  const hasSchedule = mySchedule && (Object.keys(mySchedule.days || {}).length > 0 || Object.keys(mySchedule.nextWeekDays || {}).length > 0 || (mySchedule.assignedWorkDays || []).length > 0);
+  const todayOffice = todayIso ? officeOnDay(scheduleThisWeek, todayIso) : null;
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+  const nextOfficeDay = (() => {
+    const order = thisWeekDates(0);
+    const idx = todayIso ? order.findIndex((d) => d.day === todayIso) : -1;
+    for (let i = idx + 1; i < order.length; i++) { const o = officeOnDay(scheduleThisWeek, order[i].day); if (o) return `${order[i].label} · ${o}`; }
+    for (const d of thisWeekDates(1)) { const o = mySchedule?.nextWeekDays?.[d.day]; if (o) return `Next ${d.label} · ${o}`; }
+    return null;
+  })();
+  const officeDaysShown = week.filter((d) => officeOnDay(scheduleShown, d.day)).length;
+
   return (
-    <div style={{ maxWidth: 640 }}>
-      <SectionTitle sub={`Welcome, ${empName}. What would you like to do?`}>Choose a Portal</SectionTitle>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <ChoicePortalCard icon={Banknote} title="Payroll & Leave" desc="View your payslips, apply for leave, and check your leave balance." onClick={() => onChoose("leave")} />
-        <ChoicePortalCard icon={LifeBuoy} title="IT Support" desc="Ask the assistant, or log a system or office issue." onClick={() => onChoose("itSupport")} />
-      </div>
-      {mySchedule && mySchedule.daysPerWeek != null && (
-        <Card style={{ padding: 18, marginTop: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>This Week's Office Schedule</div>
-            <div style={{ fontSize: 11.5, color: T.muted }}>{mySchedule.daysPerWeek} day{mySchedule.daysPerWeek === 1 ? "" : "s"} this week</div>
+    <div style={{ maxWidth: 1040 }}>
+      {/* Hero */}
+      <section className="kk-hero">
+        <div style={{ position: "relative", zIndex: 1, display: "flex", justifyContent: "space-between", gap: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.65)", fontWeight: 600, letterSpacing: "0.02em" }}>{dateLabel}</div>
+            <h1 style={{ margin: "8px 0 6px", fontSize: 30, lineHeight: 1.15, fontWeight: 800, letterSpacing: "-0.025em", color: "#fff" }}>{greeting}, {firstName}</h1>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.7)" }}>
+              {[emp?.position, emp?.dept].filter(Boolean).join(" · ") || "Welcome to your workspace"}
+            </div>
           </div>
-          <MyWeekGrid schedule={mySchedule} />
+          <div className="kk-hero-status">
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}>Today</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: todayOffice ? "#4ADE80" : isWeekend ? "#94A3B8" : "#FBBF24", boxShadow: `0 0 0 4px ${todayOffice ? "rgba(74,222,128,.2)" : "rgba(251,191,36,.18)"}` }} />
+              <span style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{isWeekend ? "Weekend" : todayOffice ? `In office · ${todayOffice}` : hasSchedule ? "Working remotely" : "No office days set"}</span>
+            </div>
+            {nextOfficeDay && <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.65)", marginTop: 6 }}>Next in office: {nextOfficeDay}</div>}
+          </div>
+        </div>
+      </section>
+
+      {/* Portals */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "28px 0 14px" }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em" }}>Where do you want to go?</h2>
+      </div>
+      <div className="kk-portal-grid">
+        <ChoicePortalCard icon={Banknote} accent="var(--kk-brand)" title="Payroll & Leave"
+          desc="Payslips, leave applications and balances — all in one place."
+          tags={["Payslips", "Apply for leave", "Leave history", "My schedule"]}
+          stat={annualLeaveLeft != null ? `${annualLeaveLeft} days` : latestPayslip ? latestPayslip : "—"}
+          statLabel={annualLeaveLeft != null ? `annual leave left${pendingLeave ? ` · ${pendingLeave} pending` : ""}` : "latest payslip"}
+          onClick={() => onChoose("leave")} />
+        <ChoicePortalCard icon={LifeBuoy} accent="var(--kk-indigo)" title="IT Support"
+          desc="Get a quick fix from the assistant, or log a system or office issue."
+          tags={["Ask the assistant", "System issue", "Office issue"]}
+          stat="24/7" statLabel="assistant available"
+          onClick={() => onChoose("itSupport")} />
+      </div>
+
+      {/* Schedule */}
+      {hasSchedule && (
+        <Card style={{ padding: 22, marginTop: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>Office schedule</div>
+              <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{week[0].date} – {week[4].date} · {officeDaysShown} day{officeDaysShown === 1 ? "" : "s"} in office</div>
+            </div>
+            <div className="kk-tabs" style={{ marginBottom: 0 }} role="tablist">
+              <button role="tab" className="kk-tab" aria-selected={!showNextWeek} onClick={() => setShowNextWeek(false)}>This week</button>
+              <button role="tab" className="kk-tab" aria-selected={showNextWeek} onClick={() => setShowNextWeek(true)}>Next week</button>
+            </div>
+          </div>
+          <div className="kk-week">
+            {week.map(({ day, date, label }) => {
+              const office = officeOnDay(scheduleShown, day);
+              const st = OFFICE_STYLE[office] || { fg: T.teal, bg: T.tealLight };
+              const isToday = !showNextWeek && day === todayIso;
+              return (
+                <div key={day} className={`kk-day ${office ? "kk-day--office" : ""} ${isToday ? "kk-day--today" : ""}`} style={office ? { "--office-fg": st.fg, "--office-bg": st.bg } : undefined}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: T.text2 }}>{label}</span>
+                    {isToday && <span className="kk-today-pill">Today</span>}
+                  </div>
+                  <div className="num" style={{ fontSize: 22, fontWeight: 750, letterSpacing: "-0.02em", margin: "6px 0 10px", color: T.text }}>{date.split(" ")[0]}</div>
+                  {office ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: st.fg, fontSize: 12.5, fontWeight: 700 }}>
+                      <Building2 size={14} /> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{office}</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: T.muted, fontSize: 12.5, fontWeight: 600 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", opacity: 0.6 }} /> Remote
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
     </div>
@@ -4808,7 +4943,10 @@ export default function App() {
           {viewMode === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} onBack={goBack} isAdminView={false} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
           {showPortal && portalChoice === null && (
-            <PortalChooser empName={loginEmp.name} mySchedule={myScheduleState} onChoose={setPortalChoice} />
+            <PortalChooser empName={loginEmp.name} emp={loginEmp} mySchedule={myScheduleState} onChoose={setPortalChoice}
+              annualLeaveLeft={balancesState[loginEmp.id]?.["Annual Leave"]}
+              pendingLeave={leaveRequests.filter((r) => r.emp === loginEmp.id && r.status === "Pending").length}
+              latestPayslip={(myPayslipsState[loginEmp.id] || []).length ? money((myPayslipsState[loginEmp.id] || [])[0].net) : null} />
           )}
           {showPortal && portalChoice === "leave" && (
             <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} mySchedule={myScheduleState} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />

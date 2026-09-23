@@ -88,7 +88,7 @@ public class Employee {
     private String phone;
     private String position; // "Job Title" on the form
     private String employmentType; // e.g. Full-time, Part-time, Contract
-    private String office; // "Midrand" or "Sandton" — matches the frontend's OFFICES list
+    private String office; // "Midrand", "Sandton" or "Rosebank" — matches the frontend's OFFICES list
 
     /** "Hourly" or "Monthly" — how `salary` below should be read. */
     @Builder.Default
@@ -136,6 +136,17 @@ public class Employee {
     // always read/written as a whole set together. ---
     private Integer daysPerWeek;
     private String assignedWorkDays;
+
+    // Schedule plan (see WorkScheduleService): scheduleMode is "ROTATING"
+    // (officeDays = JSON {"Midrand":2,"Rosebank":1}; the system picks and
+    // rotates the days) or "FIXED" (fixedDays = JSON {"MONDAY":"Midrand",...};
+    // exact days HR set, e.g. mandatory or every-day staff). daysPerWeek is
+    // kept as the plan's total; assignedWorkDays as this week's days.
+    private String scheduleMode;
+    @Column(length = 500)
+    private String officeDays;
+    @Column(length = 500)
+    private String fixedDays;
 
     // --- Signup consent + signature, used to generate the HR-downloadable
     // onboarding document (see OnboardingDocumentPdfService) ---

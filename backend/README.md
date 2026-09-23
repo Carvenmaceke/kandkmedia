@@ -250,6 +250,24 @@ top of `frontend/src/App.jsx` to wherever this backend ends up running
 frontend. It's empty by default — the Support form says plainly that it
 isn't connected yet rather than pretending a click did something.
 
+## Office work schedule
+
+HR gives each employee a plan on the Work Schedule screen
+(`PUT /api/hr/employees/{id}/schedule`):
+
+- **Rotating** — days per office, e.g. `{"mode":"ROTATING","officeDays":{"Midrand":2,"Rosebank":1}}`.
+  The system picks the days: never 3 in a row (4 days is always Mon, Tue,
+  Thu, Fri; 5 is every day), 1–2 day plans always have a gap day, the days
+  change every week, and in split plans the office per day rotates too.
+- **Every day / specific days** — `{"mode":"FIXED","fixedDays":{"MONDAY":"Midrand",...}}`,
+  used as-is every week (for mandatory days).
+- `{"daysPerWeek": null}` clears a plan; `DELETE /api/hr/schedule` clears all.
+
+`GET /api/hr/schedule/week?start=YYYY-MM-DD` returns any week's schedule,
+headcount vs desk capacity (Midrand, Sandton, Rosebank) and warnings.
+Schedules are computed live (`WorkScheduleService`), so there's nothing to
+regenerate. Employees see this and next week at `GET /api/me/schedule`.
+
 ## IT Assistant (Groq AI)
 
 The IT Assistant chat calls `POST /api/me/assistant`, which asks a

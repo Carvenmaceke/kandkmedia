@@ -72,25 +72,52 @@ public class HrController {
         return levelRepository.save(level);
     }
 
-    /** Sets how many days/week an employee needs to be in-office. Doesn't
-     *  assign WHICH days by itself — call /schedule/auto-assign after
-     *  changing this (or several employees' requirements at once) to
-     *  re-run the balancing algorithm. */
+    /** Sets an employee's office schedule plan — see WorkScheduleService.updatePlan
+     *  for the accepted shapes (rotating per-office day counts, fixed days, or
+     *  {"daysPerWeek": null} to clear). */
     @PutMapping("/employees/{id}/schedule")
-    public Employee setDaysPerWeek(@PathVariable Long id, @RequestBody java.util.Map<String, Integer> body, @AuthenticationPrincipal AppUser user) {
-        Employee e = employee(id);
-        Integer days = body.get("daysPerWeek");
-        if (days == null) {
-            // {"daysPerWeek": null} clears the requirement and the days it was assigned.
-            e.setDaysPerWeek(null);
-            e.setAssignedWorkDays(null);
-            return salaryVisibilityService.redact(employeeRepository.save(e), user);
+    public Employee setSchedulePlan(@PathVariable Long id, @RequestBody java.util.Map<String, Object> body, @AuthenticationPrincipal AppUser user) {
+        return salaryVisibilityService.redact(workScheduleService.updatePlan(employee(id), body), user);
+    }
+
+    /** The full schedule for one Mon-Fri week (defaults to this week): who is
+     *  in which office each day, headcount vs capacity, and each person's plan. */
+    @GetMapping("/schedule/week")
+    public java.util.Map<String, Object> scheduleWeek(@RequestParam(required = false) java.time.LocalDate start) {
+        WorkScheduleService.WeekSchedule week = workScheduleService.weekSchedule(start != null ? start : java.time.LocalDate.now());
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("weekStart", week.weekStart().toString());
+        out.put("offices", WorkScheduleService.OFFICES);
+        out.put("capacity", week.capacity());
+        java.util.Map<String, java.util.Map<String, Integer>> headcount = new java.util.LinkedHashMap<>();
+        week.headcount().forEach((office, byDay) -> {
+            java.util.Map<String, Integer> m = new java.util.LinkedHashMap<>();
+            byDay.forEach((d, n) -> m.put(d.name(), n));
+            headcount.put(office, m);
+        });
+        out.put("headcount", headcount);
+        java.util.List<java.util.Map<String, Object>> people = new java.util.ArrayList<>();
+        for (Employee e : employeeRepository.findAll()) {
+            if (!e.isActive()) continue;
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("employeeCode", e.getEmployeeCode());
+            row.put("id", e.getId());
+            row.put("name", e.getFullName());
+            row.put("office", e.getOffice());
+            WorkScheduleService.Plan plan = workScheduleService.planOf(e);
+            row.put("mode", plan == null ? null : plan.mode());
+            row.put("officeDays", plan == null ? java.util.Map.of() : plan.officeDays());
+            java.util.Map<String, String> fixed = new java.util.LinkedHashMap<>();
+            if (plan != null) plan.fixedDays().forEach((d, o) -> fixed.put(d.name(), o));
+            row.put("fixedDays", fixed);
+            java.util.Map<String, String> days = new java.util.LinkedHashMap<>();
+            week.days().getOrDefault(e.getId(), java.util.Map.of()).forEach((d, o) -> days.put(d.name(), o));
+            row.put("days", days);
+            people.add(row);
         }
-        if (days < 0 || days > 5) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "daysPerWeek must be between 0 and 5.");
-        }
-        e.setDaysPerWeek(days);
-        return salaryVisibilityService.redact(employeeRepository.save(e), user);
+        out.put("employees", people);
+        out.put("warnings", week.warnings());
+        return out;
     }
 
     /** Resets the whole office schedule: clears every employee's days/week
@@ -100,10 +127,8 @@ public class HrController {
         return salaryVisibilityService.redact(workScheduleService.resetAll(), user);
     }
 
-    /** Re-runs the day-balancing algorithm for every employee with a
-     *  daysPerWeek requirement set. Safe to call repeatedly — e.g. after
-     *  a new employee gets their requirement set, or an office's capacity
-     *  changes. */
+    /** Schedules are now computed live per week (see /schedule/week); this
+     *  just stores this week's days on each employee for older screens. */
     @PostMapping("/schedule/auto-assign")
     public List<Employee> autoAssignSchedule(@AuthenticationPrincipal AppUser user) {
         return salaryVisibilityService.redact(workScheduleService.autoAssignAll(), user);
@@ -121,23 +146,12 @@ public class HrController {
 
     @GetMapping("/schedule/capacity")
     public java.util.Map<String, Integer> scheduleCapacity() {
-        co.za.kandkmedia.payroll.domain.Company company = workScheduleService.company();
-        java.util.Map<String, Integer> result = new java.util.LinkedHashMap<>();
-        result.put("Midrand", company.getMidrandCapacity());
-        result.put("Sandton", company.getSandtonCapacity());
-        return result;
+        return workScheduleService.capacity();
     }
 
     @PutMapping("/schedule/capacity")
     public java.util.Map<String, Integer> updateScheduleCapacity(@RequestBody java.util.Map<String, Integer> body) {
-        co.za.kandkmedia.payroll.domain.Company company = workScheduleService.company();
-        if (body.get("Midrand") != null) company.setMidrandCapacity(body.get("Midrand"));
-        if (body.get("Sandton") != null) company.setSandtonCapacity(body.get("Sandton"));
-        workScheduleService.saveCompany(company);
-        java.util.Map<String, Integer> result = new java.util.LinkedHashMap<>();
-        result.put("Midrand", company.getMidrandCapacity());
-        result.put("Sandton", company.getSandtonCapacity());
-        return result;
+        return workScheduleService.updateCapacity(body);
     }
 
     @GetMapping("/employees")

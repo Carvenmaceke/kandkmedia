@@ -556,94 +556,116 @@ function loadJsPDF() {
   return jsPDFPromise;
 }
 /* ---------------------------------------------------------------------- */
+/** Builds the payslip in the approved K & K Media design — the same layout
+ *  the backend's PayslipPdfService draws (US Letter, navy header bar, grey
+ *  details panel, EARNINGS/DEDUCTIONS boxes, NETT PAY bar, YTD/ADDITIONAL
+ *  INFO boxes). Only used when there's no server-generated payslip yet (HR's
+ *  estimate before a draft exists, or offline mode). Coordinates are in PDF
+ *  points measured from the bottom-left, as in the reference document, and
+ *  flipped for jsPDF's top-left origin. */
 async function downloadPayslipPdf(emp, month, figures) {
   const jsPDF = await loadJsPDF();
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const marginX = 42;
-  let y;
-
-  // Header band — matches the on-screen payslip's dark header with red accent
-  doc.setFillColor(23, 17, 15);
-  doc.rect(0, 0, pageWidth, 108, "F");
-  doc.setFillColor(216, 31, 44);
-  doc.rect(marginX, 26, 40, 3, "F");
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.text(COMPANY.name, marginX, 50);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(201, 191, 188);
-  const addressLines = doc.splitTextToSize(COMPANY.address, 300);
-  doc.text(addressLines, marginX, 64);
-  let afterAddressY = 64 + (addressLines.length - 1) * 10;
-  if (COMPANY.regNo) {
-    afterAddressY += 12;
-    doc.text(`Reg No: ${COMPANY.regNo}`, marginX, afterAddressY);
-  }
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text(emp.name, pageWidth - marginX, 50, { align: "right" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(201, 191, 188);
-  doc.text(`${emp.id} \u00b7 ${emp.position}`, pageWidth - marginX, 64, { align: "right" });
-  doc.text(`Pay Period: ${month}`, pageWidth - marginX, 78, { align: "right" });
-
-  const row = (label, value, bold) => {
-    doc.setFont("helvetica", bold ? "bold" : "normal");
-    doc.setFontSize(10.5);
-    doc.setTextColor(26, 20, 20);
-    doc.text(label, marginX, y);
-    doc.text(money(value), pageWidth - marginX, y, { align: "right" });
-    doc.setDrawColor(231, 225, 224);
-    doc.line(marginX, y + 5, pageWidth - marginX, y + 5);
-    y += 19;
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const H = 792;
+  const NAVY = [31, 42, 68], PANEL = [242, 244, 247], RULE = [154, 163, 178], GREY = [102, 102, 102], BLACK = [0, 0, 0], WHITE = [255, 255, 255];
+  const amt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fill = (c, x, y, w, h) => { doc.setFillColor(...c); doc.rect(x, H - y - h, w, h, "F"); };
+  const stroke = (x, y, w, h) => { doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.rect(x, H - y - h, w, h, "S"); };
+  const line = (x1, y1, x2, y2) => { doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.line(x1, H - y1, x2, H - y2); };
+  const txt = (s, x, y, { size = 8.5, bold = false, color = BLACK, align = "left" } = {}) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(...color);
+    doc.text(String(s), x, H - y, { align });
   };
-
-  const sectionHeader = (label) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.setTextColor(216, 31, 44);
-    doc.text(label, marginX, y);
-    y += 16;
+  const fit = (s, maxW, size = 8) => {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(size);
+    let v = String(s || "-");
+    if (doc.getTextWidth(v) <= maxW) return v;
+    while (v && doc.getTextWidth(v + "...") > maxW) v = v.slice(0, -1);
+    return v + "...";
   };
+  const boxWithTitle = (x, y, h, title) => {
+    stroke(x, y, 265, h); fill(NAVY, x, y + h - 18, 265, 18);
+    txt(title, x + 132.5, y + h - 12.5, { size: 10, bold: true, color: WHITE, align: "center" });
+  };
+  const fmtDate = (iso) => { if (!iso) return "-"; const [y, m, d] = String(iso).slice(0, 10).split("-"); return d ? `${d}/${m}/${y}` : "-"; };
+  const periodDate = (() => {
+    const [name, year] = String(month).split(" ");
+    const m = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].indexOf(name);
+    return m < 0 || !year ? null : new Date(Number(year), m + 1, 0); // last day of the pay month
+  })();
+  const companyName = (COMPANY.name || "K & K Media (Pty) Ltd").toUpperCase();
 
-  y = 140;
-  sectionHeader("EARNINGS");
-  row("Basic Salary", figures.basic);
-  if (figures.housing > 0) row("Housing Allowance", figures.housing);
-  if (figures.transport > 0) row("Transport Allowance", figures.transport);
-  if (figures.overtime > 0) row("Overtime", figures.overtime);
-  if (figures.bonus > 0) row("Bonus", figures.bonus);
-  row("Gross Earnings", figures.gross, true);
+  // Header
+  fill(NAVY, 36, 726, 540, 30);
+  txt("PAYSLIP", 46, 736, { size: 15, bold: true, color: WHITE });
+  txt(companyName, 566, 737, { size: 9, color: WHITE, align: "right" });
 
-  y += 12;
-  sectionHeader("DEDUCTIONS");
-  row("PAYE", -figures.paye);
-  row("UIF", -figures.uif);
-  row("Total Deductions", -figures.totalDeductions, true);
+  // Details panel
+  doc.setFillColor(...PANEL); doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.rect(36, H - 626 - 92, 540, 92, "FD");
+  const label = (s, x, y) => txt(s, x, y, { size: 8, bold: true });
+  const value = (s, x, y) => txt(s, x, y, { size: 8 });
+  label("Company", 46, 702); value(fit(companyName, 122), 104, 702);
+  label("Emp Code", 46, 689); value(emp.id || "-", 104, 689);
+  label("Emp Name", 46, 676); value(fit((emp.name || "").toUpperCase(), 122), 104, 676);
+  label("Emp Address", 46, 663);
+  const addr = [
+    [emp.resUnitNumber, emp.resComplexName].filter(Boolean).join(" "),
+    [emp.resStreetNumber, emp.resStreetName].filter(Boolean).join(" "),
+    [emp.resSuburb, emp.resCity].filter(Boolean).join(", "),
+    emp.resPostalCode,
+  ].filter(Boolean).map((l) => fit(l.toUpperCase(), 122));
+  (addr.length ? addr.slice(0, 4) : ["-"]).forEach((l, i) => value(l, 104, 663 - 11 * i));
+  label("Co. Address", 238.4, 702);
+  ["CONSTANTIA SQUARE OFFICE", "16TH ROAD", "RANDJESFONTEIN, MIDRAND", "1685"].forEach((l, i) => value(l, 294.4, 702 - 11 * i));
+  label("Payment Date", 432.8, 702); value(periodDate ? periodDate.toLocaleDateString("en-GB") : "-", 496.8, 702);
+  label("Date Engaged", 432.8, 689); value(fmtDate(emp.start), 496.8, 689);
+  label("Account No", 432.8, 676); value(fit(emp.bankAccountNumber, 76), 496.8, 676);
+  label("Branch Code", 432.8, 663); value(fit(emp.bankBranchCode, 76), 496.8, 663);
+  line(230.4, 634, 230.4, 710); line(424.8, 634, 424.8, 710);
 
-  y += 16;
-  doc.setFillColor(251, 234, 234);
-  doc.roundedRect(marginX, y - 15, pageWidth - marginX * 2, 34, 4, 4, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(23, 17, 15);
-  doc.text("Net Pay", marginX + 12, y + 7);
-  doc.text(money(figures.net), pageWidth - marginX - 12, y + 7, { align: "right" });
+  // Earnings
+  boxWithTitle(36, 286, 330, "EARNINGS");
+  txt("Description", 44, 584, { bold: true }); txt("Days", 221, 584, { bold: true, align: "right" }); txt("Amount (R)", 293, 584, { bold: true, align: "right" });
+  line(42, 580, 295, 580);
+  const earnings = [["Normal Time", figures.basic], ["Housing Allowance", figures.housing], ["Transport Allowance", figures.transport], ["Overtime", figures.overtime], ["Bonus", figures.bonus]]
+    .filter(([l, v], i) => i === 0 || Number(v) > 0);
+  earnings.forEach(([l, v], i) => { const y = 567 - 14 * i; txt(l, 44, y); txt("-", 221, y, { align: "right" }); txt(amt(v), 293, y, { align: "right" }); });
+  fill(PANEL, 36.4, 286.4, 264.2, 20); line(36, 306, 301, 306);
+  txt("Total Earnings", 44, 293, { bold: true }); txt(amt(figures.gross), 293, 293, { bold: true, align: "right" });
 
-  y += 48;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(120, 110, 108);
-  doc.text("Figures are illustrative dummy data, not real tax calculations.", marginX, y);
+  // Deductions
+  boxWithTitle(311, 286, 330, "DEDUCTIONS");
+  txt("Description", 319, 584, { bold: true }); txt("Days", 456, 584, { bold: true, align: "right" });
+  txt("Amount (R)", 508, 584, { bold: true, align: "right" }); txt("Opening Bal.", 568, 584, { bold: true, align: "right" });
+  line(317, 580, 570, 580);
+  const deductions = [["Tax", figures.paye], ["U.I.F.", figures.uif], ["Other Deductions", figures.otherDeductions]].filter(([l, v], i) => i < 2 || Number(v) > 0);
+  deductions.forEach(([l, v], i) => { const y = 567 - 14 * i; txt(l, 319, y); txt("-", 456, y, { align: "right" }); txt(amt(v), 508, y, { align: "right" }); txt("-", 568, y, { align: "right" }); });
+  fill(PANEL, 311.4, 286.4, 264.2, 20); line(311, 306, 576, 306);
+  txt("Total Deductions", 319, 293, { bold: true }); txt(amt(figures.totalDeductions), 508, 293, { bold: true, align: "right" });
 
+  // Nett pay
+  fill(NAVY, 311, 248, 265, 28);
+  txt("NETT PAY", 321, 258, { size: 11, bold: true, color: WHITE });
+  txt(`R ${amt(figures.net)}`, 566, 257, { size: 14, bold: true, color: WHITE, align: "right" });
+
+  // Year to date (this period only — the running total lives on the server)
+  boxWithTitle(36, 88, 150, "YEAR TO DATE TOTALS");
+  txt("Total Earnings", 44, 202); txt(amt(figures.gross), 293, 202, { align: "right" });
+  txt("Total Deductions", 44, 188); txt(amt(figures.totalDeductions), 293, 188, { align: "right" });
+  line(36, 168, 301, 168); fill(PANEL, 36.4, 150, 264.2, 18);
+  txt("CURRENT PERIOD", 168.5, 155, { size: 9, bold: true, align: "center" }); line(36, 150, 301, 150);
+  txt("Co. Contributions", 44, 134); txt(amt(figures.uif), 293, 134, { align: "right" });
+
+  // Additional info
+  boxWithTitle(311, 88, 150, "ADDITIONAL INFO");
+  [["Pay Period", month], ["Job Title", emp.position || "-"], ["Department", emp.dept || "-"], ...(emp.incomeTaxNumber ? [["Tax No", emp.incomeTaxNumber]] : []), ["Status", "Estimate - not yet finalised"]]
+    .forEach(([k, v], i) => { const y = 204 - 12 * i; txt(k, 319, y, { size: 8, bold: true }); txt(fit(v, 192), 372, y, { size: 8 }); });
+
+  // Footer
+  txt("This payslip is computer generated. Amounts in South African Rand (ZAR).", 36, 30, { size: 7.5, color: GREY });
+  txt("Page 1 of 1", 576, 30, { size: 7.5, color: GREY, align: "right" });
+
+  doc.setProperties({ title: "Payslip - K & K Media (Pty) Ltd", author: "K & K Media (Pty) Ltd" });
   const filename = `${month.replace(" ", "-")}-${emp.id}.pdf`;
   triggerPdfDownload(doc, filename);
 }

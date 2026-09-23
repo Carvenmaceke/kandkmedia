@@ -19,8 +19,9 @@ README for exactly what's needed.
 
 ## What's in here
 
-- **Login / Sign up** — sign-up requires a `@kandkmedia.co.za` email address
-  and lets you choose a role: Employee, HR, Admin, or IT Support.
+- **Login / Sign up** — sign-up requires a `@kandkmedia.co.za` or
+  `@insideeducation.co.za` email (checked as you type, including whether it
+  already has an account) and a 6-digit code emailed to that address.
 - **Employee** — personal dashboard, payslip history, leave application and
   leave history.
 - **HR** — company-wide dashboard, employee list, payroll pipeline

@@ -44,16 +44,54 @@ public class AuthService {
     private final JwtService jwtService;
     private final EmailService emailService;
 
-    @Value("${app.allowed-email-domain}")
+    /** Comma-separated, e.g. "kandkmedia.co.za,insideeducation.co.za". */
+    @Value("${app.allowed-email-domains}")
     private String allowedEmailDomain;
+
+    /** The company domains people may sign up with. */
+    public java.util.List<String> allowedDomains() {
+        return java.util.Arrays.stream(allowedEmailDomain.split(","))
+                .map(d -> d.trim().toLowerCase().replaceFirst("^@", ""))
+                .filter(d -> !d.isEmpty())
+                .toList();
+    }
+
+    private boolean isCompanyEmail(String email) {
+        int at = email.lastIndexOf('@');
+        return at > 0 && at < email.length() - 1 && allowedDomains().contains(email.substring(at + 1));
+    }
+
+    private String domainsText() {
+        return String.join(" or ", allowedDomains().stream().map(d -> "@" + d).toList());
+    }
+
+    /** Lets the signup form check an email as it's typed: right domain, and no account yet. */
+    public java.util.Map<String, Object> checkEmail(String rawEmail) {
+        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase();
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            result.put("ok", false);
+            result.put("message", "Enter a valid email address.");
+        } else if (!isCompanyEmail(email)) {
+            result.put("ok", false);
+            result.put("message", "Please use your company email address, ending in " + domainsText() + ".");
+        } else if (userRepository.existsByEmail(email) || employeeRepository.existsByEmail(email)) {
+            result.put("ok", false);
+            result.put("exists", true);
+            result.put("message", "An account with that email already exists — log in instead.");
+        } else {
+            result.put("ok", true);
+        }
+        return result;
+    }
 
     @Transactional
     public AuthResponse signup(SignupRequest req) {
         String email = req.getEmail().trim().toLowerCase();
 
-        if (!email.endsWith("@" + allowedEmailDomain)) {
+        if (!isCompanyEmail(email)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Please use your company email address, ending in @" + allowedEmailDomain + ".");
+                    "Please use your company email address, ending in " + domainsText() + ".");
         }
         if (userRepository.existsByEmail(email) || employeeRepository.existsByEmail(email)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An account with that email already exists.");
@@ -139,9 +177,10 @@ public class AuthService {
 
         // Thrown inside the @Transactional method — the whole signup (employee, user, leave
         // balances) rolls back rather than leaving behind an account nobody can ever verify.
-        if (!emailService.sendVerificationCode(email, employee.getFirstName(), code)) {
+        String sendError = emailService.verificationCodeSendError(email, employee.getFirstName(), code);
+        if (sendError != null) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Couldn't send your verification email — please try signing up again in a moment.");
+                    "Couldn't send your verification email, so your account wasn't created. Please contact IT support. (" + sendError + ")");
         }
 
         return AuthResponse.builder()
@@ -241,8 +280,9 @@ public class AuthService {
         userRepository.save(user);
 
         String firstName = user.getEmployee() != null ? user.getEmployee().getFirstName() : "there";
-        if (!emailService.sendVerificationCode(user.getEmail(), firstName, code)) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Couldn't send the email — please try again in a moment.");
+        String sendError = emailService.verificationCodeSendError(user.getEmail(), firstName, code);
+        if (sendError != null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Couldn't send the email — please contact IT support. (" + sendError + ")");
         }
     }
 

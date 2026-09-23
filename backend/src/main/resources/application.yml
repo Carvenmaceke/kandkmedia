@@ -58,8 +58,9 @@ app:
     # Override with a long random secret via the JWT_SECRET env var in every real environment.
     secret: ${JWT_SECRET:change-this-secret-before-deploying-to-production}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
-  # Only accounts with this email domain may sign up — mirrors the frontend's rule.
-  allowed-email-domain: ${ALLOWED_EMAIL_DOMAIN:kandkmedia.co.za}
+  # Only accounts with these email domains (comma-separated) may sign up —
+  # mirrors the frontend's rule.
+  allowed-email-domains: ${ALLOWED_EMAIL_DOMAINS:kandkmedia.co.za,insideeducation.co.za}
   # Where the QR code on a payslip points. Currently resolves to the JSON
   # verification API itself (see PublicController) — there's no human-facing
   # "Document Verified" webpage yet, so scanning it shows raw JSON for now.

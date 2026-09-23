@@ -67,9 +67,13 @@ Set these as actual environment variables on wherever you deploy this
 `POST /api/auth/signup` and `POST /api/auth/login` return a JWT. Send it as
 `Authorization: Bearer <token>` on every other request.
 
-Signup rejects any email that doesn't end in `@kandkmedia.co.za`
-(configurable via the `ALLOWED_EMAIL_DOMAIN` env var) and rejects `MANAGER`
-as a chosen role — a manager is promoted by HR, not self-selected.
+Signup only accepts `@kandkmedia.co.za` and `@insideeducation.co.za`
+emails (comma-separated `ALLOWED_EMAIL_DOMAINS` env var), rejects an email
+that already has an account (`GET /api/auth/check-email?email=` lets the
+form check as you type), and emails a 6-digit code the person must enter
+before they can log in. If the code can't be sent, signup is rolled back and
+the error includes the email provider's reason. It rejects `MANAGER` as a
+chosen role — a manager is promoted by HR, not self-selected.
 
 ## Route map (mirrors the frontend's role split)
 

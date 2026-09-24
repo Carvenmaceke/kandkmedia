@@ -110,4 +110,68 @@ class EmailServiceTest {
             assertThat(svc.sendTestEmail("someone@kandkmedia.co.za").errorMessage()).contains("SMTP_USERNAME and SMTP_PASSWORD");
         }
     }
+
+    /** Brevo HTTPS API sending, against a local stand-in for api.brevo.com. */
+    @org.junit.jupiter.api.Nested
+    class ViaBrevoApi {
+        private com.sun.net.httpserver.HttpServer server;
+        private final java.util.List<String> bodies = new java.util.ArrayList<>();
+        private final java.util.List<String> keys = new java.util.ArrayList<>();
+        private int status = 201;
+        private String reply = "{\"messageId\":\"<1@brevo>\"}";
+
+        @org.junit.jupiter.api.BeforeEach
+        void start() throws Exception {
+            server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/v3/smtp/email", ex -> {
+                bodies.add(new String(ex.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                keys.add(ex.getRequestHeaders().getFirst("api-key"));
+                byte[] out = reply.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                ex.sendResponseHeaders(status, out.length);
+                ex.getResponseBody().write(out);
+                ex.close();
+            });
+            server.start();
+        }
+
+        @org.junit.jupiter.api.AfterEach
+        void stop() { server.stop(0); }
+
+        private EmailService brevo(String key) {
+            EmailService svc = new EmailService(Mockito.mock(PayslipPdfService.class), Mockito.mock(LeaveLetterPdfService.class));
+            ReflectionTestUtils.setField(svc, "provider", "brevo");
+            ReflectionTestUtils.setField(svc, "brevoApiKey", key);
+            ReflectionTestUtils.setField(svc, "brevoUrl", "http://127.0.0.1:" + server.getAddress().getPort() + "/v3/smtp/email");
+            ReflectionTestUtils.setField(svc, "smtpFrom", "support@kandkmedia.co.za");
+            return svc;
+        }
+
+        @Test
+        void sendsTheVerificationCodeFromTheVerifiedSender() {
+            assertThat(brevo(" xkeysib-abc \n").verificationCodeSendError("thabo@insideeducation.co.za", "Thabo", "654321")).isNull();
+            assertThat(keys).containsExactly("xkeysib-abc");
+            assertThat(bodies.get(0)).contains("\"email\":\"support@kandkmedia.co.za\"").contains("\"name\":\"K and K Media\"")
+                    .contains("thabo@insideeducation.co.za").contains("654321");
+        }
+
+        @Test
+        void explainsARejectedKey() {
+            status = 401; reply = "{\"code\":\"unauthorized\",\"message\":\"Key not found\"}";
+            EmailService.EmailSendResult r = brevo("xkeysib-bad").sendTestEmail("someone@kandkmedia.co.za");
+            assertThat(r.ok()).isFalse();
+            assertThat(r.errorMessage()).contains("Key not found").contains("API Keys");
+        }
+
+        @Test
+        void passesBrevosOwnReasonThrough() {
+            status = 400; reply = "{\"code\":\"invalid_parameter\",\"message\":\"Sender support@kandkmedia.co.za is not valid\"}";
+            assertThat(brevo("xkeysib-abc").sendTestEmail("someone@kandkmedia.co.za").errorMessage()).contains("is not valid");
+        }
+
+        @Test
+        void catchesAnSmtpKeyInTheApiKeySlot() {
+            assertThat(brevo("xsmtpsib-abc").sendTestEmail("someone@kandkmedia.co.za").errorMessage()).contains("needs an API key");
+            assertThat(bodies).isEmpty();
+        }
+    }
 }

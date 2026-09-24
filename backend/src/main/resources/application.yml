@@ -55,7 +55,7 @@ app:
   # verified address (e.g. payroll@kandkmedia.co.za) once it is.
   mail-from: ${MAIL_FROM:payroll@kandkmedia.co.za}
   mail:
-    # "resend" (HTTPS API, default) or "smtp" (log in to a company mailbox).
+    # "resend" (HTTPS API, default), "brevo" (Brevo HTTPS API) or "smtp" (log in to a mailbox / relay).
     provider: ${MAIL_PROVIDER:resend}
     smtp:
       host: ${SMTP_HOST:mail.kandkmedia.co.za}
@@ -66,6 +66,9 @@ app:
       password: ${SMTP_PASSWORD:}
       # Sender address when it differs from the login (relays like Brevo) — must be verified there.
       from: ${SMTP_FROM:}
+    brevo:
+      # Brevo API key (xkeysib-…). Sender comes from SMTP_FROM, else MAIL_FROM — must be verified in Brevo.
+      api-key: ${BREVO_API_KEY:}
   jwt:
     # Override with a long random secret via the JWT_SECRET env var in every real environment.
     secret: ${JWT_SECRET:change-this-secret-before-deploying-to-production}

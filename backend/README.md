@@ -161,6 +161,15 @@ SMTP_PASSWORD=<Brevo SMTP key, xsmtpsib-...>
 SMTP_FROM=support@kandkmedia.co.za     # a sender verified in Brevo
 ```
 
+Or skip SMTP entirely and use Brevo's HTTPS API (never port-blocked, and
+Brevo's own error text is shown if something is wrong):
+
+```bash
+MAIL_PROVIDER=brevo
+BREVO_API_KEY=<Brevo API key, xkeysib-...>   # SMTP & API → API Keys
+SMTP_FROM=support@kandkmedia.co.za           # a sender verified in Brevo
+```
+
 Use **Company & Settings → Send Test
 Email** to check: a wrong password, or the host blocking outgoing mail
 ports (Render does on some plans), is reported in plain words. Set

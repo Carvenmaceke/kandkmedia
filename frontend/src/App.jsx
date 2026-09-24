@@ -283,7 +283,7 @@ function EmptyRow({ colSpan, icon: Icon = ClipboardList, children }) {
 
 function SectionTitle({ children, sub, actions, icon, accent }) {
   const text = React.Children.toArray(children).map((c) => (typeof c === "string" || typeof c === "number" ? c : "")).join("");
-  const match = PAGE_HEADERS.find(([t]) => text === t || text.startsWith(`${t} —`));
+  const match = PAGE_HEADERS.find(([t]) => text === t || text.startsWith(`${t} —`) || text.startsWith(`${t} &`));
   if (match || icon) {
     const Icon = icon || PAGE_ICON_COMPONENTS[match[1]];
     const color = ACCENTS[accent || match?.[2] || "brand"];
@@ -351,6 +351,31 @@ function Field({ label, children }) {
   );
 }
 const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${T.border}`, fontSize: 14, fontFamily: sans, boxSizing: "border-box", background: T.surface, color: T.text };
+
+/** Avatar + name (+ muted second line) for the first column of people tables. */
+function PersonCell({ name, sub, suffix }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+      <Avatar name={name} size={34} />
+      <div style={{ minWidth: 0, lineHeight: 1.3 }}>
+        <div style={{ fontWeight: 650, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}{suffix}</div>
+        {sub && <div style={{ fontSize: 12, color: T.muted, fontWeight: 450, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** Pill-style segmented filter (e.g. Active / Terminated / All). */
+function Segmented({ options, value, onChange }) {
+  return (
+    <div className="kk-tabs kk-segmented" role="tablist" style={{ marginBottom: 0 }}>
+      {options.map((o) => {
+        const [val, label] = Array.isArray(o) ? o : [o, o];
+        return <button key={val} role="tab" aria-selected={value === val} className="kk-tab" onClick={() => onChange(val)}>{label}</button>;
+      })}
+    </div>
+  );
+}
 
 /** Segmented-control tabs used by every in-page tab bar. */
 function Tabs({ tabs, active, onChange }) {
@@ -1011,55 +1036,49 @@ async function downloadOnboardingDocument(employee) {
 /* PAYSLIP DOCUMENT                                                       */
 /* ---------------------------------------------------------------------- */
 function Payslip({ emp, month, figures, onClose }) {
-  const row = (label, value, strong) => (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${T.border}`, fontSize: 13.5, fontWeight: strong ? 700 : 400, color: strong ? T.text : T.text2 }}>
-      <span>{label}</span><span style={{ fontFamily: mono }}>{money(value)}</span>
-    </div>
-  );
+  const amt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const earnings = [["Normal Time", figures.basic], ["Housing Allowance", figures.housing], ["Transport Allowance", figures.transport], ["Overtime", figures.overtime], ["Bonus", figures.bonus]]
+    .filter(([, v], i) => i === 0 || Number(v) > 0);
+  const deductions = [["Tax", figures.paye], ["U.I.F.", figures.uif], ["Other Deductions", figures.otherDeductions]].filter(([, v], i) => i < 2 || Number(v) > 0);
+  const detail = (k, v) => <div className="kk-ps-row"><span>{k}</span><strong>{v || "-"}</strong></div>;
   return (
-    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }} onClick={onClose}>
-      <div className="kk-pop" style={{ background: T.surface, width: 520, maxWidth: "100%", borderRadius: 16, overflow: "hidden", boxShadow: "var(--kk-shadow-lg)", border: `1px solid ${T.border}` }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ background: `linear-gradient(135deg, ${T.navy}, ${T.navyDeep})`, padding: "22px 26px" }}>
-          <div style={{ height: 3, width: 46, background: T.teal, borderRadius: 2, marginBottom: 12 }} />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <div style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>{COMPANY.name}</div>
-              <div style={{ color: T.onNavyMuted, fontSize: 11.5, marginTop: 3, lineHeight: 1.5 }}>{COMPANY.address}{COMPANY.regNo && <><br />Reg No: {COMPANY.regNo}</>}</div>
-            </div>
-            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} color="#fff" /></button>
-          </div>
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.15)", display: "flex", justifyContent: "space-between", color: "#fff" }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 650 }}>{emp.name}</div>
-              <div style={{ fontSize: 11.5, color: T.onNavyMuted, fontFamily: mono }}>{emp.id} · {emp.position}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11.5, color: T.onNavyMuted }}>Pay Period</div>
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{month}</div>
-            </div>
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "32px 16px", overflowY: "auto" }} onClick={onClose}>
+      <div className="kk-pop" style={{ width: 760, maxWidth: "100%" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 8, flexWrap: "wrap", background: "rgba(15,23,42,0.88)", backdropFilter: "blur(8px)", borderRadius: 16, padding: "10px 10px 10px 18px", boxShadow: "0 10px 30px rgba(0,0,0,0.25)" }}>
+          <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}><FileText size={16} /> Payslip preview · {month}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="teal" icon={Download} small onClick={() => downloadPayslipPdf(emp, month, figures)}>Download PDF</Button>
+            <button onClick={onClose} aria-label="Close" style={{ background: "rgba(255,255,255,0.12)", border: "none", cursor: "pointer", color: "#fff", borderRadius: 999, padding: 8, lineHeight: 0 }}><X size={16} /></button>
           </div>
         </div>
-        <div style={{ padding: "20px 26px 26px" }}>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: T.teal, marginBottom: 4 }}>EARNINGS</div>
-          {row("Basic Salary", figures.basic)}
-          {figures.housing > 0 && row("Housing Allowance", figures.housing)}
-          {figures.transport > 0 && row("Transport Allowance", figures.transport)}
-          {figures.overtime > 0 && row("Overtime", figures.overtime)}
-          {figures.bonus > 0 && row("Bonus", figures.bonus)}
-          {row("Gross Earnings", figures.gross, true)}
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: T.teal, margin: "18px 0 4px" }}>DEDUCTIONS</div>
-          {row("PAYE", -figures.paye)}
-          {row("UIF", -figures.uif)}
-          {row("Total Deductions", -figures.totalDeductions, true)}
-          <div style={{ marginTop: 18, background: T.tealLight, borderRadius: 8, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: T.text }}>Net Pay</span>
-            <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: T.text }}>{money(figures.net)}</span>
+        <div className="kk-payslip">
+          <div className="kk-ps-bar"><span style={{ fontSize: 20, fontWeight: 800, letterSpacing: "0.02em" }}>PAYSLIP</span><span style={{ fontSize: 12 }}>{(COMPANY.name || "").toUpperCase()}</span></div>
+          <div className="kk-ps-panel">
+            <div>{detail("Emp Code", emp.id)}{detail("Emp Name", (emp.name || "").toUpperCase())}{detail("Position", emp.position)}</div>
+            <div>{detail("Pay Period", month)}{detail("Department", emp.dept)}{detail("Office", emp.office)}</div>
+            <div>{detail("Date Engaged", emp.start)}{detail("Account No", emp.bankAccountNumber)}{detail("Branch Code", emp.bankBranchCode)}</div>
           </div>
-          <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
-            <Button variant="teal" icon={Download} small onClick={() => downloadPayslipPdf(emp, month, figures)}>Download PDF</Button>
-            <Button variant="ghost" icon={Send} small>Resend Email</Button>
+          <div className="kk-ps-cols">
+            <div className="kk-ps-box">
+              <div className="kk-ps-title">EARNINGS</div>
+              <div className="kk-ps-line kk-ps-head"><span>Description</span><span>Amount (R)</span></div>
+              {earnings.map(([k, v]) => <div key={k} className="kk-ps-line"><span>{k}</span><span className="num">{amt(v)}</span></div>)}
+              <div className="kk-ps-total"><span>Total Earnings</span><span className="num">{amt(figures.gross)}</span></div>
+            </div>
+            <div className="kk-ps-box">
+              <div className="kk-ps-title">DEDUCTIONS</div>
+              <div className="kk-ps-line kk-ps-head"><span>Description</span><span>Amount (R)</span></div>
+              {deductions.map(([k, v]) => <div key={k} className="kk-ps-line"><span>{k}</span><span className="num">{amt(v)}</span></div>)}
+              <div className="kk-ps-total"><span>Total Deductions</span><span className="num">{amt(figures.totalDeductions)}</span></div>
+            </div>
           </div>
-          <div style={{ marginTop: 10, fontSize: 10.5, color: T.muted }}>Filename: {month.replace(" ", "-")}-{emp.id}.pdf — figures are illustrative dummy data, not real tax calculations.</div>
+          <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 22px" }}>
+            <div className="kk-ps-net"><span>NETT PAY</span><span className="num">R {amt(figures.net)}</span></div>
+          </div>
+          <div style={{ padding: "14px 22px 18px", fontSize: 11, color: "#666", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+            <span>This payslip is computer generated. Amounts in South African Rand (ZAR).</span>
+            <span>Estimate — the final payslip is issued once payroll is finalised.</span>
+          </div>
         </div>
       </div>
     </div>
@@ -2579,7 +2598,7 @@ function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
       <div className="kk-stat-grid">
         <StatCard icon={Users} label="Total Employees" value={EMPLOYEES.length} tone={T.indigo} />
         <StatCard icon={ClipboardList} label="Pending Leave" value={pending} tone={T.amber} />
-        <StatCard icon={Banknote} label="Payroll Status" value={payrollStage} tone={T.teal} />
+        <StatCard icon={Banknote} label="Payroll Status" value={payrollStage ? payrollStage.charAt(0) + payrollStage.slice(1).toLowerCase() : "Not started"} tone={T.teal} />
         <StatCard icon={FileText} label="Payslips Sent (Aug)" value={`${EMPLOYEES.length}/${EMPLOYEES.length}`} tone={T.green} />
       </div>
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -2598,7 +2617,7 @@ function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
           <div className="kk-card-title" style={{ marginBottom: 4 }}>Payroll Pipeline — {CURRENT_MONTH}</div>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Advance the batch through review and approval before payslips are sent.</div>
           <PipelineStepper stages={STAGES} current={stageIdx} />
-          {stageIdx < STAGES.length - 1 ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1]}</Button> : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>}
+          {stageIdx < STAGES.length - 1 ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1].charAt(0) + STAGES[stageIdx + 1].slice(1).toLowerCase()}</Button> : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>}
         </Card>
       </div>
       <div style={{ marginTop: 22 }}>
@@ -2611,7 +2630,7 @@ function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
                 const e = empById(r.emp);
                 return (
                   <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                    <td style={{ padding: "10px 14px" }}>{e.name}</td>
+                    <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} /></td>
                     <td style={{ padding: "10px 14px", color: T.muted }}>{r.type}</td>
                     <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{r.start} → {r.end}</td>
                     <td style={{ padding: "10px 14px" }}><StatusPill status={r.status} /></td>
@@ -2677,15 +2696,7 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
           <Search size={14} color={T.muted} style={{ position: "absolute", left: 10, top: 10 }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search employees…" style={{ ...inputStyle, paddingLeft: 36, maxWidth: 320 }} />
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[["active", "Active"], ["terminated", "Terminated"], ["all", "All"]].map(([val, label]) => (
-            <button key={val} onClick={() => setStatusFilter(val)} style={{
-              background: statusFilter === val ? T.navy : T.surface, color: statusFilter === val ? T.onNavy : T.muted,
-              border: `1px solid ${statusFilter === val ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
-              fontSize: 12, fontWeight: 600, cursor: "pointer",
-            }}>{label}</button>
-          ))}
-        </div>
+        <Segmented options={[["active", "Active"], ["terminated", "Terminated"], ["all", "All"]]} value={statusFilter} onChange={setStatusFilter} />
         <Pill tone="muted">New signups appear here automatically</Pill>
       </div>
       <Card style={{ overflow: "hidden" }}>
@@ -2696,7 +2707,7 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
             {filtered.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}`, opacity: e.active === false ? 0.6 : 1 }}>
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
-                <td style={{ padding: "10px 14px", fontWeight: 600 }}>{e.name}</td>
+                <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.email} /></td>
                 <td style={{ padding: "10px 14px" }}><RolePill role={e.role} /></td>
                 <td style={{ padding: "10px 14px" }}>{e.level ? <Pill tone="teal">{e.level}</Pill> : <span style={{ color: T.muted }}>—</span>}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
@@ -2997,15 +3008,7 @@ function HrWorkSchedule() {
       </Card>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {["All", ...offices].map((o) => (
-            <button key={o} onClick={() => setOfficeFilter(o)} style={{
-              background: officeFilter === o ? T.navy : T.surface, color: officeFilter === o ? T.onNavy : T.muted,
-              border: `1px solid ${officeFilter === o ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
-              fontSize: 12, fontWeight: 600, cursor: "pointer",
-            }}>{o}</button>
-          ))}
-        </div>
+        <Segmented options={["All", ...offices]} value={officeFilter} onChange={setOfficeFilter} />
         <Button variant="ghost" small icon={Trash2} disabled={!anySet} onClick={resetAll}>Reset All</Button>
       </div>
 
@@ -3025,8 +3028,7 @@ function HrWorkSchedule() {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td style={{ padding: "10px 14px" }}>
-                  <div style={{ fontWeight: 600 }}>{r.name}</div>
-                  <div style={{ fontSize: 11.5, color: T.muted }}>{r.employeeCode} · {r.office || "—"}</div>
+                  <PersonCell name={r.name} sub={`${r.employeeCode} · ${r.office || "—"}`} />
                 </td>
                 <td style={{ padding: "10px 14px", fontSize: 12.5, color: r.mode ? T.text2 : T.muted, maxWidth: 260 }}>{planSummary(r)}</td>
                 {week.map((w) => (
@@ -3076,7 +3078,7 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
           <Pill tone="muted">{EMPLOYEES.length - visibleEmployees.length} employee(s) hidden — salary not yet set</Pill>
         )}
         {advanceStage && (stageIdx < STAGES.length - 1
-          ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1]}</Button>
+          ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1].charAt(0) + STAGES[stageIdx + 1].slice(1).toLowerCase()}</Button>
           : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>)}
       </div>
       <Card style={{ overflow: "hidden" }}>
@@ -3091,7 +3093,7 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
               const f = real || calcPayroll(e, 3);
               return (
                 <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600 }}>{e.name}</div><div style={{ fontFamily: mono, fontSize: 11, color: T.muted }}>{e.id}</div></td>
+                  <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.id} /></td>
                   <td style={{ padding: "10px 14px", fontFamily: mono }}>{money(f.basic)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, color: T.muted }}>{money(f.overtime)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, color: T.muted }}>{money(f.bonus)}</td>
@@ -3142,11 +3144,12 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
         <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Type", "Dates", "Days", "Reason", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
+            {leaveRequests.length === 0 && <EmptyRow colSpan={7} icon={CalendarDays}>No leave requests yet — new applications will show up here.</EmptyRow>}
             {leaveRequests.map((r) => {
               const e = empById(r.emp);
               return (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px" }}>{e.name}</td>
+                  <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} /></td>
                   <td style={{ padding: "10px 14px", color: T.muted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {r.type}
@@ -3160,8 +3163,8 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
                   <td style={{ padding: "10px 14px" }}>
                     {r.status === "Pending" ? (
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => setTarget({ request: r, intent: "approve" })} style={{ background: "none", border: "none", cursor: "pointer" }} title="Approve"><CheckCircle2 size={17} color={T.green} /></button>
-                        <button onClick={() => setTarget({ request: r, intent: "reject" })} style={{ background: "none", border: "none", cursor: "pointer" }} title="Decline"><XCircle size={17} color={T.red} /></button>
+                        <Button variant="success" small icon={CheckCircle2} onClick={() => setTarget({ request: r, intent: "approve" })}>Approve</Button>
+                        <Button variant="danger" small icon={XCircle} onClick={() => setTarget({ request: r, intent: "reject" })}>Decline</Button>
                       </div>
                     ) : (
                       <button onClick={() => downloadLeaveLetter(r, e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Download signed letter"><Download size={16} /></button>
@@ -3436,12 +3439,8 @@ const ASSIGNABLE_ROLES = ["employee", "manager", "hr", "admin", "it_support"];
 function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh }) {
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <SectionTitle sub={isMaster ? "Every account — you're the only one who can change roles" : "Every account and its assigned system role"}>User Accounts</SectionTitle>
-        {isMaster && onRefresh && (
-          <Button variant="ghost" small icon={RefreshCw} onClick={onRefresh}>Refresh (pulls in new signups)</Button>
-        )}
-      </div>
+      <SectionTitle sub={isMaster ? "Every account — you're the only one who can change roles" : "Every account and its assigned system role"}
+        actions={isMaster && onRefresh ? <Button variant="ghost" small icon={RefreshCw} onClick={onRefresh}>Refresh</Button> : null}>User Accounts</SectionTitle>
       <Card style={{ overflow: "hidden" }}>
         <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Email", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
@@ -3449,7 +3448,7 @@ function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh }) {
             {EMPLOYEES.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}`, background: e.id === currentUserId ? T.tealLight : "transparent" }}>
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
-                <td style={{ padding: "10px 14px", fontWeight: 600 }}>{e.name}{e.id === currentUserId && <span style={{ color: T.muted, fontWeight: 400 }}> (you)</span>}</td>
+                <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} suffix={e.id === currentUserId && <span style={{ color: T.muted, fontWeight: 450 }}> (you)</span>} /></td>
                 <td style={{ padding: "10px 14px" }}>
                   {isMaster && e.role !== "master" && e.id !== currentUserId ? (
                     <select value={e.role} onChange={(ev) => onChangeRole(e.id, ev.target.value)} style={{ ...inputStyle, padding: "5px 8px", fontSize: 12, width: "auto" }}>
@@ -3494,7 +3493,7 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
           <tbody>
             {team.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                <td style={{ padding: "10px 14px" }}>{e.name}</td>
+                <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} /></td>
                 <td style={{ padding: "10px 14px" }}>{e.level ? <Pill tone="teal">{e.level}</Pill> : <span style={{ color: T.muted }}>—</span>}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
                 <td style={{ padding: "10px 14px", fontFamily: mono }}>{(LEAVE_BALANCES[e.id] || {})["Annual Leave"] ?? "—"} days</td>
@@ -3513,7 +3512,7 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
               const e = empById(r.emp);
               return (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px" }}>{e.name}</td>
+                  <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} /></td>
                   <td style={{ padding: "10px 14px", color: T.muted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {r.type}
@@ -3617,42 +3616,49 @@ function ITAssistantChat() {
   };
 
   return (
-    <Card style={{ padding: 0, maxWidth: 620, overflow: "hidden" }}>
-      <div style={{ background: T.navy, padding: "12px 16px", display: "flex", alignItems: "center", gap: 8 }}>
-        <Bot size={16} color="#fff" />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 13.5, flex: 1 }}>IT Assistant</span>
-        {aiAvailable === true && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#fff", background: "rgba(255,255,255,0.12)", padding: "2px 8px", borderRadius: 999 }}><Sparkles size={11} /> AI</span>}
+    <div className="kk-chat">
+      <div className="kk-chat-head">
+        <div className="kk-chat-bot"><Bot size={18} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 750, fontSize: 15, color: "#fff", fontFamily: "var(--kk-font-display)" }}>IT Assistant</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="kk-online-dot" /> {aiAvailable === true ? "AI-powered · replies in seconds" : "Online · quick fixes for common issues"}
+          </div>
+        </div>
+        {aiAvailable === true && <span className="kk-chat-badge"><Sparkles size={11} /> AI</span>}
       </div>
-      <div ref={listRef} style={{ padding: 16, height: 340, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div ref={listRef} className="kk-chat-body">
         {messages.map((m, i) => (
-          <div key={i} style={{
-            alignSelf: m.from === "user" ? "flex-end" : "flex-start",
-            background: m.from === "user" ? T.navy : T.bg, color: m.from === "user" ? T.onNavy : T.text,
-            padding: "8px 12px", borderRadius: 12, maxWidth: "85%", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap",
-          }}>{m.text}</div>
+          <div key={i} className={`kk-msg ${m.from === "user" ? "kk-msg--me" : ""}`}>
+            {m.from !== "user" && <div className="kk-msg-avatar"><Bot size={14} /></div>}
+            <div className={`kk-bubble ${m.from === "user" ? "kk-bubble--me" : ""} ${m.notice ? "kk-bubble--notice" : ""}`}>{m.text}</div>
+          </div>
         ))}
         {thinking && (
-          <div style={{ alignSelf: "flex-start", background: T.bg, color: T.muted, padding: "8px 12px", borderRadius: 12, fontSize: 13 }}>Thinking…</div>
+          <div className="kk-msg">
+            <div className="kk-msg-avatar"><Bot size={14} /></div>
+            <div className="kk-bubble kk-typing" aria-label="Assistant is typing"><span /><span /><span /></div>
+          </div>
         )}
       </div>
-      <div style={{ padding: "10px 12px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {["Outlook frozen", "Teams won't load", "Printer not working", "Set up email"].map((q) => (
-          <button key={q} onClick={() => send(q)} disabled={thinking} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.surface, cursor: "pointer", color: T.text2, fontWeight: 500 }}>{q}</button>
+      <div className="kk-chat-suggest">
+        {["Outlook frozen", "Teams won't load", "Printer not working", "Set up email", "WiFi not working"].map((q) => (
+          <button key={q} onClick={() => send(q)} disabled={thinking} className="kk-chip">{q}</button>
         ))}
       </div>
-      <div style={{ padding: 12, borderTop: `1px solid ${T.border}`, display: "flex", gap: 8 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(input); }} style={{ ...inputStyle, flex: 1 }} placeholder="Describe your issue…" maxLength={2000} />
-        <Button variant="teal" small onClick={() => send(input)} disabled={thinking || !input.trim()}>Send</Button>
-      </div>
       {aiProblem && (
-        <div style={{ margin: "0 12px 8px", display: "flex", gap: 6, alignItems: "flex-start", color: T.amber, background: T.amberBg, padding: "7px 10px", borderRadius: 8, fontSize: 11.5, lineHeight: 1.45 }}>
+        <div style={{ margin: "0 14px 10px", display: "flex", gap: 6, alignItems: "flex-start", color: T.amber, background: T.amberBg, padding: "8px 12px", borderRadius: 12, fontSize: 12, lineHeight: 1.45 }}>
           <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{aiProblem}</span>
         </div>
       )}
-      <div style={{ padding: "0 12px 10px", fontSize: 10.5, color: T.muted }}>
+      <form className="kk-chat-input" onSubmit={(e) => { e.preventDefault(); send(input); }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Describe your issue…" maxLength={2000} aria-label="Message" />
+        <button type="submit" className="kk-send" disabled={thinking || !input.trim()} aria-label="Send"><Send size={16} /></button>
+      </form>
+      <div style={{ padding: "0 16px 14px", fontSize: 11, color: T.muted, textAlign: "center" }}>
         {aiAvailable ? "AI answers can be wrong — never share passwords here. Still stuck? Log a ticket." : "Never share passwords here. Still stuck? Log a ticket."}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -4086,6 +4092,48 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
 /* ---------------------------------------------------------------------- */
 /* APP SHELL                                                              */
 /* ---------------------------------------------------------------------- */
+/** Top-bar search that jumps to any page the current user can open (Ctrl+K or "/" to focus). */
+function PageSearch({ items }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const inputRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      const typing = /input|textarea|select/i.test(document.activeElement?.tagName || "");
+      if ((e.key === "k" && (e.ctrlKey || e.metaKey)) || (e.key === "/" && !typing)) { e.preventDefault(); inputRef.current?.focus(); setOpen(true); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const results = items.filter((i) => i.label.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8);
+  const pick = (item) => { item.run(); setQ(""); setOpen(false); inputRef.current?.blur(); };
+  return (
+    <div className="kk-search kk-hide-sm" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
+      <Search size={15} className="kk-search-icon" />
+      <input ref={inputRef} value={q} placeholder="Search pages…" aria-label="Search pages"
+        onFocus={() => setOpen(true)} onChange={(e) => { setQ(e.target.value); setHi(0); setOpen(true); }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, results.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+          else if (e.key === "Enter" && results[hi]) pick(results[hi]);
+          else if (e.key === "Escape") { setOpen(false); e.currentTarget.blur(); }
+        }} />
+      <kbd className="kk-kbd">Ctrl K</kbd>
+      {open && results.length > 0 && (
+        <div className="kk-search-results" role="listbox">
+          {results.map((r, i) => (
+            <button key={r.label} role="option" aria-selected={i === hi} className="kk-search-item" onMouseEnter={() => setHi(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(r)}>
+              <span className="kk-search-item-icon"><r.icon size={15} /></span>{r.label}
+              {r.hint && <span style={{ marginLeft: "auto", fontSize: 11.5, color: T.muted }}>{r.hint}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NavItem({ icon: Icon, label, active, onClick }) {
   return (
     <button className="kk-nav-item" aria-current={active ? "page" : undefined} onClick={onClick}>
@@ -4954,6 +5002,18 @@ export default function App() {
     : PAGES[activeTab]?.label || "";
   const crumb = showPortal && role !== "employee" ? "My profile" : roleTitle;
 
+  const toPortal = (choice) => go(() => { setViewMode(role === "employee" ? "role" : "selfService"); setPortalChoice(choice); });
+  const searchItems = [
+    ...roleNav.map((id) => ({ label: PAGES[id].label, icon: PAGES[id].icon, hint: roleTitle, run: () => goRoleTab(id) })),
+    ...(role === "manager" ? [{ label: "My Team", icon: Users, hint: "Manager", run: () => go(() => { setViewMode("role"); setPortalChoice(null); }) }] : []),
+    { label: "Home", icon: LayoutDashboard, hint: role === "employee" ? "Workspace" : "My profile", run: () => toPortal(null) },
+    { label: "Payroll & Leave", icon: Banknote, hint: "Payslips, leave", run: () => toPortal("leave") },
+    { label: "IT Support", icon: LifeBuoy, hint: "Assistant, tickets", run: () => toPortal("itSupport") },
+    { label: "Report a system issue", icon: LifeBuoy, hint: "Support", run: () => go(() => setViewMode("support")) },
+    { label: "Report an office issue", icon: MapPin, hint: "Office Issues", run: () => go(() => setViewMode("officeIssues")) },
+    { label: "Settings", icon: SettingsIcon, hint: "Profile, password", run: () => go(() => setViewMode("settings")) },
+  ];
+
   return (
     <div className="kk-shell" data-nav-open={navOpen} style={{ fontFamily: sans, color: T.text }}>
       <div className="kk-scrim" onClick={() => setNavOpen(false)} />
@@ -5031,10 +5091,11 @@ export default function App() {
             </div>
             <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pageTitle}</div>
           </div>
+          <PageSearch items={searchItems} />
           {role !== "employee" && (
             <button onClick={() => { setViewMode((v) => (v === "selfService" ? "role" : "selfService")); setPortalChoice(null); }}
               className="kk-btn kk-btn--ghost" title={viewMode === "selfService" ? `Back to ${roleTitle} view` : "Your own payslips, leave and IT support"}
-              style={{ display: "inline-flex", alignItems: "center", gap: 7, background: viewMode === "selfService" ? T.tealLight : T.surface, color: viewMode === "selfService" ? T.teal : T.text, border: `1px solid ${viewMode === "selfService" ? "transparent" : T.border}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, background: viewMode === "selfService" ? T.tealLight : T.surface, color: viewMode === "selfService" ? T.teal : T.text, border: `1px solid ${viewMode === "selfService" ? "transparent" : T.border}`, borderRadius: 999, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
               <ArrowLeftRight size={15} /><span className="kk-hide-sm">{viewMode === "selfService" ? `${roleTitle} view` : "My profile"}</span>
             </button>
           )}

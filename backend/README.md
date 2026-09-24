@@ -146,7 +146,22 @@ SMTP_HOST=mail.kandkmedia.co.za          # default
 SMTP_PORT=465                            # default; 587 (STARTTLS) also works
 ```
 
-Emails are sent as that mailbox. Use **Company & Settings → Send Test
+Emails are sent as that mailbox.
+
+**Render's free plan blocks ports 25, 465 and 587**, so a company mailbox
+on those ports can't be reached from there. A relay on port 2525 works —
+e.g. Brevo (free, 300/day):
+
+```bash
+MAIL_PROVIDER=smtp
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=2525                         # STARTTLS
+SMTP_USERNAME=<Brevo SMTP login, e.g. 8a1b2c001@smtp-brevo.com>
+SMTP_PASSWORD=<Brevo SMTP key, xsmtpsib-...>
+SMTP_FROM=support@kandkmedia.co.za     # a sender verified in Brevo
+```
+
+Use **Company & Settings → Send Test
 Email** to check: a wrong password, or the host blocking outgoing mail
 ports (Render does on some plans), is reported in plain words. Set
 `MAIL_PROVIDER=resend` (the default) to go back to Resend.

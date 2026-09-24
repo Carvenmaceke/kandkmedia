@@ -64,6 +64,8 @@ app:
       security: ${SMTP_SECURITY:}
       username: ${SMTP_USERNAME:}
       password: ${SMTP_PASSWORD:}
+      # Sender address when it differs from the login (relays like Brevo) — must be verified there.
+      from: ${SMTP_FROM:}
   jwt:
     # Override with a long random secret via the JWT_SECRET env var in every real environment.
     secret: ${JWT_SECRET:change-this-secret-before-deploying-to-production}

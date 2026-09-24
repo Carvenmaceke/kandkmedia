@@ -63,6 +63,16 @@ class EmailServiceTest {
         }
 
         @Test
+        void relayLoginSendsAsTheVerifiedSenderAddress() throws Exception {
+            EmailService svc = smtpService("s3cret");
+            ReflectionTestUtils.setField(svc, "smtpFrom", "support@kandkmedia.co.za");
+
+            assertThat(svc.sendTestEmail("someone@insideeducation.co.za").ok()).isTrue();
+            assertThat(mailServer.getReceivedMessages()[0].getFrom()[0].toString())
+                    .isEqualTo("K and K Media <support@kandkmedia.co.za>");
+        }
+
+        @Test
         void wrongPasswordGivesAClearMessage() {
             EmailService.EmailSendResult result = smtpService("wrong").sendTestEmail("someone@kandkmedia.co.za");
             assertThat(result.ok()).isFalse();
@@ -75,7 +85,7 @@ class EmailServiceTest {
             ReflectionTestUtils.setField(svc, "smtpPort", 1); // nothing listens here
             EmailService.EmailSendResult result = svc.sendTestEmail("someone@kandkmedia.co.za");
             assertThat(result.ok()).isFalse();
-            assertThat(result.errorMessage()).contains("Couldn't connect").contains("blocking outgoing mail ports");
+            assertThat(result.errorMessage()).contains("Couldn't connect").contains("blocking outgoing mail ports").contains("2525");
         }
 
         @Test

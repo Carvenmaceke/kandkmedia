@@ -86,6 +86,10 @@ public class EmailService {
     private String smtpUsername;
     @Value("${app.mail.smtp.password:}")
     private String smtpPassword;
+    /** Sender address when it isn't the login itself — needed for relay services like Brevo,
+     *  whose login (e.g. 8a1b2c001@smtp-brevo.com) isn't a mailbox; must be a sender verified there. */
+    @Value("${app.mail.smtp.from:}")
+    private String smtpFrom;
 
     private record SendResult(boolean ok, String errorMessage) {
         static SendResult success() { return new SendResult(true, null); }
@@ -103,12 +107,18 @@ public class EmailService {
         return "smtp".equalsIgnoreCase(provider == null ? "" : provider.trim());
     }
 
-    /** The sender address. With SMTP it's always the logged-in mailbox (mail servers reject any
-     *  other From), keeping MAIL_FROM's display name if it has one; with Resend it's MAIL_FROM. */
+    /** The sender address. With SMTP: SMTP_FROM if set (relay services like Brevo), otherwise the
+     *  logged-in mailbox (mail servers reject any other From), keeping MAIL_FROM's display name if it
+     *  has one. With Resend: MAIL_FROM. */
     private String effectiveFrom() {
-        if (usingSmtp() && smtpUsername != null && !smtpUsername.isBlank()) {
-            if (fromAddress != null && fromAddress.toLowerCase().contains(smtpUsername.trim().toLowerCase())) return fromAddress;
-            return "K and K Media <" + smtpUsername.trim() + ">";
+        if (usingSmtp()) {
+            if (smtpFrom != null && !smtpFrom.isBlank()) {
+                return smtpFrom.contains("<") ? smtpFrom.trim() : "K and K Media <" + smtpFrom.trim() + ">";
+            }
+            if (smtpUsername != null && !smtpUsername.isBlank()) {
+                if (fromAddress != null && fromAddress.toLowerCase().contains(smtpUsername.trim().toLowerCase())) return fromAddress;
+                return "K and K Media <" + smtpUsername.trim() + ">";
+            }
         }
         return fromAddress;
     }
@@ -125,7 +135,7 @@ public class EmailService {
             sender.setPassword(smtpPassword);
             sender.setDefaultEncoding("UTF-8");
             String security = smtpSecurity == null || smtpSecurity.isBlank()
-                    ? (smtpPort == 465 ? "ssl" : smtpPort == 587 ? "starttls" : "none")
+                    ? (smtpPort == 465 ? "ssl" : "starttls") // 587 and 2525 (e.g. Brevo) use STARTTLS
                     : smtpSecurity.trim().toLowerCase();
             java.util.Properties props = sender.getJavaMailProperties();
             props.put("mail.smtp.auth", "true");
@@ -160,7 +170,8 @@ public class EmailService {
             if (isConnectionProblem(e)) {
                 return SendResult.failure("Couldn't connect to " + smtpHost + " on port " + smtpPort
                         + ". The server's host may be blocking outgoing mail ports (Render does on some plans) — "
-                        + "try SMTP_PORT=587 or 2525, or switch MAIL_PROVIDER back to resend. (" + rootMessage(e) + ")");
+                        + "use a relay that listens on port 2525 (e.g. Brevo: SMTP_HOST=smtp-relay.brevo.com, SMTP_PORT=2525), "
+                        + "or switch MAIL_PROVIDER back to resend. (" + rootMessage(e) + ")");
             }
             return SendResult.failure("SMTP error: " + rootMessage(e));
         }

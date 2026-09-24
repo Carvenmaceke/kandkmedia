@@ -123,6 +123,29 @@ public class EmailService {
         return fromAddress;
     }
 
+    /** Env values pasted into a dashboard often pick up spaces, line breaks or surrounding quotes. */
+    static String cleanSecret(String value) {
+        if (value == null) return null;
+        String v = value.strip();
+        if (v.length() >= 2 && ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'")))) {
+            v = v.substring(1, v.length() - 1).strip();
+        }
+        return v;
+    }
+
+    private String loginFailureMessage() {
+        String user = cleanSecret(smtpUsername);
+        String pass = cleanSecret(smtpPassword);
+        if (smtpHost != null && smtpHost.toLowerCase().contains("brevo")) {
+            if (pass.startsWith("xkeysib-")) {
+                return "Brevo rejected the login: SMTP_PASSWORD is a Brevo API key (xkeysib-…). Use an SMTP key (xsmtpsib-…) from Brevo > SMTP & API > SMTP tab.";
+            }
+            return "Brevo rejected the login for " + user + ". Check SMTP_PASSWORD is a current SMTP key (xsmtpsib-…) from Brevo > SMTP & API > SMTP tab "
+                    + "(a deleted or regenerated key stops working), and that the Brevo account's SMTP sending is activated.";
+        }
+        return "The mail server rejected the login for " + user + " — check SMTP_USERNAME / SMTP_PASSWORD.";
+    }
+
     private SendResult sendViaSmtp(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
         if (smtpUsername == null || smtpUsername.isBlank() || smtpPassword == null || smtpPassword.isBlank()) {
             return SendResult.failure("Email is not configured — set SMTP_USERNAME and SMTP_PASSWORD for the company mailbox.");
@@ -131,8 +154,8 @@ public class EmailService {
             org.springframework.mail.javamail.JavaMailSenderImpl sender = new org.springframework.mail.javamail.JavaMailSenderImpl();
             sender.setHost(smtpHost);
             sender.setPort(smtpPort);
-            sender.setUsername(smtpUsername);
-            sender.setPassword(smtpPassword);
+            sender.setUsername(cleanSecret(smtpUsername));
+            sender.setPassword(cleanSecret(smtpPassword));
             sender.setDefaultEncoding("UTF-8");
             String security = smtpSecurity == null || smtpSecurity.isBlank()
                     ? (smtpPort == 465 ? "ssl" : "starttls") // 587 and 2525 (e.g. Brevo) use STARTTLS
@@ -164,7 +187,7 @@ public class EmailService {
             return SendResult.success();
         } catch (org.springframework.mail.MailAuthenticationException e) {
             log.error("SMTP login failed for {}", smtpUsername, e);
-            return SendResult.failure("The mail server rejected the login for " + smtpUsername + " — check SMTP_USERNAME / SMTP_PASSWORD.");
+            return SendResult.failure(loginFailureMessage());
         } catch (Exception e) {
             log.error("Failed to send email via SMTP ({}:{})", smtpHost, smtpPort, e);
             if (isConnectionProblem(e)) {

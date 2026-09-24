@@ -80,6 +80,22 @@ class EmailServiceTest {
         }
 
         @Test
+        void straySpacesAndQuotesInPastedCredentialsAreIgnored() {
+            EmailService svc = smtpService("  \"s3cret\"\n");
+            ReflectionTestUtils.setField(svc, "smtpUsername", " payroll@kandkmedia.co.za \n");
+            assertThat(svc.sendTestEmail("someone@kandkmedia.co.za").ok()).isTrue();
+        }
+
+        @Test
+        void brevoLoginFailureNamesTheLikelyCause() {
+            EmailService svc = smtpService("xkeysib-abc");
+            ReflectionTestUtils.setField(svc, "smtpHost", "smtp-relay.brevo.com");
+            assertThat(ReflectionTestUtils.<String>invokeMethod(svc, "loginFailureMessage")).contains("API key").contains("xsmtpsib-");
+            ReflectionTestUtils.setField(svc, "smtpPassword", "xsmtpsib-old");
+            assertThat(ReflectionTestUtils.<String>invokeMethod(svc, "loginFailureMessage")).contains("Brevo rejected the login").contains("activated");
+        }
+
+        @Test
         void unreachableServerExplainsPossiblePortBlocking() {
             EmailService svc = smtpService("s3cret");
             ReflectionTestUtils.setField(svc, "smtpPort", 1); // nothing listens here

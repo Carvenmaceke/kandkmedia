@@ -19,7 +19,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Actually sends mail — this is not a stub. Sends via Resend's HTTPS API
+ * Actually sends mail — this is not a stub. Two ways to send, picked by
+ * MAIL_PROVIDER:
+ *
+ * <ul>
+ *   <li><b>resend</b> (default) — Resend's HTTPS API, described below.</li>
+ *   <li><b>smtp</b> — logs in to an ordinary company mailbox (e.g.
+ *   payroll@kandkmedia.co.za on mail.kandkmedia.co.za) with SMTP_USERNAME /
+ *   SMTP_PASSWORD and sends from it, like Outlook would. Needs no DNS
+ *   changes, but the host must allow outbound SMTP (see below).</li>
+ * </ul>
+ *
+ * Resend: sends via Resend's HTTPS API
  * (https://api.resend.com/emails) rather than raw SMTP: Render (and many
  * other hosts) block outbound SMTP ports 25/465/587 as an anti-spam
  * measure, which surfaces as a MailConnectException / connection timeout
@@ -60,9 +71,115 @@ public class EmailService {
     @Value("${spring.mail.password:}")
     private String resendApiKey;
 
+    /** "resend" (default) or "smtp". */
+    @Value("${app.mail.provider:resend}")
+    private String provider;
+
+    @Value("${app.mail.smtp.host:mail.kandkmedia.co.za}")
+    private String smtpHost;
+    @Value("${app.mail.smtp.port:465}")
+    private int smtpPort;
+    /** "ssl" (port 465), "starttls" (port 587) or "none"; blank = decide from the port. */
+    @Value("${app.mail.smtp.security:}")
+    private String smtpSecurity;
+    @Value("${app.mail.smtp.username:}")
+    private String smtpUsername;
+    @Value("${app.mail.smtp.password:}")
+    private String smtpPassword;
+
     private record SendResult(boolean ok, String errorMessage) {
         static SendResult success() { return new SendResult(true, null); }
         static SendResult failure(String msg) { return new SendResult(false, msg); }
+    }
+
+    /** Every email in this class goes through here, whichever provider is configured. */
+    private SendResult send(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
+        return usingSmtp()
+                ? sendViaSmtp(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes)
+                : sendViaResend(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes);
+    }
+
+    private boolean usingSmtp() {
+        return "smtp".equalsIgnoreCase(provider == null ? "" : provider.trim());
+    }
+
+    /** The sender address. With SMTP it's always the logged-in mailbox (mail servers reject any
+     *  other From), keeping MAIL_FROM's display name if it has one; with Resend it's MAIL_FROM. */
+    private String effectiveFrom() {
+        if (usingSmtp() && smtpUsername != null && !smtpUsername.isBlank()) {
+            if (fromAddress != null && fromAddress.toLowerCase().contains(smtpUsername.trim().toLowerCase())) return fromAddress;
+            return "K and K Media <" + smtpUsername.trim() + ">";
+        }
+        return fromAddress;
+    }
+
+    private SendResult sendViaSmtp(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
+        if (smtpUsername == null || smtpUsername.isBlank() || smtpPassword == null || smtpPassword.isBlank()) {
+            return SendResult.failure("Email is not configured — set SMTP_USERNAME and SMTP_PASSWORD for the company mailbox.");
+        }
+        try {
+            org.springframework.mail.javamail.JavaMailSenderImpl sender = new org.springframework.mail.javamail.JavaMailSenderImpl();
+            sender.setHost(smtpHost);
+            sender.setPort(smtpPort);
+            sender.setUsername(smtpUsername);
+            sender.setPassword(smtpPassword);
+            sender.setDefaultEncoding("UTF-8");
+            String security = smtpSecurity == null || smtpSecurity.isBlank()
+                    ? (smtpPort == 465 ? "ssl" : smtpPort == 587 ? "starttls" : "none")
+                    : smtpSecurity.trim().toLowerCase();
+            java.util.Properties props = sender.getJavaMailProperties();
+            props.put("mail.smtp.auth", "true");
+            props.put("mail.smtp.connectiontimeout", "15000");
+            props.put("mail.smtp.timeout", "20000");
+            props.put("mail.smtp.writetimeout", "20000");
+            if (security.equals("ssl")) {
+                props.put("mail.smtp.ssl.enable", "true");
+            } else if (security.equals("starttls")) {
+                props.put("mail.smtp.starttls.enable", "true");
+                props.put("mail.smtp.starttls.required", "true");
+            }
+
+            jakarta.mail.internet.MimeMessage message = sender.createMimeMessage();
+            org.springframework.mail.javamail.MimeMessageHelper helper =
+                    new org.springframework.mail.javamail.MimeMessageHelper(message, attachmentBytes != null, "UTF-8");
+            helper.setFrom(effectiveFrom());
+            helper.setTo(to);
+            if (replyTo != null && !replyTo.isBlank()) helper.setReplyTo(replyTo);
+            helper.setSubject(subject);
+            helper.setText(textBody, false);
+            if (attachmentBytes != null && attachmentFilename != null) {
+                helper.addAttachment(attachmentFilename, new org.springframework.core.io.ByteArrayResource(attachmentBytes), "application/pdf");
+            }
+            sender.send(message);
+            return SendResult.success();
+        } catch (org.springframework.mail.MailAuthenticationException e) {
+            log.error("SMTP login failed for {}", smtpUsername, e);
+            return SendResult.failure("The mail server rejected the login for " + smtpUsername + " — check SMTP_USERNAME / SMTP_PASSWORD.");
+        } catch (Exception e) {
+            log.error("Failed to send email via SMTP ({}:{})", smtpHost, smtpPort, e);
+            if (isConnectionProblem(e)) {
+                return SendResult.failure("Couldn't connect to " + smtpHost + " on port " + smtpPort
+                        + ". The server's host may be blocking outgoing mail ports (Render does on some plans) — "
+                        + "try SMTP_PORT=587 or 2525, or switch MAIL_PROVIDER back to resend. (" + rootMessage(e) + ")");
+            }
+            return SendResult.failure("SMTP error: " + rootMessage(e));
+        }
+    }
+
+    private static boolean isConnectionProblem(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.net.ConnectException || t instanceof java.net.SocketTimeoutException
+                    || t instanceof java.net.UnknownHostException || t instanceof jakarta.mail.MessagingException && String.valueOf(t.getMessage()).startsWith("Couldn't connect")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String rootMessage(Throwable e) {
+        Throwable t = e;
+        while (t.getCause() != null && t.getCause() != t) t = t.getCause();
+        return t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
     }
 
     private SendResult sendViaResend(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
@@ -71,7 +188,7 @@ public class EmailService {
         }
         try {
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("from", fromAddress);
+            body.put("from", effectiveFrom());
             body.put("to", List.of(to));
             body.put("subject", subject);
             body.put("text", textBody);
@@ -121,7 +238,7 @@ public class EmailService {
                 "Regards,\nK and K Media Payroll";
         String filename = payroll.getPayPeriod() + "-" + employee.getEmployeeCode() + ".pdf";
 
-        SendResult result = sendViaResend(employee.getEmail(), null, subject, text, filename, pdf);
+        SendResult result = send(employee.getEmail(), null, subject, text, filename, pdf);
         if (result.ok()) {
             payroll.setEmailSent(true);
             payroll.setEmailSentAt(LocalDateTime.now());
@@ -150,7 +267,7 @@ public class EmailService {
                 "\n\nThe signed letter is attached.\n\nRegards,\nK and K Media";
         String filename = "Leave-" + request.getStatus() + "-" + request.getId() + "-" + employee.getEmployeeCode() + ".pdf";
 
-        SendResult result = sendViaResend(employee.getEmail(), null, subject, text, filename, pdf);
+        SendResult result = send(employee.getEmail(), null, subject, text, filename, pdf);
         request.setLetterEmailSent(result.ok());
         request.setLetterEmailFailureReason(result.ok() ? null : result.errorMessage());
         return result.ok();
@@ -174,7 +291,7 @@ public class EmailService {
                 "Enter this code to finish creating your account. It expires in 15 minutes.\n\n" +
                 "If you didn't try to sign up, you can ignore this email.\n\n" +
                 "Regards,\nK and K Media";
-        SendResult result = sendViaResend(toEmail, null, subject, text, null, null);
+        SendResult result = send(toEmail, null, subject, text, null, null);
         return result.ok() ? null : (result.errorMessage() == null ? "unknown error" : result.errorMessage());
     }
 
@@ -196,7 +313,7 @@ public class EmailService {
                 "Ticket ID: " + ticket.getId();
         String replyTo = (ticket.getEmployeeEmail() != null && !ticket.getEmployeeEmail().isBlank()) ? ticket.getEmployeeEmail() : null;
 
-        SendResult result = sendViaResend(supportEmail, replyTo, subject, text, null, null);
+        SendResult result = send(supportEmail, replyTo, subject, text, null, null);
         ticket.setEmailSent(result.ok());
         ticket.setEmailFailureReason(result.ok() ? null : result.errorMessage());
         return result.ok();
@@ -221,7 +338,7 @@ public class EmailService {
                 "Issue ID: " + issue.getId();
         String replyTo = (issue.getEmployeeEmail() != null && !issue.getEmployeeEmail().isBlank()) ? issue.getEmployeeEmail() : null;
 
-        SendResult result = sendViaResend(supportEmail, replyTo, subject, text, null, null);
+        SendResult result = send(supportEmail, replyTo, subject, text, null, null);
         issue.setEmailSent(result.ok());
         issue.setEmailFailureReason(result.ok() ? null : result.errorMessage());
         return result.ok();
@@ -247,9 +364,9 @@ public class EmailService {
      */
     public EmailSendResult sendTestEmail(String toEmail) {
         String subject = "K and K Media — test email";
-        String text = "This confirms the payroll system's email delivery (via Resend) is working.\n\n" +
+        String text = "This confirms the payroll system's email delivery (via " + (usingSmtp() ? "the company mailbox " + smtpUsername : "Resend") + ") is working.\n\n" +
                 "Sent at " + java.time.LocalDateTime.now() + ".";
-        SendResult result = sendViaResend(toEmail, null, subject, text, null, null);
+        SendResult result = send(toEmail, null, subject, text, null, null);
         return new EmailSendResult(result.ok(), result.errorMessage());
     }
 }

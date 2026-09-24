@@ -133,6 +133,24 @@ employee entered at signup, plus their signature — this is what backs the
 frontend's "Download Onboarding Document" button in the employee profile
 drawer.
 
+## Sending email through a company mailbox (no DNS changes)
+
+Instead of Resend, the backend can log in to an ordinary company mailbox
+and send from it. Set on the host (Render → Environment):
+
+```bash
+MAIL_PROVIDER=smtp
+SMTP_USERNAME=payroll@kandkmedia.co.za   # the mailbox to send from
+SMTP_PASSWORD=...                        # that mailbox's password — never commit it
+SMTP_HOST=mail.kandkmedia.co.za          # default
+SMTP_PORT=465                            # default; 587 (STARTTLS) also works
+```
+
+Emails are sent as that mailbox. Use **Company & Settings → Send Test
+Email** to check: a wrong password, or the host blocking outgoing mail
+ports (Render does on some plans), is reported in plain words. Set
+`MAIL_PROVIDER=resend` (the default) to go back to Resend.
+
 ## Making payslip emails actually send
 
 This isn't a stub — `EmailService` sends via **Resend's HTTPS API**

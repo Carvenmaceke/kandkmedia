@@ -2905,7 +2905,7 @@ function AdminLevels({ onUpdateLevel, onAddLevel }) {
 
 const ASSIGNABLE_ROLES = ["employee", "manager", "hr", "admin", "it_support"];
 
-function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh }) {
+function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh, onVerifyEmail }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -2932,8 +2932,21 @@ function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh }) {
                   )}
                 </td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.email}</td>
-                <td style={{ padding: "10px 14px" }}><Pill tone="green">Active</Pill></td>
-                <td style={{ padding: "10px 14px" }}><KeyRound size={15} color={T.muted} style={{ cursor: "pointer" }} title="Reset password" /></td>
+                <td style={{ padding: "10px 14px" }}>
+                  {e.emailVerified === false ? <Pill tone="amber">Unverified</Pill> : <Pill tone="green">Active</Pill>}
+                </td>
+                <td style={{ padding: "10px 14px", display: "flex", gap: 10, alignItems: "center" }}>
+                  {e.emailVerified === false && isMaster && onVerifyEmail && (
+                    <button
+                      onClick={() => onVerifyEmail(e.id)}
+                      title="Their verification code never arrived — confirm this account manually so they can log in."
+                      style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 8px", fontSize: 11.5, fontWeight: 600, color: T.teal, cursor: "pointer" }}
+                    >
+                      Verify Email
+                    </button>
+                  )}
+                  <KeyRound size={15} color={T.muted} style={{ cursor: "pointer" }} title="Reset password" />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -3709,21 +3722,48 @@ export default function App() {
     } catch (e) { /* non-fatal — falls back to whatever's already known locally */ }
   };
 
+  /** Shared by refreshAppUsers and the login-time bulk fetch — both turn a
+   *  raw GET /api/admin/users response into the same three things: the
+   *  appUserId-by-employeeCode map role changes need, each account's role,
+   *  and whether it's still waiting on email verification (so a stuck
+   *  signup — code never arrived — is visible and fixable from the UI). */
+  const applyAdminUserRows = (users) => {
+    const idMap = {};
+    const roleByCode = {};
+    const verifiedByCode = {};
+    users.forEach((u) => {
+      if (u.employee?.employeeCode) {
+        idMap[u.employee.employeeCode] = u.id;
+        roleByCode[u.employee.employeeCode] = (u.role || "employee").toLowerCase();
+        verifiedByCode[u.employee.employeeCode] = u.emailVerified !== false;
+      }
+    });
+    setAppUserIdByEmployeeCode(idMap);
+    setEmployeesState((es) => es.map((e) => (roleByCode[e.id]
+      ? { ...e, role: roleByCode[e.id], emailVerified: verifiedByCode[e.id] }
+      : e)));
+  };
+
   const refreshAppUsers = async () => {
     if (!API_BASE_URL) return;
     try {
       const users = await apiFetch("/api/admin/users");
-      const map = {};
-      const roleByCode = {};
-      users.forEach((u) => {
-        if (u.employee?.employeeCode) {
-          map[u.employee.employeeCode] = u.id;
-          roleByCode[u.employee.employeeCode] = (u.role || "employee").toLowerCase();
-        }
-      });
-      setAppUserIdByEmployeeCode(map);
-      setEmployeesState((es) => es.map((e) => (roleByCode[e.id] ? { ...e, role: roleByCode[e.id] } : e)));
+      applyAdminUserRows(users);
     } catch (e) { /* non-fatal — role changes will just fail with a clear error if attempted */ }
+  };
+
+  const verifyUserEmail = async (employeeId) => {
+    const appUserId = appUserIdByEmployeeCode[employeeId];
+    if (!appUserId) {
+      alert("Couldn't find this account's server record — try Refresh first.");
+      return;
+    }
+    try {
+      await apiFetch(`/api/admin/users/${appUserId}/verify-email`, { method: "PUT" });
+      setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, emailVerified: true } : e)));
+    } catch (e) {
+      alert(`Couldn't verify this account: ${e.message}`);
+    }
   };
 
   const handleLogin = async (email, password) => {
@@ -3774,18 +3814,7 @@ export default function App() {
             withRoles.forEach((m) => byId.set(m.id, m));
             return Array.from(byId.values());
           });
-          if (adminUsers) {
-            const map = {};
-            const roleByCode2 = {};
-            adminUsers.forEach((u) => {
-              if (u.employee?.employeeCode) {
-                map[u.employee.employeeCode] = u.id;
-                roleByCode2[u.employee.employeeCode] = (u.role || "employee").toLowerCase();
-              }
-            });
-            setAppUserIdByEmployeeCode(map);
-            setEmployeesState((es) => es.map((e) => (roleByCode2[e.id] ? { ...e, role: roleByCode2[e.id] } : e)));
-          }
+          if (adminUsers) applyAdminUserRows(adminUsers);
           // Payroll processing (and the amounts it shows) is HR-only now — Admin/Master/IT
           // Support don't have a payroll screen to feed, and the endpoint would 403 for them.
           if (mapped.role === "hr") fetchPayrollForPeriod(mappedList);
@@ -4369,7 +4398,7 @@ export default function App() {
         {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
         {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
 
-        {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} />}
+        {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} onVerifyEmail={verifyUserEmail} />}
         {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} canSeeSalary={false} />}
         {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
         {viewMode === "role" && role === "master" && masterTab === "workSchedule" && <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} />}

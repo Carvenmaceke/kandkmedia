@@ -100,6 +100,28 @@ public class AdminController {
     }
 
     /**
+     * Manually confirms an account's email — the escape hatch for when a
+     * signup's verification code never arrived (mail delivery down/
+     * misconfigured) and the account owner is otherwise locked out for
+     * good: they can't log in (unverified) and can't sign up again either
+     * (the email's already taken). Idempotent — verifying an already-
+     * verified account is a no-op, not an error.
+     */
+    @PutMapping("/users/{id}/verify-email")
+    public AppUser verifyUserEmail(@PathVariable Long id) {
+        AppUser user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found."));
+        if (!user.isEmailVerified()) {
+            user.setEmailVerified(true);
+            user.setVerificationCode(null);
+            user.setVerificationCodeExpiresAt(null);
+            user.setVerificationCodeSentAt(null);
+            userRepository.save(user);
+        }
+        return user;
+    }
+
+    /**
      * Master-exclusive: this is the only role-assignment endpoint in the
      * system, and @PreAuthorize enforces MASTER specifically — not covered
      * by the broader /api/admin/** rule that also lets ADMIN/IT_SUPPORT in,

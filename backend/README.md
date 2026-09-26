@@ -67,9 +67,13 @@ Set these as actual environment variables on wherever you deploy this
 `POST /api/auth/signup` and `POST /api/auth/login` return a JWT. Send it as
 `Authorization: Bearer <token>` on every other request.
 
-Signup rejects any email that doesn't end in `@kandkmedia.co.za`
-(configurable via the `ALLOWED_EMAIL_DOMAIN` env var) and rejects `MANAGER`
-as a chosen role — a manager is promoted by HR, not self-selected.
+Signup only accepts `@kandkmedia.co.za` and `@insideeducation.co.za`
+emails (comma-separated `ALLOWED_EMAIL_DOMAINS` env var), rejects an email
+that already has an account (`GET /api/auth/check-email?email=` lets the
+form check as you type), and emails a 6-digit code the person must enter
+before they can log in. If the code can't be sent, signup is rolled back and
+the error includes the email provider's reason. It rejects `MANAGER` as a
+chosen role — a manager is promoted by HR, not self-selected.
 
 ## Route map (mirrors the frontend's role split)
 
@@ -128,6 +132,48 @@ PDFBox, see `OnboardingDocumentPdfService`) containing everything the
 employee entered at signup, plus their signature — this is what backs the
 frontend's "Download Onboarding Document" button in the employee profile
 drawer.
+
+## Sending email through a company mailbox (no DNS changes)
+
+Instead of Resend, the backend can log in to an ordinary company mailbox
+and send from it. Set on the host (Render → Environment):
+
+```bash
+MAIL_PROVIDER=smtp
+SMTP_USERNAME=payroll@kandkmedia.co.za   # the mailbox to send from
+SMTP_PASSWORD=...                        # that mailbox's password — never commit it
+SMTP_HOST=mail.kandkmedia.co.za          # default
+SMTP_PORT=465                            # default; 587 (STARTTLS) also works
+```
+
+Emails are sent as that mailbox.
+
+**Render's free plan blocks ports 25, 465 and 587**, so a company mailbox
+on those ports can't be reached from there. A relay on port 2525 works —
+e.g. Brevo (free, 300/day):
+
+```bash
+MAIL_PROVIDER=smtp
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=2525                         # STARTTLS
+SMTP_USERNAME=<Brevo SMTP login, e.g. 8a1b2c001@smtp-brevo.com>
+SMTP_PASSWORD=<Brevo SMTP key, xsmtpsib-...>
+SMTP_FROM=support@kandkmedia.co.za     # a sender verified in Brevo
+```
+
+Or skip SMTP entirely and use Brevo's HTTPS API (never port-blocked, and
+Brevo's own error text is shown if something is wrong):
+
+```bash
+MAIL_PROVIDER=brevo
+BREVO_API_KEY=<Brevo API key, xkeysib-...>   # SMTP & API → API Keys
+SMTP_FROM=support@kandkmedia.co.za           # a sender verified in Brevo
+```
+
+Use **Company & Settings → Send Test
+Email** to check: a wrong password, or the host blocking outgoing mail
+ports (Render does on some plans), is reported in plain words. Set
+`MAIL_PROVIDER=resend` (the default) to go back to Resend.
 
 ## Making payslip emails actually send
 
@@ -249,6 +295,53 @@ top of `frontend/src/App.jsx` to wherever this backend ends up running
 (e.g. `https://api.kandkmedia.co.za`), then rebuild and redeploy the
 frontend. It's empty by default — the Support form says plainly that it
 isn't connected yet rather than pretending a click did something.
+
+## Office work schedule
+
+HR gives each employee a plan on the Work Schedule screen
+(`PUT /api/hr/employees/{id}/schedule`):
+
+- **Rotating** — days per office, e.g. `{"mode":"ROTATING","officeDays":{"Midrand":2,"Rosebank":1}}`.
+  The system picks the days: never 3 in a row (4 days is always Mon, Tue,
+  Thu, Fri; 5 is every day), 1–2 day plans always have a gap day, the days
+  change every week, and in split plans the office per day rotates too.
+- **Every day / specific days** — `{"mode":"FIXED","fixedDays":{"MONDAY":"Midrand",...}}`,
+  used as-is every week (for mandatory days).
+- `{"daysPerWeek": null}` clears a plan; `DELETE /api/hr/schedule` clears all.
+
+`GET /api/hr/schedule/week?start=YYYY-MM-DD` returns any week's schedule,
+headcount vs desk capacity (Midrand, Sandton, Rosebank) and warnings.
+Schedules are computed live (`WorkScheduleService`), so there's nothing to
+regenerate. Employees see this and next week at `GET /api/me/schedule`.
+
+## IT Assistant (Groq AI)
+
+The IT Assistant chat calls `POST /api/me/assistant`, which asks a
+Groq-hosted model (`ItAssistantService`, Groq's OpenAI-compatible API)
+using a system prompt built from the company's IT Operations
+Documentation. The API key lives **only** on the server:
+
+```bash
+export GROQ_API_KEY=gsk_...                 # from console.groq.com/keys — never commit it
+export GROQ_MODEL=llama-3.3-70b-versatile   # optional; any Groq chat model id
+```
+
+Without `GROQ_API_KEY` the endpoint returns 503 and the chat falls back to
+its built-in keyword answers. Each person is limited to 15 messages a
+minute, and only the last 12 turns are sent to the model.
+
+## Payslip layout
+
+`PayslipPdfService` draws every payslip with PDFBox in the approved
+K & K Media design (US Letter): a navy **PAYSLIP** header bar, a grey
+details panel (company, employee code/name/address, company address,
+payment date, date engaged, bank account and branch code), side-by-side
+**EARNINGS** / **DEDUCTIONS** boxes with shaded totals, a navy **NETT PAY**
+bar, **YEAR TO DATE TOTALS** (South African tax year, from March) with the
+employer's UIF contribution, and an **ADDITIONAL INFO** box with the pay
+period, job title, department, tax number and — once finalized — the
+payslip ID, verification code and QR code. It uses the PDF standard
+Helvetica fonts, so the server needs no office software or system fonts.
 
 ## Payslip document security
 

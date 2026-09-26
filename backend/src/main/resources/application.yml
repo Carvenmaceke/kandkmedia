@@ -54,17 +54,39 @@ app:
   # testing before a sending domain is verified in Resend, or your real
   # verified address (e.g. payroll@kandkmedia.co.za) once it is.
   mail-from: ${MAIL_FROM:payroll@kandkmedia.co.za}
+  mail:
+    # "resend" (HTTPS API, default), "brevo" (Brevo HTTPS API) or "smtp" (log in to a mailbox / relay).
+    provider: ${MAIL_PROVIDER:resend}
+    smtp:
+      host: ${SMTP_HOST:mail.kandkmedia.co.za}
+      port: ${SMTP_PORT:465}
+      # ssl (465) / starttls (587) / none — blank picks from the port.
+      security: ${SMTP_SECURITY:}
+      username: ${SMTP_USERNAME:}
+      password: ${SMTP_PASSWORD:}
+      # Sender address when it differs from the login (relays like Brevo) — must be verified there.
+      from: ${SMTP_FROM:}
+    brevo:
+      # Brevo API key (xkeysib-…). Sender comes from SMTP_FROM, else MAIL_FROM — must be verified in Brevo.
+      api-key: ${BREVO_API_KEY:}
   jwt:
     # Override with a long random secret via the JWT_SECRET env var in every real environment.
     secret: ${JWT_SECRET:change-this-secret-before-deploying-to-production}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
-  # Only accounts with this email domain may sign up — mirrors the frontend's rule.
-  allowed-email-domain: ${ALLOWED_EMAIL_DOMAIN:kandkmedia.co.za}
+  # Only accounts with these email domains (comma-separated) may sign up —
+  # mirrors the frontend's rule.
+  allowed-email-domains: ${ALLOWED_EMAIL_DOMAINS:kandkmedia.co.za,insideeducation.co.za}
   # Where the QR code on a payslip points. Currently resolves to the JSON
   # verification API itself (see PublicController) — there's no human-facing
   # "Document Verified" webpage yet, so scanning it shows raw JSON for now.
   verification-base-url: ${VERIFICATION_BASE_URL:http://localhost:8080/api/public/verify}
   support-email: ${SUPPORT_EMAIL:itsupport@kandkmedia.co.za}
+  # IT Assistant chatbot (Groq). Set GROQ_API_KEY as an environment variable
+  # on the server — never commit it. Unset = the chat uses its built-in
+  # keyword answers instead.
+  groq:
+    api-key: ${GROQ_API_KEY:}
+    model: ${GROQ_MODEL:llama-3.3-70b-versatile}
   payslip-delivery:
     auto-send: ${PAYSLIP_AUTO_SEND:true}
     # The job checks daily at this hour:minute (server time) whether today

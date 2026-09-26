@@ -19,7 +19,7 @@ public class SignupRequest {
 
     /**
      * Domain restriction (must end in @kandkmedia.co.za) is enforced in
-     * AuthService against the configured app.allowed-email-domain, not here,
+     * AuthService against the configured app.allowed-email-domains, not here,
      * so it stays configurable without a redeploy.
      */
     @NotBlank

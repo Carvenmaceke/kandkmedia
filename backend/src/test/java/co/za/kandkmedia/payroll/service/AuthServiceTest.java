@@ -58,7 +58,7 @@ class AuthServiceTest {
             leaveTypeRepository, passwordEncoder, authenticationManager, jwtService, emailService);
 
     AuthServiceTest() {
-        ReflectionTestUtils.setField(authService, "allowedEmailDomain", "kandkmedia.co.za");
+        ReflectionTestUtils.setField(authService, "allowedEmailDomain", "kandkmedia.co.za, insideeducation.co.za");
         ReflectionTestUtils.setField(jwtService, "secret", "test-secret-at-least-32-bytes-long-for-hs256");
         ReflectionTestUtils.setField(jwtService, "expirationMs", 3600000L);
         when(leaveTypeRepository.findAll()).thenReturn(List.of());
@@ -69,7 +69,7 @@ class AuthServiceTest {
             return e;
         });
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(emailService.sendVerificationCode(anyString(), anyString(), anyString())).thenReturn(true);
+        when(emailService.verificationCodeSendError(anyString(), anyString(), anyString())).thenReturn(null);
     }
 
     private SignupRequest signupRequest() {
@@ -111,12 +111,12 @@ class AuthServiceTest {
         assertThat(captor.getValue().isEmailVerified()).isFalse();
         assertThat(captor.getValue().getVerificationCode()).matches("\\d{6}");
 
-        verify(emailService).sendVerificationCode(org.mockito.ArgumentMatchers.eq("jane@kandkmedia.co.za"), anyString(), anyString());
+        verify(emailService).verificationCodeSendError(org.mockito.ArgumentMatchers.eq("jane@kandkmedia.co.za"), anyString(), anyString());
     }
 
     @Test
     void signupRollsBackWhenTheVerificationEmailFailsToSend() {
-        when(emailService.sendVerificationCode(anyString(), anyString(), anyString())).thenReturn(false);
+        when(emailService.verificationCodeSendError(anyString(), anyString(), anyString())).thenReturn("Resend API error (403): testing emails only");
 
         assertThatThrownBy(() -> authService.signup(signupRequest()))
                 .isInstanceOf(ResponseStatusException.class)
@@ -228,7 +228,7 @@ class AuthServiceTest {
         authService.resendVerification(req);
 
         assertThat(user.getVerificationCode()).matches("\\d{6}");
-        verify(emailService).sendVerificationCode(org.mockito.ArgumentMatchers.eq("jane@kandkmedia.co.za"), anyString(), anyString());
+        verify(emailService).verificationCodeSendError(org.mockito.ArgumentMatchers.eq("jane@kandkmedia.co.za"), anyString(), anyString());
     }
 
     @Test
@@ -260,5 +260,33 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.resendVerification(req))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("already verified");
+    }
+
+    @Test
+    void signupAcceptsBothCompanyDomainsAndRejectsOthers() {
+        SignupRequest inside = signupRequest();
+        inside.setEmail("thabo@insideeducation.co.za");
+        assertThat(authService.signup(inside).getEmail()).isEqualTo("thabo@insideeducation.co.za");
+
+        SignupRequest gmail = signupRequest();
+        gmail.setEmail("someone@gmail.com");
+        assertThatThrownBy(() -> authService.signup(gmail))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("@kandkmedia.co.za or @insideeducation.co.za");
+    }
+
+    @Test
+    void signupFailureShowsWhyTheEmailDidNotSend() {
+        when(emailService.verificationCodeSendError(anyString(), anyString(), anyString())).thenReturn("Resend API error (403): verify a domain");
+        assertThatThrownBy(() -> authService.signup(signupRequest())).hasMessageContaining("verify a domain");
+    }
+
+    @Test
+    void checkEmailReportsDomainAndExistingAccounts() {
+        assertThat(authService.checkEmail("new.person@insideeducation.co.za")).containsEntry("ok", true);
+        assertThat(authService.checkEmail("x@gmail.com")).containsEntry("ok", false);
+        assertThat(authService.checkEmail("not-an-email")).containsEntry("ok", false);
+        when(userRepository.existsByEmail("taken@kandkmedia.co.za")).thenReturn(true);
+        assertThat(authService.checkEmail("Taken@KandKMedia.co.za ")).containsEntry("ok", false).containsEntry("exists", true);
     }
 }

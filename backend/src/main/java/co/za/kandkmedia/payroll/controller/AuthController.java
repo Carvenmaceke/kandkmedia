@@ -23,6 +23,18 @@ public class AuthController {
         return ResponseEntity.ok(authService.signup(request));
     }
 
+    /** Checks an email while the signup form is being filled in: company domain, and not already registered. */
+    @GetMapping("/check-email")
+    public java.util.Map<String, Object> checkEmail(@RequestParam String email) {
+        return authService.checkEmail(email);
+    }
+
+    /** The company domains accepted at signup, so the form's hints stay in sync with the server. */
+    @GetMapping("/email-domains")
+    public java.util.List<String> emailDomains() {
+        return authService.allowedDomains();
+    }
+
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));

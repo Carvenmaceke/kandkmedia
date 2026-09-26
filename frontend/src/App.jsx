@@ -1,38 +1,48 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import jsPDF from "jspdf";
 import {
   Users, Banknote, CalendarDays, FileText, Bell, CheckCircle2, XCircle,
   Clock, ChevronRight, Building2, Search, Download, Eye, X, Send,
   UserCircle2, LayoutDashboard, ClipboardList, Settings as SettingsIcon, LogOut,
   ArrowRight, ArrowLeft, ShieldCheck, SlidersHorizontal, KeyRound, ArrowLeftRight,
   Lock, Mail, Phone as PhoneIcon, AlertCircle, PenLine, Trash2, Paperclip, FileCheck2, LifeBuoy, MapPin, Bot, RefreshCw, UserX,
+  Menu, Sun, Moon, Monitor, Sparkles, EyeOff,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
 /* DESIGN TOKENS                                                          */
 /* ---------------------------------------------------------------------- */
 const T = {
-  navy: "#17110F",       // near-black chrome (was navy)
-  navyDeep: "#0A0706",   // deepest black for gradients
-  teal: "#D81F2C",       // K and K Media brand red — primary accent/actions
-  tealLight: "#FBEAEA",  // light red tint for pills/backgrounds
-  amber: "#B9762A",
-  amberBg: "#FBF0E1",
-  red: "#8C2A2E",        // deep maroon for danger/rejected — distinct from brand red
-  redBg: "#FBEBE9",
-  green: "#2F7A55",
-  greenBg: "#E9F5EE",
-  purple: "#5B4E9E",
-  purpleBg: "#EFEDF8",
-  bg: "#F5F4F3",
-  surface: "#FFFFFF",
-  text: "#1A1414",
-  muted: "#6B5F5D",
-  border: "#E7E1E0",
+  // Every value is a CSS custom property defined in styles.css, so the whole
+  // app re-themes (light/dark) without touching a single inline style.
+  navy: "var(--kk-ink)",          // filled "ink" surfaces (primary buttons, active chips)
+  navyDeep: "var(--kk-ink-deep)",
+  onNavy: "var(--kk-on-ink)",
+  onNavyMuted: "var(--kk-on-ink-muted)",
+  teal: "var(--kk-brand)",        // K and K Media brand red — primary accent/actions
+  tealLight: "var(--kk-brand-soft)",
+  amber: "var(--kk-amber)",
+  amberBg: "var(--kk-amber-bg)",
+  red: "var(--kk-red)",           // danger/rejected — distinct from brand red
+  redBg: "var(--kk-red-bg)",
+  green: "var(--kk-green)",
+  greenBg: "var(--kk-green-bg)",
+  purple: "var(--kk-purple)",
+  purpleBg: "var(--kk-purple-bg)",
+  indigo: "var(--kk-indigo)",
+  indigoBg: "var(--kk-indigo-bg)",
+  neutralBg: "var(--kk-neutral-bg)",
+  bg: "var(--kk-surface-2)",
+  page: "var(--kk-bg)",
+  surface: "var(--kk-surface)",
+  text: "var(--kk-text)",
+  text2: "var(--kk-text-2)",
+  muted: "var(--kk-muted)",
+  border: "var(--kk-border)",
+  overlay: "var(--kk-overlay)",
 };
 
-const sans = "'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif";
-const mono = "'IBM Plex Mono', 'SF Mono', Consolas, monospace";
+const sans = "var(--kk-font)";
+const mono = "var(--kk-font-mono)";
 const DEFAULT_PASSWORD = "password123";
 
 /* ---------------------------------------------------------------------- */
@@ -52,8 +62,14 @@ let COMPANY = {
   officeAvailability: "",
 };
 
-const ALLOWED_EMAIL_DOMAIN = "kandkmedia.co.za";
-const isCompanyEmail = (email) => (email || "").toLowerCase().trim().endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
+// Company email domains accepted at signup (mirrors the backend's app.allowed-email-domains).
+const ALLOWED_EMAIL_DOMAINS = ["kandkmedia.co.za", "insideeducation.co.za"];
+const ALLOWED_EMAIL_DOMAIN = ALLOWED_EMAIL_DOMAINS[0];
+const DOMAINS_TEXT = ALLOWED_EMAIL_DOMAINS.map((d) => `@${d}`).join(" or ");
+const isCompanyEmail = (email) => {
+  const e = (email || "").toLowerCase().trim();
+  return ALLOWED_EMAIL_DOMAINS.some((d) => e.endsWith(`@${d}`) && e.length > d.length + 1);
+};
 
 // `let`, not `const` — App syncs this from React state each render (same
 // pattern as EMPLOYEES/LEAVE_BALANCES) so HR's salary-structure edits and
@@ -73,11 +89,13 @@ const SUPPORT_EMAIL = "itsupport@kandkmedia.co.za";
 // somewhere reachable, e.g. "https://api.kandkmedia.co.za". Left empty
 // means "not connected yet" — the Support form will say so plainly rather
 // than pretending to send.
-const API_BASE_URL = "https://kandkmedia.onrender.com";
+// Overridable per build via VITE_API_BASE_URL (e.g. in a .env.local file);
+// set it to an empty string for frontend-only local development.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://kandkmedia.onrender.com";
 const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payslip Issue", "Leave Application Issue", "Account / Access Issue", "Other"];
 const OFFICE_ISSUE_TYPES = ["Hardware / Equipment", "Network / WiFi", "Printer / Scanner", "Workstation / Computer", "Other"];
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
-const OFFICES = ["Midrand", "Sandton"];
+const OFFICES = ["Midrand", "Sandton", "Rosebank"];
 const TICKET_STATUSES = ["Open", "In Progress", "Resolved"];
 
 // Sourced from K and K Media's internal "IT Operations Documentation"
@@ -209,70 +227,244 @@ const money = (n) => `R${n.toLocaleString("en-ZA")}`;
 
 function Pill({ tone = "muted", children }) {
   const map = {
-    muted: { bg: "#EEF0F3", fg: T.muted }, green: { bg: T.greenBg, fg: T.green },
+    muted: { bg: T.neutralBg, fg: T.muted }, green: { bg: T.greenBg, fg: T.green },
     amber: { bg: T.amberBg, fg: T.amber }, red: { bg: T.redBg, fg: T.red },
     teal: { bg: T.tealLight, fg: T.teal }, purple: { bg: T.purpleBg, fg: T.purple },
-    indigo: { bg: "#EBEAFB", fg: "#4F46C4" },
+    indigo: { bg: T.indigoBg, fg: T.indigo },
   }[tone];
-  return <span style={{ background: map.bg, color: map.fg, fontSize: 12, fontWeight: 600, padding: "3px 9px", borderRadius: 4, whiteSpace: "nowrap" }}>{children}</span>;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: map.bg, color: map.fg, fontSize: 11.5, fontWeight: 600, padding: "3px 10px 3px 8px", borderRadius: 999, whiteSpace: "nowrap", lineHeight: 1.5 }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", opacity: 0.85 }} />{children}
+    </span>
+  );
 }
 function RolePill({ role }) { return <Pill tone={ROLE_TONE[role]}>{ROLE_LABEL[role]}</Pill>; }
 function StatusPill({ status }) {
   const tone = status === "Approved" ? "green" : status === "Rejected" ? "red" : "amber";
   return <Pill tone={tone}>{status}</Pill>;
 }
-function Card({ children, style, ...rest }) {
-  return <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, ...style }} {...rest}>{children}</div>;
-}
-function SectionTitle({ children, sub }) {
+function Card({ children, style, className = "", ...rest }) {
+  // A card that wraps a data table scrolls horizontally on small screens
+  // instead of squashing columns.
+  const hasTable = React.Children.toArray(children).some((c) => c && c.type === "table");
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 4, height: 18, background: T.teal, borderRadius: 2 }} />
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 650, color: T.text }}>{children}</h2>
-      </div>
-      {sub && <div style={{ marginLeft: 14, marginTop: 4, fontSize: 13, color: T.muted }}>{sub}</div>}
+    <div className={`kk-card ${hasTable ? "table-wrap" : ""} ${className}`} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: "var(--kk-radius)", boxShadow: "var(--kk-shadow-sm)", ...style }} {...rest}>
+      {children}
     </div>
   );
 }
-function StatCard({ icon: Icon, label, value, tone, title }) {
-  const c = tone || T.navy;
+/* Page-level headers get a banner with the page's icon and accent colour;
+ * anything else rendered with SectionTitle stays a simple sub-heading. */
+const PAGE_HEADERS = [
+  ["HR Dashboard", "LayoutDashboard", "brand"], ["Employees", "Users", "indigo"], ["Payroll", "Banknote", "green"],
+  ["Leave Requests", "CalendarDays", "amber"],
+  ["Salary Structure", "SlidersHorizontal", "purple"], ["Work Schedule", "Clock", "indigo"],
+  ["System Overview", "LayoutDashboard", "purple"], ["Company & Settings", "Building2", "brand"],
+  ["User Accounts", "ShieldCheck", "purple"], ["Support", "LifeBuoy", "indigo"], ["Office Issues", "MapPin", "amber"],
+  ["Settings", "SettingsIcon", "brand"], ["My Team", "Users", "green"], ["IT Support", "LifeBuoy", "indigo"],
+  ["Employee Dashboard", "LayoutDashboard", "brand"], ["My Profile", "UserCircle2", "brand"],
+];
+const PAGE_ICON_COMPONENTS = { LayoutDashboard, Users, Banknote, ClipboardList, CalendarDays, SlidersHorizontal, Clock, Building2, ShieldCheck, LifeBuoy, MapPin, SettingsIcon, UserCircle2 };
+const ACCENTS = { brand: "var(--kk-brand)", indigo: "var(--kk-indigo)", green: "var(--kk-green)", amber: "var(--kk-amber)", purple: "var(--kk-purple)", red: "var(--kk-red)" };
+
+/** Table row shown when a table has nothing in it yet. */
+function EmptyRow({ colSpan, icon: Icon = ClipboardList, children }) {
   return (
-    <Card style={{ padding: "16px 18px", flex: 1, minWidth: 150 }} title={title}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 30, height: 30, borderRadius: 6, background: T.tealLight, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={16} color={T.teal} /></div>
-        <span style={{ fontSize: 12.5, color: T.muted, fontWeight: 600 }}>{label}</span>
-      </div>
-      <div style={{ fontFamily: mono, fontSize: 26, fontWeight: 600, color: c }}>{value}</div>
-      {title && <div style={{ fontSize: 10.5, color: T.muted, marginTop: 6, lineHeight: 1.4 }}>{title}</div>}
-    </Card>
+    <tr className="kk-empty-row">
+      <td colSpan={colSpan}>
+        <div className="kk-empty">
+          <div className="kk-empty-icon"><Icon size={20} /></div>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: T.text2 }}>{children}</div>
+        </div>
+      </td>
+    </tr>
   );
 }
-function Button({ children, onClick, variant = "primary", small, disabled, icon: Icon, type = "button", full }) {
+
+function SectionTitle({ children, sub, actions, icon, accent }) {
+  const text = React.Children.toArray(children).map((c) => (typeof c === "string" || typeof c === "number" ? c : "")).join("");
+  const match = PAGE_HEADERS.find(([t]) => text === t || text.startsWith(`${t} —`) || text.startsWith(`${t} &`));
+  if (match || icon) {
+    const Icon = icon || PAGE_ICON_COMPONENTS[match[1]];
+    const color = ACCENTS[accent || match?.[2] || "brand"];
+    return (
+      <div className="kk-page-hero" style={{ "--accent": color }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0, flex: "1 1 320px" }}>
+          <div className="kk-page-hero-icon"><Icon size={22} color="#fff" /></div>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: "-0.025em", color: T.text, lineHeight: 1.2 }}>{children}</h1>
+            {sub && <div style={{ marginTop: 5, fontSize: 13.5, color: T.muted, lineHeight: 1.5, maxWidth: 760 }}>{sub}</div>}
+          </div>
+        </div>
+        {actions && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", position: "relative" }}>{actions}</div>}
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginBottom: 14, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ minWidth: 0 }}>
+        <h2 className="kk-subheading">{children}</h2>
+        {sub && <div style={{ marginTop: 4, fontSize: 13, color: T.muted, lineHeight: 1.5, maxWidth: 720 }}>{sub}</div>}
+      </div>
+      {actions && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{actions}</div>}
+    </div>
+  );
+}
+function StatCard({ icon: Icon, label, value, tone, title, progress }) {
+  const accent = tone || T.teal;
+  return (
+    <div className="kk-stat-card" style={{ "--accent": accent }} title={title}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <span style={{ fontSize: 12.5, color: T.muted, fontWeight: 600 }}>{label}</span>
+        <div className="kk-stat-icon"><Icon size={17} color="#fff" /></div>
+      </div>
+      <div className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em", color: T.text, lineHeight: 1.1, marginTop: 10 }}>{value}</div>
+      {progress != null && (
+        <div className="kk-progress" style={{ marginTop: 12 }}><div style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></div>
+      )}
+      {title && <div style={{ fontSize: 11.5, color: T.muted, marginTop: 10, lineHeight: 1.45 }}>{title}</div>}
+    </div>
+  );
+}
+function Button({ children, onClick, variant = "primary", small, disabled, icon: Icon, type = "button", full, title }) {
   const styles = {
-    primary: { bg: T.navy, fg: "#fff", border: T.navy }, teal: { bg: T.teal, fg: "#fff", border: T.teal },
-    ghost: { bg: "transparent", fg: T.navy, border: T.border }, danger: { bg: "transparent", fg: T.red, border: T.red },
+    primary: { bg: T.navy, fg: T.onNavy, border: T.navy }, teal: { bg: T.teal, fg: "#fff", border: T.teal },
+    ghost: { bg: T.surface, fg: T.text, border: T.border }, danger: { bg: "transparent", fg: T.red, border: T.red },
     success: { bg: "transparent", fg: T.green, border: T.green },
   }[variant];
   return (
-    <button type={type} onClick={onClick} disabled={disabled} style={{
-      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+    <button type={type} onClick={onClick} disabled={disabled} title={title} className={`kk-btn kk-btn--${variant === "teal" ? "brand" : variant}`} style={{
+      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
       background: styles.bg, color: styles.fg, border: `1px solid ${styles.border}`,
-      borderRadius: 6, padding: small ? "5px 10px" : "9px 14px", width: full ? "100%" : "auto",
+      borderRadius: small ? 8 : 10, padding: small ? "6px 11px" : "10px 16px", width: full ? "100%" : "auto",
       fontSize: small ? 12.5 : 13.5, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer",
-      opacity: disabled ? 0.45 : 1, fontFamily: sans,
-    }}>{Icon && <Icon size={small ? 13 : 15} />}{children}</button>
+      opacity: disabled ? 0.5 : 1, fontFamily: sans, whiteSpace: "nowrap", lineHeight: 1.2,
+    }}>{Icon && <Icon size={small ? 14 : 16} />}{children}</button>
   );
 }
 function Field({ label, children }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>{label}</label>
-      <div style={{ marginTop: 5 }}>{children}</div>
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ fontSize: 12.5, fontWeight: 600, color: T.text2 }}>{label}</label>
+      <div style={{ marginTop: 6 }}>{children}</div>
     </div>
   );
 }
-const inputStyle = { width: "100%", padding: "9px 10px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13.5, fontFamily: sans, boxSizing: "border-box" };
+const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${T.border}`, fontSize: 14, fontFamily: sans, boxSizing: "border-box", background: T.surface, color: T.text };
+
+/** Avatar + name (+ muted second line) for the first column of people tables. */
+function PersonCell({ name, sub, suffix }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+      <Avatar name={name} size={34} />
+      <div style={{ minWidth: 0, lineHeight: 1.3 }}>
+        <div style={{ fontWeight: 650, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}{suffix}</div>
+        {sub && <div style={{ fontSize: 12, color: T.muted, fontWeight: 450, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** Pill-style segmented filter (e.g. Active / Terminated / All). */
+function Segmented({ options, value, onChange }) {
+  return (
+    <div className="kk-tabs kk-segmented" role="tablist" style={{ marginBottom: 0 }}>
+      {options.map((o) => {
+        const [val, label] = Array.isArray(o) ? o : [o, o];
+        return <button key={val} role="tab" aria-selected={value === val} className="kk-tab" onClick={() => onChange(val)}>{label}</button>;
+      })}
+    </div>
+  );
+}
+
+/** Segmented-control tabs used by every in-page tab bar. */
+function Tabs({ tabs, active, onChange }) {
+  if (tabs.length < 2) return null;
+  return (
+    <div className="kk-tabs" role="tablist">
+      {tabs.map((t) => (
+        <button key={t.id} role="tab" aria-selected={active === t.id} className="kk-tab" onClick={() => onChange(t.id)}>{t.label}</button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* TOASTS — non-blocking replacement for window.alert()                  */
+/* ---------------------------------------------------------------------- */
+const toastListeners = new Set();
+let toastSeq = 0;
+/** Shows a toast. Tone is inferred from the wording when not given, so the
+ *  many existing "Couldn't …" messages come out as errors automatically. */
+function notify(message, tone) {
+  const text = String(message);
+  const t = tone || (/^(couldn't|could not|send failed|no |.*needs a connected)/i.test(text) ? "error" : "success");
+  const toast = { id: ++toastSeq, text, tone: t };
+  toastListeners.forEach((fn) => fn(toast));
+}
+function Toaster() {
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => {
+    const onToast = (toast) => {
+      setToasts((ts) => [...ts, toast]);
+      setTimeout(() => setToasts((ts) => ts.filter((x) => x.id !== toast.id)), toast.tone === "error" ? 7000 : 4000);
+    };
+    toastListeners.add(onToast);
+    return () => toastListeners.delete(onToast);
+  }, []);
+  if (toasts.length === 0) return null;
+  return (
+    <div className="kk-toasts" role="status" aria-live="polite">
+      {toasts.map((t) => {
+        const Icon = t.tone === "error" ? AlertCircle : CheckCircle2;
+        return (
+          <div key={t.id} className="kk-toast">
+            <Icon size={17} color={t.tone === "error" ? T.red : T.green} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ flex: 1 }}>{t.text}</span>
+            <button onClick={() => setToasts((ts) => ts.filter((x) => x.id !== t.id))} aria-label="Dismiss" style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, padding: 0, lineHeight: 0 }}><X size={14} /></button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* THEME — light / dark / follow system, persisted per browser            */
+/* ---------------------------------------------------------------------- */
+const THEME_KEY = "kk_theme";
+function useTheme() {
+  const [pref, setPref] = useState(() => { try { return localStorage.getItem(THEME_KEY) || "system"; } catch (e) { return "system"; } });
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => document.documentElement.setAttribute("data-theme", pref === "dark" || (pref === "system" && mq.matches) ? "dark" : "light");
+    apply();
+    try { localStorage.setItem(THEME_KEY, pref); } catch (e) { /* ignore */ }
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [pref]);
+  const cycle = () => setPref((p) => (p === "light" ? "dark" : p === "dark" ? "system" : "light"));
+  return { pref, cycle };
+}
+function ThemeToggle({ theme, onDark }) {
+  const Icon = theme.pref === "light" ? Sun : theme.pref === "dark" ? Moon : Monitor;
+  const label = `Theme: ${theme.pref} (click to change)`;
+  return (
+    <button onClick={theme.cycle} className="kk-icon-btn" title={label} aria-label={label}
+      style={onDark ? { background: "rgba(255,255,255,0.08)", borderColor: "rgba(255,255,255,0.12)", color: "#fff" } : undefined}>
+      <Icon size={16} />
+    </button>
+  );
+}
+
+function Avatar({ name, size = 34, tone = T.teal }) {
+  const initials = (name || "?").split(" ").filter(Boolean).map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", background: `linear-gradient(135deg, ${tone}, var(--kk-brand-strong))`, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.36, fontWeight: 700, flexShrink: 0, letterSpacing: "0.02em" }}>
+      {initials}
+    </div>
+  );
+}
 
 /* ---------------------------------------------------------------------- */
 /* SIGNATURE PAD — draw-to-sign, captured as a PNG data URL               */
@@ -289,7 +481,7 @@ function SignaturePad({ value, onChange, height = 130 }) {
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = T.text;
+    ctx.strokeStyle = "#111827"; // canvas can't read CSS vars; signatures are always dark ink on white
     if (value) {
       const img = new Image();
       img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -434,95 +626,127 @@ function ProofUpload({ value, onChange, required }) {
 }
 
 
+/* ---------------------------------------------------------------------- */
 /* PDF GENERATION — builds an actual downloadable payslip PDF client-side */
 /* ---------------------------------------------------------------------- */
-function downloadPayslipPdf(emp, month, figures) {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const marginX = 42;
-  let y;
-
-  // Header band — matches the on-screen payslip's dark header with red accent
-  doc.setFillColor(23, 17, 15);
-  doc.rect(0, 0, pageWidth, 108, "F");
-  doc.setFillColor(216, 31, 44);
-  doc.rect(marginX, 26, 40, 3, "F");
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.text(COMPANY.name, marginX, 50);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(201, 191, 188);
-  const addressLines = doc.splitTextToSize(COMPANY.address, 300);
-  doc.text(addressLines, marginX, 64);
-  let afterAddressY = 64 + (addressLines.length - 1) * 10;
-  if (COMPANY.regNo) {
-    afterAddressY += 12;
-    doc.text(`Reg No: ${COMPANY.regNo}`, marginX, afterAddressY);
-  }
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text(emp.name, pageWidth - marginX, 50, { align: "right" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(201, 191, 188);
-  doc.text(`${emp.id} \u00b7 ${emp.position}`, pageWidth - marginX, 64, { align: "right" });
-  doc.text(`Pay Period: ${month}`, pageWidth - marginX, 78, { align: "right" });
-
-  const row = (label, value, bold) => {
-    doc.setFont("helvetica", bold ? "bold" : "normal");
-    doc.setFontSize(10.5);
-    doc.setTextColor(26, 20, 20);
-    doc.text(label, marginX, y);
-    doc.text(money(value), pageWidth - marginX, y, { align: "right" });
-    doc.setDrawColor(231, 225, 224);
-    doc.line(marginX, y + 5, pageWidth - marginX, y + 5);
-    y += 19;
+// jsPDF is ~350KB, and most sessions never generate a PDF — load it on
+// demand (code-split) instead of shipping it in the initial bundle.
+let jsPDFPromise = null;
+function loadJsPDF() {
+  if (!jsPDFPromise) jsPDFPromise = import("jspdf").then((m) => m.jsPDF || m.default);
+  return jsPDFPromise;
+}
+/* ---------------------------------------------------------------------- */
+/** Builds the payslip in the approved K & K Media design — the same layout
+ *  the backend's PayslipPdfService draws (US Letter, navy header bar, grey
+ *  details panel, EARNINGS/DEDUCTIONS boxes, NETT PAY bar, YTD/ADDITIONAL
+ *  INFO boxes). Only used when there's no server-generated payslip yet (HR's
+ *  estimate before a draft exists, or offline mode). Coordinates are in PDF
+ *  points measured from the bottom-left, as in the reference document, and
+ *  flipped for jsPDF's top-left origin. */
+async function downloadPayslipPdf(emp, month, figures) {
+  const jsPDF = await loadJsPDF();
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const H = 792;
+  const NAVY = [31, 42, 68], PANEL = [242, 244, 247], RULE = [154, 163, 178], GREY = [102, 102, 102], BLACK = [0, 0, 0], WHITE = [255, 255, 255];
+  const amt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fill = (c, x, y, w, h) => { doc.setFillColor(...c); doc.rect(x, H - y - h, w, h, "F"); };
+  const stroke = (x, y, w, h) => { doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.rect(x, H - y - h, w, h, "S"); };
+  const line = (x1, y1, x2, y2) => { doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.line(x1, H - y1, x2, H - y2); };
+  const txt = (s, x, y, { size = 8.5, bold = false, color = BLACK, align = "left" } = {}) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(...color);
+    doc.text(String(s), x, H - y, { align });
   };
-
-  const sectionHeader = (label) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.setTextColor(216, 31, 44);
-    doc.text(label, marginX, y);
-    y += 16;
+  const fit = (s, maxW, size = 8) => {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(size);
+    let v = String(s || "-");
+    if (doc.getTextWidth(v) <= maxW) return v;
+    while (v && doc.getTextWidth(v + "...") > maxW) v = v.slice(0, -1);
+    return v + "...";
   };
+  const boxWithTitle = (x, y, h, title) => {
+    stroke(x, y, 265, h); fill(NAVY, x, y + h - 18, 265, 18);
+    txt(title, x + 132.5, y + h - 12.5, { size: 10, bold: true, color: WHITE, align: "center" });
+  };
+  const fmtDate = (iso) => { if (!iso) return "-"; const [y, m, d] = String(iso).slice(0, 10).split("-"); return d ? `${d}/${m}/${y}` : "-"; };
+  const periodDate = (() => {
+    const [name, year] = String(month).split(" ");
+    const m = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].indexOf(name);
+    return m < 0 || !year ? null : new Date(Number(year), m + 1, 0); // last day of the pay month
+  })();
+  const companyName = (COMPANY.name || "K & K Media (Pty) Ltd").toUpperCase();
 
-  y = 140;
-  sectionHeader("EARNINGS");
-  row("Basic Salary", figures.basic);
-  if (figures.housing > 0) row("Housing Allowance", figures.housing);
-  if (figures.transport > 0) row("Transport Allowance", figures.transport);
-  if (figures.overtime > 0) row("Overtime", figures.overtime);
-  if (figures.bonus > 0) row("Bonus", figures.bonus);
-  row("Gross Earnings", figures.gross, true);
+  // Header
+  fill(NAVY, 36, 726, 540, 30);
+  txt("PAYSLIP", 46, 736, { size: 15, bold: true, color: WHITE });
+  txt(companyName, 566, 737, { size: 9, color: WHITE, align: "right" });
 
-  y += 12;
-  sectionHeader("DEDUCTIONS");
-  row("PAYE", -figures.paye);
-  row("UIF", -figures.uif);
-  row("Total Deductions", -figures.totalDeductions, true);
+  // Details panel
+  doc.setFillColor(...PANEL); doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.rect(36, H - 626 - 92, 540, 92, "FD");
+  const label = (s, x, y) => txt(s, x, y, { size: 8, bold: true });
+  const value = (s, x, y) => txt(s, x, y, { size: 8 });
+  label("Company", 46, 702); value(fit(companyName, 122), 104, 702);
+  label("Emp Code", 46, 689); value(emp.id || "-", 104, 689);
+  label("Emp Name", 46, 676); value(fit((emp.name || "").toUpperCase(), 122), 104, 676);
+  label("Emp Address", 46, 663);
+  const addr = [
+    [emp.resUnitNumber, emp.resComplexName].filter(Boolean).join(" "),
+    [emp.resStreetNumber, emp.resStreetName].filter(Boolean).join(" "),
+    [emp.resSuburb, emp.resCity].filter(Boolean).join(", "),
+    emp.resPostalCode,
+  ].filter(Boolean).map((l) => fit(l.toUpperCase(), 122));
+  (addr.length ? addr.slice(0, 4) : ["-"]).forEach((l, i) => value(l, 104, 663 - 11 * i));
+  label("Co. Address", 238.4, 702);
+  ["CONSTANTIA SQUARE OFFICE", "16TH ROAD", "RANDJESFONTEIN, MIDRAND", "1685"].forEach((l, i) => value(l, 294.4, 702 - 11 * i));
+  label("Payment Date", 432.8, 702); value(periodDate ? periodDate.toLocaleDateString("en-GB") : "-", 496.8, 702);
+  label("Date Engaged", 432.8, 689); value(fmtDate(emp.start), 496.8, 689);
+  label("Account No", 432.8, 676); value(fit(emp.bankAccountNumber, 76), 496.8, 676);
+  label("Branch Code", 432.8, 663); value(fit(emp.bankBranchCode, 76), 496.8, 663);
+  line(230.4, 634, 230.4, 710); line(424.8, 634, 424.8, 710);
 
-  y += 16;
-  doc.setFillColor(251, 234, 234);
-  doc.roundedRect(marginX, y - 15, pageWidth - marginX * 2, 34, 4, 4, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(23, 17, 15);
-  doc.text("Net Pay", marginX + 12, y + 7);
-  doc.text(money(figures.net), pageWidth - marginX - 12, y + 7, { align: "right" });
+  // Earnings
+  boxWithTitle(36, 286, 330, "EARNINGS");
+  txt("Description", 44, 584, { bold: true }); txt("Days", 221, 584, { bold: true, align: "right" }); txt("Amount (R)", 293, 584, { bold: true, align: "right" });
+  line(42, 580, 295, 580);
+  const earnings = [["Normal Time", figures.basic], ["Housing Allowance", figures.housing], ["Transport Allowance", figures.transport], ["Overtime", figures.overtime], ["Bonus", figures.bonus]]
+    .filter(([l, v], i) => i === 0 || Number(v) > 0);
+  earnings.forEach(([l, v], i) => { const y = 567 - 14 * i; txt(l, 44, y); txt("-", 221, y, { align: "right" }); txt(amt(v), 293, y, { align: "right" }); });
+  fill(PANEL, 36.4, 286.4, 264.2, 20); line(36, 306, 301, 306);
+  txt("Total Earnings", 44, 293, { bold: true }); txt(amt(figures.gross), 293, 293, { bold: true, align: "right" });
 
-  y += 48;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(120, 110, 108);
-  doc.text("Figures are illustrative dummy data, not real tax calculations.", marginX, y);
+  // Deductions
+  boxWithTitle(311, 286, 330, "DEDUCTIONS");
+  txt("Description", 319, 584, { bold: true }); txt("Days", 456, 584, { bold: true, align: "right" });
+  txt("Amount (R)", 508, 584, { bold: true, align: "right" }); txt("Opening Bal.", 568, 584, { bold: true, align: "right" });
+  line(317, 580, 570, 580);
+  const deductions = [["Tax", figures.paye], ["U.I.F.", figures.uif], ["Other Deductions", figures.otherDeductions]].filter(([l, v], i) => i < 2 || Number(v) > 0);
+  deductions.forEach(([l, v], i) => { const y = 567 - 14 * i; txt(l, 319, y); txt("-", 456, y, { align: "right" }); txt(amt(v), 508, y, { align: "right" }); txt("-", 568, y, { align: "right" }); });
+  fill(PANEL, 311.4, 286.4, 264.2, 20); line(311, 306, 576, 306);
+  txt("Total Deductions", 319, 293, { bold: true }); txt(amt(figures.totalDeductions), 508, 293, { bold: true, align: "right" });
 
+  // Nett pay
+  fill(NAVY, 311, 248, 265, 28);
+  txt("NETT PAY", 321, 258, { size: 11, bold: true, color: WHITE });
+  txt(`R ${amt(figures.net)}`, 566, 257, { size: 14, bold: true, color: WHITE, align: "right" });
+
+  // Year to date (this period only — the running total lives on the server)
+  boxWithTitle(36, 88, 150, "YEAR TO DATE TOTALS");
+  txt("Total Earnings", 44, 202); txt(amt(figures.gross), 293, 202, { align: "right" });
+  txt("Total Deductions", 44, 188); txt(amt(figures.totalDeductions), 293, 188, { align: "right" });
+  line(36, 168, 301, 168); fill(PANEL, 36.4, 150, 264.2, 18);
+  txt("CURRENT PERIOD", 168.5, 155, { size: 9, bold: true, align: "center" }); line(36, 150, 301, 150);
+  txt("Co. Contributions", 44, 134); txt(amt(figures.uif), 293, 134, { align: "right" });
+
+  // Additional info
+  boxWithTitle(311, 88, 150, "ADDITIONAL INFO");
+  [["Pay Period", month], ["Job Title", emp.position || "-"], ["Department", emp.dept || "-"], ...(emp.incomeTaxNumber ? [["Tax No", emp.incomeTaxNumber]] : []), ["Status", "Estimate - not yet finalised"]]
+    .forEach(([k, v], i) => { const y = 204 - 12 * i; txt(k, 319, y, { size: 8, bold: true }); txt(fit(v, 192), 372, y, { size: 8 }); });
+
+  // Footer
+  txt("This payslip is computer generated. Amounts in South African Rand (ZAR).", 36, 30, { size: 7.5, color: GREY });
+  txt("Page 1 of 1", 576, 30, { size: 7.5, color: GREY, align: "right" });
+
+  doc.setProperties({ title: "Payslip - K & K Media (Pty) Ltd", author: "K & K Media (Pty) Ltd" });
   const filename = `${month.replace(" ", "-")}-${emp.id}.pdf`;
   triggerPdfDownload(doc, filename);
 }
@@ -550,7 +774,8 @@ function triggerPdfDownload(doc, filename) {
 /* ---------------------------------------------------------------------- */
 /* LEAVE DECISION LETTER — signed approval/decline document               */
 /* ---------------------------------------------------------------------- */
-function downloadLeaveLetter(request, applicant) {
+async function downloadLeaveLetter(request, applicant) {
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 42;
@@ -685,7 +910,8 @@ function downloadLeaveLetter(request, applicant) {
 /* ONBOARDING DOCUMENT — HR-downloadable record of everything an employee */
 /* entered at signup, plus the signature they gave consenting to it       */
 /* ---------------------------------------------------------------------- */
-function downloadOnboardingDocument(employee) {
+async function downloadOnboardingDocument(employee) {
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -810,55 +1036,49 @@ function downloadOnboardingDocument(employee) {
 /* PAYSLIP DOCUMENT                                                       */
 /* ---------------------------------------------------------------------- */
 function Payslip({ emp, month, figures, onClose }) {
-  const row = (label, value, strong) => (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${T.border}`, fontSize: 13.5, fontWeight: strong ? 700 : 400, color: strong ? T.text : "#3A4150" }}>
-      <span>{label}</span><span style={{ fontFamily: mono }}>{money(value)}</span>
-    </div>
-  );
+  const amt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const earnings = [["Normal Time", figures.basic], ["Housing Allowance", figures.housing], ["Transport Allowance", figures.transport], ["Overtime", figures.overtime], ["Bonus", figures.bonus]]
+    .filter(([, v], i) => i === 0 || Number(v) > 0);
+  const deductions = [["Tax", figures.paye], ["U.I.F.", figures.uif], ["Other Deductions", figures.otherDeductions]].filter(([, v], i) => i < 2 || Number(v) > 0);
+  const detail = (k, v) => <div className="kk-ps-row"><span>{k}</span><strong>{v || "-"}</strong></div>;
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.6)", zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }} onClick={onClose}>
-      <div style={{ background: T.surface, width: 520, maxWidth: "100%", borderRadius: 10, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ background: `linear-gradient(135deg, ${T.navy}, ${T.navyDeep})`, padding: "22px 26px" }}>
-          <div style={{ height: 3, width: 46, background: T.teal, borderRadius: 2, marginBottom: 12 }} />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <div style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>{COMPANY.name}</div>
-              <div style={{ color: "#C9BFBC", fontSize: 11.5, marginTop: 3, lineHeight: 1.5 }}>{COMPANY.address}{COMPANY.regNo && <><br />Reg No: {COMPANY.regNo}</>}</div>
-            </div>
-            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} color="#fff" /></button>
-          </div>
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.15)", display: "flex", justifyContent: "space-between", color: "#fff" }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 650 }}>{emp.name}</div>
-              <div style={{ fontSize: 11.5, color: "#C9BFBC", fontFamily: mono }}>{emp.id} · {emp.position}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11.5, color: "#C9BFBC" }}>Pay Period</div>
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{month}</div>
-            </div>
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "32px 16px", overflowY: "auto" }} onClick={onClose}>
+      <div className="kk-pop" style={{ width: 760, maxWidth: "100%" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 8, flexWrap: "wrap", background: "rgba(15,23,42,0.88)", backdropFilter: "blur(8px)", borderRadius: 16, padding: "10px 10px 10px 18px", boxShadow: "0 10px 30px rgba(0,0,0,0.25)" }}>
+          <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}><FileText size={16} /> Payslip preview · {month}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="teal" icon={Download} small onClick={() => downloadPayslipPdf(emp, month, figures)}>Download PDF</Button>
+            <button onClick={onClose} aria-label="Close" style={{ background: "rgba(255,255,255,0.12)", border: "none", cursor: "pointer", color: "#fff", borderRadius: 999, padding: 8, lineHeight: 0 }}><X size={16} /></button>
           </div>
         </div>
-        <div style={{ padding: "20px 26px 26px" }}>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: T.teal, marginBottom: 4 }}>EARNINGS</div>
-          {row("Basic Salary", figures.basic)}
-          {figures.housing > 0 && row("Housing Allowance", figures.housing)}
-          {figures.transport > 0 && row("Transport Allowance", figures.transport)}
-          {figures.overtime > 0 && row("Overtime", figures.overtime)}
-          {figures.bonus > 0 && row("Bonus", figures.bonus)}
-          {row("Gross Earnings", figures.gross, true)}
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: T.teal, margin: "18px 0 4px" }}>DEDUCTIONS</div>
-          {row("PAYE", -figures.paye)}
-          {row("UIF", -figures.uif)}
-          {row("Total Deductions", -figures.totalDeductions, true)}
-          <div style={{ marginTop: 18, background: T.tealLight, borderRadius: 8, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: T.navy }}>Net Pay</span>
-            <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: T.navy }}>{money(figures.net)}</span>
+        <div className="kk-payslip">
+          <div className="kk-ps-bar"><span style={{ fontSize: 20, fontWeight: 800, letterSpacing: "0.02em" }}>PAYSLIP</span><span style={{ fontSize: 12 }}>{(COMPANY.name || "").toUpperCase()}</span></div>
+          <div className="kk-ps-panel">
+            <div>{detail("Emp Code", emp.id)}{detail("Emp Name", (emp.name || "").toUpperCase())}{detail("Position", emp.position)}</div>
+            <div>{detail("Pay Period", month)}{detail("Department", emp.dept)}{detail("Office", emp.office)}</div>
+            <div>{detail("Date Engaged", emp.start)}{detail("Account No", emp.bankAccountNumber)}{detail("Branch Code", emp.bankBranchCode)}</div>
           </div>
-          <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
-            <Button variant="teal" icon={Download} small onClick={() => downloadPayslipPdf(emp, month, figures)}>Download PDF</Button>
-            <Button variant="ghost" icon={Send} small>Resend Email</Button>
+          <div className="kk-ps-cols">
+            <div className="kk-ps-box">
+              <div className="kk-ps-title">EARNINGS</div>
+              <div className="kk-ps-line kk-ps-head"><span>Description</span><span>Amount (R)</span></div>
+              {earnings.map(([k, v]) => <div key={k} className="kk-ps-line"><span>{k}</span><span className="num">{amt(v)}</span></div>)}
+              <div className="kk-ps-total"><span>Total Earnings</span><span className="num">{amt(figures.gross)}</span></div>
+            </div>
+            <div className="kk-ps-box">
+              <div className="kk-ps-title">DEDUCTIONS</div>
+              <div className="kk-ps-line kk-ps-head"><span>Description</span><span>Amount (R)</span></div>
+              {deductions.map(([k, v]) => <div key={k} className="kk-ps-line"><span>{k}</span><span className="num">{amt(v)}</span></div>)}
+              <div className="kk-ps-total"><span>Total Deductions</span><span className="num">{amt(figures.totalDeductions)}</span></div>
+            </div>
           </div>
-          <div style={{ marginTop: 10, fontSize: 10.5, color: T.muted }}>Filename: {month.replace(" ", "-")}-{emp.id}.pdf — figures are illustrative dummy data, not real tax calculations.</div>
+          <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 22px" }}>
+            <div className="kk-ps-net"><span>NETT PAY</span><span className="num">R {amt(figures.net)}</span></div>
+          </div>
+          <div style={{ padding: "14px 22px 18px", fontSize: 11, color: "#666", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+            <span>This payslip is computer generated. Amounts in South African Rand (ZAR).</span>
+            <span>Estimate — the final payslip is issued once payroll is finalised.</span>
+          </div>
         </div>
       </div>
     </div>
@@ -884,8 +1104,8 @@ function DecisionModal({ target, decider, onClose, onConfirm }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.5)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div style={{ background: T.surface, width: 440, maxWidth: "100%", borderRadius: 10, padding: 26, boxShadow: "0 20px 60px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div className="kk-pop" style={{ background: T.surface, width: 440, maxWidth: "100%", borderRadius: 16, padding: 26, boxShadow: "var(--kk-shadow-lg)", border: `1px solid ${T.border}` }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>{approve ? "Approve" : "Decline"} leave request</div>
@@ -945,23 +1165,23 @@ function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo, canS
   const mgr = emp.manager ? empById(emp.manager) : null;
   const managers = EMPLOYEES.filter((e) => e.role === "manager" && e.id !== emp.id);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.45)", zIndex: 40, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
-      <div style={{ width: 340, background: T.surface, height: "100%", padding: 24, boxSizing: "border-box" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div style={{ width: 46, height: 46, borderRadius: "50%", background: T.navy, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16 }}>{emp.name.split(" ").map((n) => n[0]).join("")}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 40, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
+      <div className="kk-drawer" style={{ width: 420, maxWidth: "100%", background: T.surface, height: "100%", padding: 20, boxSizing: "border-box", overflowY: "auto", borderLeft: `1px solid ${T.border}`, boxShadow: "var(--kk-shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="kk-drawer-hero">
+          <button onClick={onClose} aria-label="Close" style={{ position: "absolute", right: 14, top: 14, background: "rgba(255,255,255,0.12)", border: "none", cursor: "pointer", color: "#fff", borderRadius: 8, padding: 6, lineHeight: 0 }}><X size={16} /></button>
+          <Avatar name={emp.name} size={56} />
+          <div style={{ marginTop: 12, fontSize: 19, fontWeight: 750, color: "#fff", letterSpacing: "-0.01em" }}>{emp.name}</div>
+          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.65)", fontFamily: mono }}>{emp.id}{emp.position ? ` · ${emp.position}` : ""}</div>
+          <div style={{ marginTop: 10, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
         </div>
-        <div style={{ marginTop: 14, fontSize: 17, fontWeight: 700 }}>{emp.name}</div>
-        <div style={{ fontSize: 12.5, color: T.muted, fontFamily: mono }}>{emp.id}</div>
-        <div style={{ marginTop: 6, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
-        <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
+        <div className="kk-detail-grid">
           {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Employment Type", emp.employmentType || "—"], ...(canSeeSalary ? [["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]] : [])].map(([k, v]) => (
-            <div key={k}>
+            <div key={k} className="kk-detail">
               <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{k}</div>
-              <div style={{ marginTop: 2 }}>{v}</div>
+              <div style={{ marginTop: 3, fontWeight: 550, overflowWrap: "anywhere" }}>{v}</div>
             </div>
           ))}
-          <div>
+          <div className="kk-detail kk-detail--wide">
             <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>Reports To</div>
             {onUpdateManager ? (
               <select value={emp.manager || ""} onChange={(e) => onUpdateManager(emp.id, e.target.value)} style={{ ...inputStyle, marginTop: 4, padding: "6px 8px" }}>
@@ -989,35 +1209,80 @@ function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo, canS
 /* ---------------------------------------------------------------------- */
 /* AUTH SCREENS — LOGIN & SIGN UP                                         */
 /* ---------------------------------------------------------------------- */
-function AuthShell({ children }) {
+function AuthShell({ children, theme }) {
+  const features = [
+    { icon: Banknote, title: "Payroll & payslips", desc: "Generated from the company template and delivered to your inbox every month." },
+    { icon: CalendarDays, title: "Leave, signed digitally", desc: "Apply, attach proof and track approvals with signed decision letters." },
+    { icon: LifeBuoy, title: "IT support built in", desc: "Ask the assistant for quick fixes or log system and office issues." },
+  ];
   return (
-    <div style={{
-      fontFamily: sans, minHeight: 640, maxHeight: 720, borderRadius: 10, overflowY: "auto", border: `1px solid ${T.border}`,
-      background: `radial-gradient(circle at 20% 20%, #3A1315, ${T.navyDeep} 62%)`,
-      display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 20px",
-    }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
-      `}</style>
-      <div style={{ width: 420, maxWidth: "100%" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 22 }}>
-          <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 46, objectFit: "contain" }} />
+    <div className="kk-auth" style={{ fontFamily: sans }}>
+      <aside className="kk-auth-hero">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 40, objectFit: "contain" }} />
         </div>
-        <Card style={{ padding: 28 }}>{children}</Card>
-        <div style={{ textAlign: "center", marginTop: 18, fontSize: 11.5 }}>
-          <a href="https://axeconnect.co.za/" target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.55)", textDecoration: "none" }}>
-            Built by Axe Connect
-          </a>
+        <div style={{ maxWidth: 480 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 999, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", marginBottom: 20 }}>
+            <Sparkles size={13} /> Employee workspace
+          </div>
+          <h1 style={{ fontSize: 40, lineHeight: 1.1, letterSpacing: "-0.03em", margin: "0 0 14px", fontWeight: 800 }}>
+            People, pay and support —<br /><span style={{ color: "#FF6B76" }}>all in one place.</span>
+          </h1>
+          <p style={{ fontSize: 15, lineHeight: 1.6, color: "rgba(255,255,255,0.7)", margin: "0 0 32px" }}>
+            The {COMPANY.name} portal for HR, payroll, leave and IT support.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {features.map((f) => (
+              <div key={f.title} className="kk-feature">
+                <div className="kk-feature-icon"><f.icon size={17} /></div>
+                <div>
+                  <div style={{ fontWeight: 650, fontSize: 14 }}>{f.title}</div>
+                  <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", lineHeight: 1.5, marginTop: 2 }}>{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <span>© {new Date().getFullYear()} {COMPANY.name}</span>
+          <a href="https://axeconnect.co.za/" target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "none" }}>Built by Axe Connect</a>
+        </div>
+      </aside>
+      <main className="kk-auth-panel">
+        <div className="kk-auth-card kk-page">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+            <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 34, objectFit: "contain", background: "#0B0F17", padding: "6px 10px", borderRadius: 10 }} />
+            {theme && <ThemeToggle theme={theme} />}
+          </div>
+          {children}
+        </div>
+      </main>
     </div>
   );
 }
 
-function LoginScreen({ onLogin, goSignup }) {
+function AuthHeading({ title, sub }) {
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <h1 style={{ fontSize: 26, fontWeight: 750, letterSpacing: "-0.02em", margin: "0 0 6px", color: T.text }}>{title}</h1>
+      <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.55 }}>{sub}</div>
+    </div>
+  );
+}
+
+function FormError({ children }) {
+  if (!children) return null;
+  return (
+    <div role="alert" style={{ display: "flex", gap: 8, alignItems: "flex-start", color: T.red, background: T.redBg, padding: "10px 12px", borderRadius: 10, fontSize: 13, marginBottom: 16, lineHeight: 1.45 }}>
+      <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{children}</span>
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin, goSignup, theme }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -1030,37 +1295,35 @@ function LoginScreen({ onLogin, goSignup }) {
   };
 
   return (
-    <AuthShell>
-      <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Log in</div>
-      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>Access your HR, payroll and leave workspace.</div>
+    <AuthShell theme={theme}>
+      <AuthHeading title="Welcome back" sub="Log in to your HR, payroll and leave workspace." />
       <form onSubmit={submit}>
         <Field label="Email Address">
           <div style={{ position: "relative" }}>
-            <Mail size={14} color={T.muted} style={{ position: "absolute", left: 10, top: 11 }} />
-            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder={`you@${ALLOWED_EMAIL_DOMAIN}`} style={{ ...inputStyle, paddingLeft: 30 }} required />
+            <Mail size={14} color={T.muted} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" autoFocus placeholder={`you@${ALLOWED_EMAIL_DOMAIN}`} style={{ ...inputStyle, paddingLeft: 36 }} required />
           </div>
         </Field>
         <Field label="Password">
           <div style={{ position: "relative" }}>
-            <Lock size={14} color={T.muted} style={{ position: "absolute", left: 10, top: 11 }} />
-            <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="••••••••" style={{ ...inputStyle, paddingLeft: 30 }} required />
+            <Lock size={14} color={T.muted} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="••••••••" style={{ ...inputStyle, paddingLeft: 36, paddingRight: 40 }} required />
+            <button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? "Hide password" : "Show password"} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: T.muted, padding: 6, lineHeight: 0 }}>
+              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
           </div>
         </Field>
-        {error && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 14 }}>
-            <AlertCircle size={14} /> {error}
-          </div>
-        )}
-        <Button type="submit" variant="teal" full disabled={loading}>{loading ? "Logging in…" : "Log In"}</Button>
+        <FormError>{error}</FormError>
+        <Button type="submit" variant="teal" full disabled={loading} icon={loading ? undefined : ArrowRight}>{loading ? "Logging in…" : "Log in"}</Button>
       </form>
-      <div style={{ marginTop: 16, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
-        Don't have an account? <button onClick={goSignup} style={{ background: "none", border: "none", color: T.teal, fontWeight: 700, cursor: "pointer", fontSize: 12.5, padding: 0 }}>Sign up</button>
+      <div style={{ marginTop: 22, paddingTop: 20, borderTop: `1px solid ${T.border}`, fontSize: 13.5, color: T.muted, textAlign: "center" }}>
+        New to K and K Media? <button onClick={goSignup} style={{ background: "none", border: "none", color: T.teal, fontWeight: 650, cursor: "pointer", fontSize: 13.5, padding: 0 }}>Create an account</button>
       </div>
     </AuthShell>
   );
 }
 
-function SignupScreen({ onSignup, goLogin }) {
+function SignupScreen({ onSignup, goLogin, theme }) {
   const [form, setForm] = useState({
     name: "", email: "", phone: "", password: "", confirm: "",
     role: "employee", dept: DEPARTMENTS[0], position: "", office: OFFICES[0], signature: null,
@@ -1070,12 +1333,36 @@ function SignupScreen({ onSignup, goLogin }) {
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  // Checks the email as it's typed: company domain, and no existing account.
+  const [emailCheck, setEmailCheck] = useState({ state: "idle", message: "" });
+  useEffect(() => {
+    const email = form.email.trim();
+    if (!email || !email.includes("@") || !email.split("@")[1]?.includes(".")) { setEmailCheck({ state: "idle", message: "" }); return; }
+    if (!isCompanyEmail(email)) { setEmailCheck({ state: "bad", message: `Use your work email — ${DOMAINS_TEXT}.` }); return; }
+    if (!API_BASE_URL) {
+      const taken = EMPLOYEES.some((emp) => emp.email.toLowerCase() === email.toLowerCase());
+      setEmailCheck(taken ? { state: "taken", message: "An account with that email already exists." } : { state: "ok", message: "Looks good." });
+      return;
+    }
+    setEmailCheck({ state: "checking", message: "" });
+    const t = setTimeout(async () => {
+      try {
+        const r = await apiFetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`);
+        setEmailCheck(r.ok ? { state: "ok", message: "Looks good — we'll send a code to this address." } : { state: r.exists ? "taken" : "bad", message: r.message });
+      } catch (e) {
+        setEmailCheck({ state: "idle", message: "" }); // older server without the check — signup still validates
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [form.email]);
+
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.password) { setError("Please fill in all required fields."); return; }
-    if (!isCompanyEmail(form.email)) { setError(`Please use your company email address, ending in @${ALLOWED_EMAIL_DOMAIN}.`); return; }
+    if (!isCompanyEmail(form.email)) { setError(`Please use your company email address, ending in ${DOMAINS_TEXT}.`); return; }
+    if (emailCheck.state === "taken") { setError(emailCheck.message); return; }
     if (form.password !== form.confirm) { setError("Passwords do not match."); return; }
     if (EMPLOYEES.some((emp) => emp.email.toLowerCase() === form.email.toLowerCase())) { setError("An account with that email already exists."); return; }
     if (!agreedToTerms) { setError("Please agree to the Terms & Conditions to continue."); return; }
@@ -1089,18 +1376,26 @@ function SignupScreen({ onSignup, goLogin }) {
   };
 
   return (
-    <AuthShell>
-      <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Create an account</div>
-      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>Choose the role that matches how you'll use the system.</div>
+    <AuthShell theme={theme}>
+      <AuthHeading title="Create your account" sub={`Use your work email (${DOMAINS_TEXT}). We'll send a code to confirm it's yours.`} />
       <form onSubmit={submit}>
         <Field label="Full Name">
           <input value={form.name} onChange={set("name")} style={inputStyle} placeholder="e.g. Zanele Khumalo" required />
         </Field>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className="kk-stack-sm" style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}>
             <Field label="Email Address">
-              <input value={form.email} onChange={set("email")} type="email" style={inputStyle} placeholder={`you@${ALLOWED_EMAIL_DOMAIN}`} required />
-              <div style={{ fontSize: 10.5, color: T.muted, marginTop: 4 }}>Must be a @{ALLOWED_EMAIL_DOMAIN} company email.</div>
+              <div style={{ position: "relative" }}>
+                <input value={form.email} onChange={set("email")} type="email" autoComplete="email" style={{ ...inputStyle, paddingRight: 34, borderColor: emailCheck.state === "taken" || emailCheck.state === "bad" ? T.red : emailCheck.state === "ok" ? T.green : undefined }} placeholder={`you@${ALLOWED_EMAIL_DOMAIN}`} required />
+                <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", lineHeight: 0 }}>
+                  {emailCheck.state === "ok" && <CheckCircle2 size={16} color={T.green} />}
+                  {(emailCheck.state === "taken" || emailCheck.state === "bad") && <AlertCircle size={16} color={T.red} />}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, marginTop: 4, color: emailCheck.state === "taken" || emailCheck.state === "bad" ? T.red : emailCheck.state === "ok" ? T.green : T.muted }}>
+                {emailCheck.state === "checking" ? "Checking…" : emailCheck.message || `Must be a ${DOMAINS_TEXT} email.`}
+                {emailCheck.state === "taken" && <> <button type="button" onClick={goLogin} style={{ background: "none", border: "none", color: T.teal, fontWeight: 650, cursor: "pointer", fontSize: 11, padding: 0 }}>Log in</button></>}
+              </div>
             </Field>
           </div>
           <div style={{ flex: 1 }}>
@@ -1109,15 +1404,15 @@ function SignupScreen({ onSignup, goLogin }) {
             </Field>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className="kk-stack-sm" style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}>
             <Field label="Password">
-              <input value={form.password} onChange={set("password")} type="password" style={inputStyle} required />
+              <input value={form.password} onChange={set("password")} type="password" autoComplete="new-password" style={inputStyle} required />
             </Field>
           </div>
           <div style={{ flex: 1 }}>
             <Field label="Confirm Password">
-              <input value={form.confirm} onChange={set("confirm")} type="password" style={inputStyle} required />
+              <input value={form.confirm} onChange={set("confirm")} type="password" autoComplete="new-password" style={inputStyle} required />
             </Field>
           </div>
         </div>
@@ -1127,7 +1422,7 @@ function SignupScreen({ onSignup, goLogin }) {
           <span>You're signing up as an <strong style={{ color: T.text }}>Employee</strong>. HR, Admin, IT Support and Manager access are granted afterward by the system owner — they aren't choices you make here.</span>
         </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className="kk-stack-sm" style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}>
             <Field label="Department">
               <select value={form.dept} onChange={set("dept")} style={inputStyle}>
@@ -1182,21 +1477,17 @@ function SignupScreen({ onSignup, goLogin }) {
           This signature will appear on the onboarding document HR can download for your account.
         </div>
 
-        {error && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 14 }}>
-            <AlertCircle size={14} /> {error}
-          </div>
-        )}
+        <FormError>{error}</FormError>
         <Button type="submit" variant="teal" full disabled={submitting}>{submitting ? "Creating account…" : "Create Account"}</Button>
       </form>
-      <div style={{ marginTop: 16, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
-        Already have an account? <button onClick={goLogin} style={{ background: "none", border: "none", color: T.teal, fontWeight: 700, cursor: "pointer", fontSize: 12.5, padding: 0 }}>Log in</button>
+      <div style={{ marginTop: 22, paddingTop: 20, borderTop: `1px solid ${T.border}`, fontSize: 13.5, color: T.muted, textAlign: "center" }}>
+        Already have an account? <button onClick={goLogin} style={{ background: "none", border: "none", color: T.teal, fontWeight: 650, cursor: "pointer", fontSize: 13.5, padding: 0 }}>Log in</button>
       </div>
     </AuthShell>
   );
 }
 
-function VerifyEmailScreen({ email, onVerify, onResend, goLogin }) {
+function VerifyEmailScreen({ email, onVerify, onResend, goLogin, theme }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -1220,32 +1511,25 @@ function VerifyEmailScreen({ email, onVerify, onResend, goLogin }) {
   };
 
   return (
-    <AuthShell>
-      <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Verify your email</div>
-      <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>
-        We've sent a 6-digit code to <strong style={{ color: T.text }}>{email}</strong>. Enter it below to finish creating your account.
-      </div>
+    <AuthShell theme={theme}>
+      <AuthHeading title="Check your inbox" sub={<>We've sent a 6-digit code to <strong style={{ color: T.text }}>{email}</strong>. Enter it below to finish creating your account.</>} />
       <form onSubmit={submit}>
         <Field label="Verification Code">
           <div style={{ position: "relative" }}>
-            <Mail size={14} color={T.muted} style={{ position: "absolute", left: 10, top: 11 }} />
+            <Mail size={14} color={T.muted} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
             <input
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
               inputMode="numeric"
               autoComplete="one-time-code"
               placeholder="123456"
-              style={{ ...inputStyle, paddingLeft: 30, letterSpacing: 3, fontSize: 16, fontWeight: 600 }}
+              style={{ ...inputStyle, paddingLeft: 36, letterSpacing: 3, fontSize: 16, fontWeight: 600 }}
               maxLength={6}
               required
             />
           </div>
         </Field>
-        {error && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.red, background: T.redBg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 14 }}>
-            <AlertCircle size={14} /> {error}
-          </div>
-        )}
+        <FormError>{error}</FormError>
         {notice && (
           <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.teal, background: T.bg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 14 }}>
             <ShieldCheck size={14} /> {notice}
@@ -1274,6 +1558,37 @@ function VerifyEmailScreen({ email, onVerify, onResend, goLogin }) {
 /* ---------------------------------------------------------------------- */
 const AUTH_TOKEN_KEY = "kk_auth_token";
 
+/** Reads a JWT's claims without verifying it — only used to decide whether a
+ *  stored token is worth trying (not expired) and which role it was issued
+ *  for. The backend still verifies the signature on every request. */
+function decodeJwt(token) {
+  try {
+    const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(decodeURIComponent(escape(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), "=")))));
+  } catch (e) { return null; }
+}
+
+/* URL <-> screen mapping, e.g. #/payroll, #/settings, #/me/leave, #/portal/itSupport */
+const PORTALS = ["leave", "itSupport"];
+function buildRoute({ viewMode, portalChoice, roleTab }) {
+  if (viewMode === "settings") return "#/settings";
+  if (viewMode === "support") return "#/support";
+  if (viewMode === "officeIssues") return "#/office-issues";
+  if (viewMode === "selfService") return portalChoice ? `#/me/${portalChoice}` : "#/me";
+  if (portalChoice) return `#/portal/${portalChoice}`;
+  return roleTab ? `#/${roleTab}` : "#/";
+}
+function parseRoute(hash) {
+  const [head, sub] = (hash || "").replace(/^#\/?/, "").split("/");
+  const portal = PORTALS.includes(sub) ? sub : null;
+  if (head === "settings") return { viewMode: "settings", portalChoice: null, roleTab: null };
+  if (head === "support") return { viewMode: "support", portalChoice: null, roleTab: null };
+  if (head === "office-issues") return { viewMode: "officeIssues", portalChoice: null, roleTab: null };
+  if (head === "me") return { viewMode: "selfService", portalChoice: portal, roleTab: null };
+  if (head === "portal") return { viewMode: "role", portalChoice: portal, roleTab: null };
+  return { viewMode: "role", portalChoice: null, roleTab: head || null };
+}
+
 function getStoredToken() {
   try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch (e) { return null; }
 }
@@ -1285,7 +1600,7 @@ function setStoredToken(token) {
  *  callers can just try/catch and show err.message. */
 async function apiFetch(path, options = {}) {
   const isAuthEndpoint = path === "/api/auth/login" || path === "/api/auth/signup"
-    || path === "/api/auth/verify-email" || path === "/api/auth/resend-verification";
+    || path === "/api/auth/verify-email" || path === "/api/auth/resend-verification" || path.startsWith("/api/auth/check-email");
   const token = isAuthEndpoint ? null : getStoredToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -1323,7 +1638,7 @@ async function apiFetch(path, options = {}) {
  *  it's easy to miss entirely; a message inside the tab the person is
  *  actually looking at is not. */
 function showErrorInTab(tab, message) {
-  if (!tab || tab.closed) { alert(message); return; }
+  if (!tab || tab.closed) { notify(message, "error"); return; }
   try {
     tab.document.open();
     tab.document.write(
@@ -1334,7 +1649,7 @@ function showErrorInTab(tab, message) {
     );
     tab.document.close();
   } catch (e) {
-    alert(message);
+    notify(message, "error");
   }
 }
 
@@ -1352,7 +1667,7 @@ async function openRealPayslipPdf(path, filename, mode) {
   } catch (e) {
     const message = "Couldn't reach the server — check your connection and try again.";
     console.error("Payslip PDF fetch failed:", e);
-    if (previewTab) showErrorInTab(previewTab, message); else alert(message);
+    if (previewTab) showErrorInTab(previewTab, message); else notify(message, "error");
     return;
   }
   if (!res.ok) {
@@ -1362,14 +1677,14 @@ async function openRealPayslipPdf(path, filename, mode) {
       if (body && body.message) message = body.message;
     } catch (e) { /* body wasn't JSON */ }
     console.error("Payslip PDF request failed:", res.status, message);
-    if (previewTab) showErrorInTab(previewTab, message); else alert(message);
+    if (previewTab) showErrorInTab(previewTab, message); else notify(message, "error");
     return;
   }
   const rawBlob = await res.blob();
   if (!rawBlob || rawBlob.size === 0) {
     const message = "The server returned an empty payslip file — this usually means PDF generation failed on the server. Please tell IT/HR the payslip came back empty.";
     console.error("Payslip PDF response was empty.", res.headers.get("content-type"));
-    if (previewTab) showErrorInTab(previewTab, message); else alert(message);
+    if (previewTab) showErrorInTab(previewTab, message); else notify(message, "error");
     return;
   }
   // Force the correct MIME type in case the server response's content-type
@@ -1447,7 +1762,7 @@ const CURRENT_PAY_PERIOD = "2026-09";
 /** "2026-09" -> "September 2026", matching the existing month-label convention. */
 /** Returns this week's Monday-Friday as [{day: "MONDAY", date: "16 Sep", label: "Mon"}, ...],
  *  matching the DayOfWeek names the backend stores in assignedWorkDays. */
-function thisWeekDates() {
+function thisWeekDates(weekOffset = 0) {
   const days = [
     { day: "MONDAY", label: "Mon" }, { day: "TUESDAY", label: "Tue" }, { day: "WEDNESDAY", label: "Wed" },
     { day: "THURSDAY", label: "Thu" }, { day: "FRIDAY", label: "Fri" },
@@ -1456,13 +1771,36 @@ function thisWeekDates() {
   const jsDay = now.getDay(); // 0 = Sunday, 1 = Monday, ...
   const diffToMonday = jsDay === 0 ? -6 : 1 - jsDay;
   const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMonday);
+  monday.setDate(now.getDate() + diffToMonday + weekOffset * 7);
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return days.map((d, i) => {
     const date = new Date(monday);
     date.setDate(monday.getDate() + i);
-    return { ...d, date: `${date.getDate()} ${monthNames[date.getMonth()]}` };
+    const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    return { ...d, date: `${date.getDate()} ${monthNames[date.getMonth()]}`, iso, year: date.getFullYear() };
   });
+}
+
+/* Office colours used by every schedule view. */
+const OFFICE_STYLE = {
+  Midrand: { fg: T.teal, bg: T.tealLight },
+  Sandton: { fg: T.indigo, bg: T.indigoBg },
+  Rosebank: { fg: T.purple, bg: T.purpleBg },
+};
+function OfficeChip({ office, full }) {
+  const st = OFFICE_STYLE[office] || { fg: T.muted, bg: T.neutralBg };
+  return (
+    <span title={office} style={{ display: "inline-block", minWidth: full ? 0 : 38, padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: st.fg, background: st.bg, whiteSpace: "nowrap" }}>
+      {full ? office : office.slice(0, 3)}
+    </span>
+  );
+}
+/** Which office (if any) someone is in on a day, from /api/me/schedule — the
+ *  new per-day map, falling back to the older day list + home office. */
+function officeOnDay(schedule, day) {
+  if (!schedule) return null;
+  if (schedule.days && Object.keys(schedule.days).length) return schedule.days[day] || null;
+  return (schedule.assignedWorkDays || []).includes(day) ? (schedule.office || "Office") : null;
 }
 
 function formatPayPeriod(payPeriod) {
@@ -1599,8 +1937,8 @@ function TicketDetailModal({ ticket, onClose, onSave, onClear }) {
   if (!ticket) return null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.5)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div style={{ background: T.surface, width: 480, maxWidth: "100%", borderRadius: 10, padding: 26, boxShadow: "0 20px 60px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div className="kk-pop" style={{ background: T.surface, width: 480, maxWidth: "100%", borderRadius: 16, padding: 26, boxShadow: "var(--kk-shadow-lg)", border: `1px solid ${T.border}` }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>{ticket.subject}</div>
@@ -1692,11 +2030,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
       )}
       <SectionTitle sub={`For issues within the system itself — payslips, leave, bugs. Sent directly to ${SUPPORT_EMAIL}.`}>Support</SectionTitle>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => setView(t.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "8px 4px", fontSize: 13, fontWeight: 600, color: view === t.id ? T.navy : T.muted, borderBottom: view === t.id ? `2px solid ${T.teal}` : "2px solid transparent" }}>{t.label}</button>
-        ))}
-      </div>
+      <Tabs tabs={tabs} active={view} onChange={setView} />
 
       {view === "new" && (
         <Card style={{ padding: 22, maxWidth: 480 }}>
@@ -1755,10 +2089,10 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
 
       {view === "mine" && (
         <Card style={{ overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Category", "Priority", "Status", "Response", "Submitted"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {myTickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {myTickets.length === 0 && <EmptyRow colSpan={6} icon={LifeBuoy}>No support requests yet.</EmptyRow>}
               {myTickets.map((t) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px", fontWeight: 600 }}>{t.subject}</td>
@@ -1781,10 +2115,10 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
               <Button variant="ghost" small icon={RefreshCw} onClick={onRefresh}>Refresh</Button>
             </div>
           )}
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Subject", "Category", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {sortedTickets.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No support requests yet.</td></tr>}
+              {sortedTickets.length === 0 && <EmptyRow colSpan={6} icon={LifeBuoy}>No support requests yet.</EmptyRow>}
               {sortedTickets.map((t) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>{t.empName}</td>
@@ -1886,11 +2220,7 @@ function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availab
         </Card>
       )}
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => setView(t.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "8px 4px", fontSize: 13, fontWeight: 600, color: view === t.id ? T.navy : T.muted, borderBottom: view === t.id ? `2px solid ${T.teal}` : "2px solid transparent" }}>{t.label}</button>
-        ))}
-      </div>
+      <Tabs tabs={tabs} active={view} onChange={setView} />
 
       {view === "new" && (
         <Card style={{ padding: 22, maxWidth: 480 }}>
@@ -1953,10 +2283,10 @@ function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availab
 
       {view === "mine" && (
         <Card style={{ overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Subject", "Type", "Office", "Priority", "Status", "Response", "Reported"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {myIssues.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No office issues reported yet.</td></tr>}
+              {myIssues.length === 0 && <EmptyRow colSpan={7} icon={MapPin}>No office issues reported yet.</EmptyRow>}
               {myIssues.map((i) => (
                 <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px", fontWeight: 600 }}>{i.subject}</td>
@@ -1980,10 +2310,10 @@ function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availab
               <Button variant="ghost" small icon={RefreshCw} onClick={onRefresh}>Refresh</Button>
             </div>
           )}
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Office", "Subject", "Type", "Priority", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {sortedIssues.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No office issues reported yet.</td></tr>}
+              {sortedIssues.length === 0 && <EmptyRow colSpan={7} icon={MapPin}>No office issues reported yet.</EmptyRow>}
               {sortedIssues.map((i) => (
                 <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>{i.empName}</td>
@@ -2078,7 +2408,7 @@ function PersonalInfoSection({ emp, onSave }) {
 
   return (
     <Card style={{ padding: 20 }}>
-      <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Personal & Payroll Information</div>
+      <div className="kk-card-title" style={{ marginBottom: 4 }}>Personal & Payroll Information</div>
       <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>
         Used for tax, banking, and emergency contact purposes. Fill in as much as you have on hand — you can always come back and finish the rest later.
       </div>
@@ -2162,7 +2492,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
       <SectionTitle sub="Update your personal information, password and notification preferences">Settings</SectionTitle>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>My Profile</div>
+          <div className="kk-card-title" style={{ marginBottom: 14 }}>My Profile</div>
           <form onSubmit={saveProfile}>
             <Field label="Full Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} /></Field>
             <Field label="Email"><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} type="email" style={inputStyle} /></Field>
@@ -2193,7 +2523,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: "1 1 320px" }}>
           <Card style={{ padding: 20 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Change Password</div>
+            <div className="kk-card-title" style={{ marginBottom: 14 }}>Change Password</div>
             <form onSubmit={savePassword}>
               <Field label="Current Password"><input value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} type="password" style={inputStyle} /></Field>
               <Field label="New Password"><input value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} type="password" style={inputStyle} /></Field>
@@ -2206,7 +2536,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
           </Card>
 
           <Card style={{ padding: 20 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Notification Preferences</div>
+            <div className="kk-card-title" style={{ marginBottom: 4 }}>Notification Preferences</div>
             <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>Choose what gets emailed to you.</div>
             {[["leave", "notifyLeave", "Email me when my leave is approved or rejected"], ["payslip", "notifyPayslip", "Email me when a new payslip is available"]].map(([k, field, label]) => (
               <label key={k} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, marginBottom: 10, cursor: "pointer" }}>
@@ -2221,7 +2551,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
           </Card>
 
           <Card style={{ padding: 20 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 10 }}>Account</div>
+            <div className="kk-card-title" style={{ marginBottom: 10 }}>Account</div>
             {[["Employee ID", emp.id], ["Role", ROLE_LABEL[emp.role]], ["Start Date", emp.start]].map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13 }}>
                 <span style={{ color: T.muted }}>{k}</span><span style={{ fontFamily: k === "Employee ID" ? mono : sans }}>{v}</span>
@@ -2241,6 +2571,23 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
 /* ---------------------------------------------------------------------- */
 /* HR AREA                                                                */
 /* ---------------------------------------------------------------------- */
+/** Horizontal step tracker for the payroll batch (DRAFT → … → SENT). */
+function PipelineStepper({ stages, current }) {
+  return (
+    <div className="kk-stepper">
+      {stages.map((st, i) => {
+        const state = i < current ? "done" : i === current ? "current" : "todo";
+        return (
+          <div key={st} className={`kk-step kk-step--${state}`}>
+            <div className="kk-step-dot">{state === "done" ? <CheckCircle2 size={14} /> : i + 1}</div>
+            <div className="kk-step-label">{st.charAt(0) + st.slice(1).toLowerCase()}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
   const counts = LEVELS.reduce((acc, l) => { acc[l.name] = EMPLOYEES.filter((e) => e.level === l.name).length; return acc; }, {});
   const pending = leaveRequests.filter((r) => r.status === "Pending").length;
@@ -2248,49 +2595,42 @@ function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
   return (
     <div>
       <SectionTitle sub="People and payroll operations for K and K Media">HR Dashboard</SectionTitle>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-        <StatCard icon={Users} label="Total Employees" value={EMPLOYEES.length} />
+      <div className="kk-stat-grid">
+        <StatCard icon={Users} label="Total Employees" value={EMPLOYEES.length} tone={T.indigo} />
         <StatCard icon={ClipboardList} label="Pending Leave" value={pending} tone={T.amber} />
-        <StatCard icon={Banknote} label="Payroll Status" value={payrollStage} tone={T.teal} />
+        <StatCard icon={Banknote} label="Payroll Status" value={payrollStage ? payrollStage.charAt(0) + payrollStage.slice(1).toLowerCase() : "Not started"} tone={T.teal} />
         <StatCard icon={FileText} label="Payslips Sent (Aug)" value={`${EMPLOYEES.length}/${EMPLOYEES.length}`} tone={T.green} />
       </div>
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <Card style={{ padding: 18, flex: "1 1 420px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Employees by Level</div>
+          <div className="kk-card-title" style={{ marginBottom: 14 }}>Employees by Level</div>
           {LEVELS.map((l) => (
             <div key={l.name} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
                 <span style={{ color: T.muted }}>{l.name}</span><span style={{ fontFamily: mono, fontWeight: 600 }}>{counts[l.name]}</span>
               </div>
-              <div style={{ height: 6, background: "#EEF0F3", borderRadius: 3 }}><div style={{ height: 6, borderRadius: 3, background: T.teal, width: `${(counts[l.name] / EMPLOYEES.length) * 100}%` }} /></div>
+              <div className="kk-progress"><div style={{ width: `${EMPLOYEES.length ? (counts[l.name] / EMPLOYEES.length) * 100 : 0}%` }} /></div>
             </div>
           ))}
         </Card>
         <Card style={{ padding: 18, flex: "1 1 420px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Payroll Pipeline — {CURRENT_MONTH}</div>
+          <div className="kk-card-title" style={{ marginBottom: 4 }}>Payroll Pipeline — {CURRENT_MONTH}</div>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Advance the batch through review and approval before payslips are sent.</div>
-          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4, marginBottom: 16 }}>
-            {STAGES.map((s, i) => (
-              <React.Fragment key={s}>
-                <div style={{ fontSize: 11, fontWeight: 700, padding: "5px 9px", borderRadius: 5, background: i <= stageIdx ? T.navy : "#EEF0F3", color: i <= stageIdx ? "#fff" : T.muted }}>{s}</div>
-                {i < STAGES.length - 1 && <ArrowRight size={12} color={T.muted} />}
-              </React.Fragment>
-            ))}
-          </div>
-          {stageIdx < STAGES.length - 1 ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1]}</Button> : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>}
+          <PipelineStepper stages={STAGES} current={stageIdx} />
+          {stageIdx < STAGES.length - 1 ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1].charAt(0) + STAGES[stageIdx + 1].slice(1).toLowerCase()}</Button> : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>}
         </Card>
       </div>
       <div style={{ marginTop: 22 }}>
         <SectionTitle>Recent Leave Requests</SectionTitle>
         <Card style={{ overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Type", "Dates", "Status"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
               {leaveRequests.slice(0, 5).map((r) => {
                 const e = empById(r.emp);
                 return (
                   <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                    <td style={{ padding: "10px 14px" }}>{e.name}</td>
+                    <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} /></td>
                     <td style={{ padding: "10px 14px", color: T.muted }}>{r.type}</td>
                     <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{r.start} → {r.end}</td>
                     <td style={{ padding: "10px 14px" }}><StatusPill status={r.status} /></td>
@@ -2313,8 +2653,8 @@ function EditSalaryModal({ employee, onClose, onSave }) {
     if (!isNaN(num) && num >= 0) onSave(employee.id, num);
   };
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.5)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div style={{ background: T.surface, width: 380, maxWidth: "100%", borderRadius: 10, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div className="kk-pop" style={{ background: T.surface, width: 380, maxWidth: "100%", borderRadius: 16, padding: 24, boxShadow: "var(--kk-shadow-lg)", border: `1px solid ${T.border}` }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Edit Salary</div>
@@ -2354,28 +2694,20 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
       <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
           <Search size={14} color={T.muted} style={{ position: "absolute", left: 10, top: 10 }} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search employees…" style={{ ...inputStyle, paddingLeft: 30, maxWidth: 320 }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search employees…" style={{ ...inputStyle, paddingLeft: 36, maxWidth: 320 }} />
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[["active", "Active"], ["terminated", "Terminated"], ["all", "All"]].map(([val, label]) => (
-            <button key={val} onClick={() => setStatusFilter(val)} style={{
-              background: statusFilter === val ? T.navy : "#fff", color: statusFilter === val ? "#fff" : T.muted,
-              border: `1px solid ${statusFilter === val ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
-              fontSize: 12, fontWeight: 600, cursor: "pointer",
-            }}>{label}</button>
-          ))}
-        </div>
+        <Segmented options={[["active", "Active"], ["terminated", "Terminated"], ["all", "All"]]} value={statusFilter} onChange={setStatusFilter} />
         <Pill tone="muted">New signups appear here automatically</Pill>
       </div>
       <Card style={{ overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Level", "Position", "Department", ...(canSeeSalary ? ["Salary"] : []), "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
             {filtered.length === 0 && <tr><td colSpan={canSeeSalary ? 9 : 8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees match this view.</td></tr>}
             {filtered.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}`, opacity: e.active === false ? 0.6 : 1 }}>
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
-                <td style={{ padding: "10px 14px", fontWeight: 600 }}>{e.name}</td>
+                <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.email} /></td>
                 <td style={{ padding: "10px 14px" }}><RolePill role={e.role} /></td>
                 <td style={{ padding: "10px 14px" }}>{e.level ? <Pill tone="teal">{e.level}</Pill> : <span style={{ color: T.muted }}>—</span>}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
@@ -2414,117 +2746,312 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
 const WEEKDAY_LABELS = { MONDAY: "Mon", TUESDAY: "Tue", WEDNESDAY: "Wed", THURSDAY: "Thu", FRIDAY: "Fri" };
 const WEEKDAY_ORDER = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
 
-function HrWorkSchedule({ capacity, onUpdateCapacity, onUpdateDaysPerWeek, onAutoAssign }) {
-  const [capForm, setCapForm] = useState(capacity);
-  const [capSaving, setCapSaving] = useState(false);
-  const [assigning, setAssigning] = useState(false);
-  const [officeFilter, setOfficeFilter] = useState("All");
+const WEEKDAY_FULL = { MONDAY: "Monday", TUESDAY: "Tuesday", WEDNESDAY: "Wednesday", THURSDAY: "Thursday", FRIDAY: "Friday" };
+const hasThreeInARow = (days) => WEEKDAY_ORDER.some((d, i) => i + 2 < WEEKDAY_ORDER.length && days.includes(d) && days.includes(WEEKDAY_ORDER[i + 1]) && days.includes(WEEKDAY_ORDER[i + 2]));
 
-  const filtered = EMPLOYEES.filter((e) => e.active !== false).filter((e) => officeFilter === "All" || e.office === officeFilter);
+/** One-line description of a schedule plan from /api/hr/schedule/week. */
+function planSummary(row) {
+  if (!row || !row.mode) return "Not set";
+  if (row.mode === "FIXED") {
+    const entries = WEEKDAY_ORDER.filter((d) => row.fixedDays[d]).map((d) => [d, row.fixedDays[d]]);
+    const offices = [...new Set(entries.map(([, o]) => o))];
+    if (entries.length === 5 && offices.length === 1) return `Every day · ${offices[0]}`;
+    return `Fixed · ${offices.map((o) => `${entries.filter(([, x]) => x === o).map(([d]) => WEEKDAY_LABELS[d]).join(", ")} (${o})`).join(" · ")}`;
+  }
+  const parts = Object.entries(row.officeDays || {}).filter(([, n]) => n > 0);
+  const total = parts.reduce((t, [, n]) => t + n, 0);
+  const split = parts.length === 1 ? parts[0][0] : parts.map(([o, n]) => `${n} ${o}`).join(" + ");
+  return `${total} day${total === 1 ? "" : "s"}/week · rotating · ${split}`;
+}
 
-  // Headcount per office/day, computed straight from each employee's
-  // currently assigned days — always in sync with what's actually shown.
-  const headcount = {};
-  OFFICES.forEach((o) => { headcount[o] = {}; WEEKDAY_ORDER.forEach((d) => { headcount[o][d] = 0; }); });
-  EMPLOYEES.filter((e) => e.active !== false).forEach((e) => {
-    (e.assignedWorkDays || []).forEach((d) => { if (headcount[e.office]) headcount[e.office][d] = (headcount[e.office][d] || 0) + 1; });
+/** Edit one person's plan: rotating per-office day counts, every day, or exact fixed days. */
+function ScheduleEditor({ row, onClose, onSaved }) {
+  const home = OFFICES.includes(row.office) ? row.office : OFFICES[0];
+  const fixedEntries = Object.entries(row.fixedDays || {});
+  const isEveryDay = row.mode === "FIXED" && fixedEntries.length === 5 && new Set(fixedEntries.map(([, o]) => o)).size === 1;
+  const [mode, setMode] = useState(isEveryDay ? "everyday" : row.mode === "FIXED" ? "fixed" : "rotating");
+  const [counts, setCounts] = useState(() => {
+    const c = Object.fromEntries(OFFICES.map((o) => [o, 0]));
+    if (row.mode === "ROTATING") Object.entries(row.officeDays || {}).forEach(([o, n]) => { c[o] = n; });
+    else c[home] = 2;
+    return c;
   });
+  const [everydayOffice, setEverydayOffice] = useState(isEveryDay ? fixedEntries[0][1] : home);
+  const [fixed, setFixed] = useState(() => Object.fromEntries(WEEKDAY_ORDER.map((d) => [d, (row.mode === "FIXED" && !isEveryDay && row.fixedDays[d]) || ""])));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const total = Object.values(counts).reduce((t, n) => t + (Number(n) || 0), 0);
+  const fixedDays = WEEKDAY_ORDER.filter((d) => fixed[d]);
+
+  const save = async () => {
+    let body;
+    if (mode === "rotating") {
+      if (total < 1 || total > 5) { setError("Pick between 1 and 5 office days in total."); return; }
+      body = { mode: "ROTATING", officeDays: Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0)) };
+    } else if (mode === "everyday") {
+      body = { mode: "FIXED", fixedDays: Object.fromEntries(WEEKDAY_ORDER.map((d) => [d, everydayOffice])) };
+    } else {
+      if (fixedDays.length === 0) { setError("Pick at least one day."); return; }
+      body = { mode: "FIXED", fixedDays: Object.fromEntries(fixedDays.map((d) => [d, fixed[d]])) };
+    }
+    setSaving(true); setError("");
+    try {
+      await apiFetch(`/api/hr/employees/${row.id}/schedule`, { method: "PUT", body: JSON.stringify(body) });
+      onSaved(`${row.name}'s schedule saved.`);
+    } catch (e) {
+      setError(e.message);
+      setSaving(false);
+    }
+  };
+
+  const modes = [
+    { id: "rotating", title: "Rotating", desc: "Set days per office — the system picks the days and rotates them every week." },
+    { id: "everyday", title: "Every day", desc: "In the office Monday to Friday." },
+    { id: "fixed", title: "Specific days", desc: "Exact days and offices, for mandatory days." },
+  ];
+
+  return (
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div className="kk-pop" style={{ background: T.surface, width: 520, maxWidth: "100%", maxHeight: "92vh", overflowY: "auto", borderRadius: 16, padding: 24, boxShadow: "var(--kk-shadow-lg)", border: `1px solid ${T.border}` }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Office schedule</div>
+            <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{row.name} · home office {home}</div>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: T.muted }}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "grid", gap: 8, marginBottom: 18 }}>
+          {modes.map((m) => (
+            <label key={m.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: `1px solid ${mode === m.id ? T.teal : T.border}`, background: mode === m.id ? T.tealLight : T.surface }}>
+              <input type="radio" name="mode" checked={mode === m.id} onChange={() => { setMode(m.id); setError(""); }} style={{ marginTop: 2 }} />
+              <span><span style={{ fontWeight: 650, fontSize: 13.5 }}>{m.title}</span><br /><span style={{ fontSize: 12, color: T.muted }}>{m.desc}</span></span>
+            </label>
+          ))}
+        </div>
+
+        {mode === "rotating" && (
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text2, marginBottom: 8 }}>Days per week at each office</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+              {OFFICES.map((o) => (
+                <div key={o}>
+                  <OfficeChip office={o} full />
+                  <select value={counts[o]} onChange={(e) => setCounts({ ...counts, [o]: Number(e.target.value) })} style={{ ...inputStyle, marginTop: 6 }}>
+                    {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12.5, color: total > 5 ? T.red : T.muted }}>
+              Total: <strong>{total}</strong> day{total === 1 ? "" : "s"}/week{total > 5 && " — maximum is 5"}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: T.muted, background: T.bg, padding: "8px 10px", borderRadius: 8, lineHeight: 1.5 }}>
+              Never 3 days in a row, and the days change every week. {total === 4 && "4 days is always Mon, Tue, Thu, Fri (the only way to avoid 3 in a row)."}{total === 5 && "5 days means every day."}
+            </div>
+          </div>
+        )}
+
+        {mode === "everyday" && (
+          <Field label="Office">
+            <select value={everydayOffice} onChange={(e) => setEverydayOffice(e.target.value)} style={inputStyle}>
+              {OFFICES.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </Field>
+        )}
+
+        {mode === "fixed" && (
+          <div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {WEEKDAY_ORDER.map((d) => (
+                <div key={d} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ width: 92, fontSize: 13, fontWeight: 600 }}>{WEEKDAY_FULL[d]}</span>
+                  <select value={fixed[d]} onChange={(e) => setFixed({ ...fixed, [d]: e.target.value })} style={{ ...inputStyle, flex: 1 }}>
+                    <option value="">Not in office</option>
+                    {OFFICES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            {hasThreeInARow(fixedDays) && fixedDays.length < 5 && (
+              <div style={{ marginTop: 10, display: "flex", gap: 6, color: T.amber, background: T.amberBg, padding: "8px 10px", borderRadius: 8, fontSize: 12 }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> This is 3 days in a row — only use it if those days are mandatory.
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && <div style={{ marginTop: 14 }}><FormError>{error}</FormError></div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <Button variant="teal" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save schedule"}</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HrWorkSchedule() {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [officeFilter, setOfficeFilter] = useState("All");
+  const [capForm, setCapForm] = useState(null);
+  const [capSaving, setCapSaving] = useState(false);
+  const week = thisWeekDates(weekOffset);
+
+  const load = async () => {
+    try {
+      const d = await apiFetch(`/api/hr/schedule/week?start=${week[0].iso}`);
+      setData(d); setLoadError("");
+      setCapForm((c) => c || d.capacity);
+    } catch (e) { setLoadError(e.message); }
+  };
+  useEffect(() => { if (API_BASE_URL) load(); }, [weekOffset]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!API_BASE_URL) {
+    return (
+      <div>
+        <SectionTitle sub="Office days per employee">Work Schedule</SectionTitle>
+        <Card style={{ padding: 24, color: T.muted, fontSize: 13.5 }}>The work schedule needs the server connection — it isn't available in offline mode.</Card>
+      </div>
+    );
+  }
+
+  const offices = data?.offices || OFFICES;
+  const rows = (data?.employees || [])
+    .filter((r) => officeFilter === "All" || r.office === officeFilter || Object.values(r.days || {}).includes(officeFilter))
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const anySet = (data?.employees || []).some((r) => r.mode);
 
   const saveCapacity = async () => {
     setCapSaving(true);
-    await onUpdateCapacity(capForm);
+    try {
+      const updated = await apiFetch("/api/hr/schedule/capacity", { method: "PUT", body: JSON.stringify(capForm) });
+      setCapForm(updated); notify("Office capacity saved."); await load();
+    } catch (e) { notify(`Couldn't save office capacity: ${e.message}`); }
     setCapSaving(false);
   };
-
-  const runAutoAssign = async () => {
-    setAssigning(true);
-    await onAutoAssign();
-    setAssigning(false);
+  const clearRow = async (r) => {
+    try {
+      await apiFetch(`/api/hr/employees/${r.id}/schedule`, { method: "PUT", body: JSON.stringify({ daysPerWeek: null }) });
+      notify(`${r.name}'s schedule cleared.`); await load();
+    } catch (e) { notify(`Couldn't clear this schedule: ${e.message}`); }
   };
+  const resetAll = async () => {
+    if (!window.confirm("Reset the whole work schedule?\n\nThis clears every employee's plan. You can set them again afterwards.")) return;
+    try {
+      await apiFetch("/api/hr/schedule", { method: "DELETE" });
+      notify("Work schedule reset — every employee's plan has been cleared."); await load();
+    } catch (e) { notify(`Couldn't reset the schedule: ${e.message}`); }
+  };
+
+  const weekLabel = `${week[0].date} – ${week[4].date} ${week[4].year}`;
 
   return (
     <div>
-      <SectionTitle sub="Set how many days/week each employee needs in-office — the system spreads specific days across the week to keep within desk capacity">Work Schedule</SectionTitle>
+      <SectionTitle sub="Rotating plans never put anyone in 3 days in a row, and their days change every week. Use Every day or Specific days for people whose days are fixed.">Work Schedule</SectionTitle>
 
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 20 }}>
-        <Card style={{ padding: 18, flex: "1 1 280px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>Office Desk Capacity</div>
-          {OFFICES.map((o) => (
-            <div key={o} style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11.5, fontWeight: 700, color: T.muted }}>{o}</label>
-              <input type="number" min={0} value={capForm[o]} onChange={(e) => setCapForm({ ...capForm, [o]: Number(e.target.value) })} style={{ ...inputStyle, marginTop: 4 }} />
-            </div>
-          ))}
-          <Button variant="teal" small onClick={saveCapacity} disabled={capSaving}>{capSaving ? "Saving…" : "Save Capacity"}</Button>
-        </Card>
-
-        <Card style={{ padding: 18, flex: "2 1 380px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>This Week's Headcount vs Capacity</div>
-          {OFFICES.map((o) => (
-            <div key={o} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>{o}</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {WEEKDAY_ORDER.map((d) => {
-                  const count = headcount[o][d] || 0;
-                  const over = count > capForm[o];
-                  return (
-                    <div key={d} style={{ flex: 1, textAlign: "center", padding: "6px 4px", borderRadius: 6, background: over ? T.redBg : T.bg, border: `1px solid ${over ? T.red : T.border}` }}>
-                      <div style={{ fontSize: 10, color: T.muted, fontWeight: 700 }}>{WEEKDAY_LABELS[d]}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: over ? T.red : T.text }}>{count}/{capForm[o]}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </Card>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <Button variant="ghost" small icon={ArrowLeft} onClick={() => setWeekOffset((w) => w - 1)}>Previous</Button>
+        <div style={{ fontWeight: 700, fontSize: 14, minWidth: 170, textAlign: "center" }}>{weekLabel}</div>
+        <Button variant="ghost" small onClick={() => setWeekOffset((w) => w + 1)}>Next <ChevronRight size={14} /></Button>
+        {weekOffset !== 0 && <Button variant="ghost" small onClick={() => setWeekOffset(0)}>This week</Button>}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          {["All", ...OFFICES].map((o) => (
-            <button key={o} onClick={() => setOfficeFilter(o)} style={{
-              background: officeFilter === o ? T.navy : "#fff", color: officeFilter === o ? "#fff" : T.muted,
-              border: `1px solid ${officeFilter === o ? T.navy : T.border}`, borderRadius: 20, padding: "5px 12px",
-              fontSize: 12, fontWeight: 600, cursor: "pointer",
-            }}>{o}</button>
-          ))}
+      {loadError && <FormError>{`Couldn't load the schedule: ${loadError}`}</FormError>}
+      {(data?.warnings || []).length > 0 && (
+        <div style={{ display: "flex", gap: 8, color: T.amber, background: T.amberBg, padding: "10px 12px", borderRadius: 10, fontSize: 12.5, marginBottom: 16 }}>
+          <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div>{data.warnings.map((w) => <div key={w}>{w}</div>)}<div style={{ marginTop: 4, color: T.muted }}>Raise that office's capacity, or move someone to another office or to fewer days.</div></div>
         </div>
-        <Button variant="teal" small icon={RefreshCw} onClick={runAutoAssign} disabled={assigning}>{assigning ? "Generating…" : "Auto-Generate Schedule"}</Button>
+      )}
+
+      <Card style={{ padding: 18, marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+          <div className="kk-card-title" style={{  }}>Headcount vs desk capacity</div>
+          <Button variant="teal" small onClick={saveCapacity} disabled={capSaving || !capForm}>{capSaving ? "Saving…" : "Save capacity"}</Button>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table" style={{ minWidth: 520 }}>
+            <thead>
+              <tr style={{ background: T.bg, textAlign: "left" }}>
+                <th style={{ padding: "8px 12px" }}>Office</th>
+                <th style={{ padding: "8px 12px" }}>Desks</th>
+                {week.map((w) => <th key={w.day} style={{ padding: "8px 6px", textAlign: "center" }}>{w.label} {w.date.split(" ")[0]}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {offices.map((o) => (
+                <tr key={o}>
+                  <td style={{ padding: "8px 12px" }}><OfficeChip office={o} full /></td>
+                  <td style={{ padding: "8px 12px" }}>
+                    <input type="number" min={0} value={capForm?.[o] ?? ""} onChange={(e) => setCapForm({ ...capForm, [o]: Number(e.target.value) })} style={{ ...inputStyle, width: 72, padding: "5px 8px" }} />
+                  </td>
+                  {week.map((w) => {
+                    const n = data?.headcount?.[o]?.[w.day] || 0;
+                    const cap = data?.capacity?.[o] ?? 0;
+                    const over = n > cap;
+                    return (
+                      <td key={w.day} style={{ padding: "8px 6px", textAlign: "center" }}>
+                        <span className="num" style={{ fontWeight: 700, fontSize: 13, color: over ? T.red : n === 0 ? T.muted : T.text, background: over ? T.redBg : "transparent", padding: "2px 6px", borderRadius: 6 }}>{n}/{cap}</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <Segmented options={["All", ...offices]} value={officeFilter} onChange={setOfficeFilter} />
+        <Button variant="ghost" small icon={Trash2} disabled={!anySet} onClick={resetAll}>Reset All</Button>
       </div>
 
       <Card style={{ overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table className="data-table">
           <thead>
             <tr style={{ background: T.bg, textAlign: "left" }}>
-              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Employee</th>
-              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Office</th>
-              <th style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>Days/Week</th>
-              {WEEKDAY_ORDER.map((d) => <th key={d} style={{ padding: "10px 8px", fontSize: 11.5, color: T.muted, fontWeight: 700, textAlign: "center" }}>{WEEKDAY_LABELS[d]}</th>)}
+              <th style={{ padding: "10px 14px" }}>Employee</th>
+              <th style={{ padding: "10px 14px" }}>Plan</th>
+              {week.map((w) => <th key={w.day} style={{ padding: "10px 6px", textAlign: "center" }}>{w.label}</th>)}
+              <th style={{ padding: "10px 8px" }} />
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees to show.</td></tr>}
-            {filtered.map((e) => (
-              <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600 }}>{e.name}</div><div style={{ fontFamily: mono, fontSize: 11, color: T.muted }}>{e.id}</div></td>
-                <td style={{ padding: "10px 14px", color: T.muted }}>{e.office}</td>
+            {!data && !loadError && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>Loading…</td></tr>}
+            {data && rows.length === 0 && <EmptyRow colSpan={8} icon={Users}>No employees to show.</EmptyRow>}
+            {rows.map((r) => (
+              <tr key={r.id}>
                 <td style={{ padding: "10px 14px" }}>
-                  <select value={e.daysPerWeek ?? ""} onChange={(ev) => onUpdateDaysPerWeek(e.id, Number(ev.target.value))} style={{ ...inputStyle, padding: "5px 8px", width: 80 }}>
-                    <option value="">—</option>
-                    {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
+                  <PersonCell name={r.name} sub={`${r.employeeCode} · ${r.office || "—"}`} />
                 </td>
-                {WEEKDAY_ORDER.map((d) => (
-                  <td key={d} style={{ padding: "10px 8px", textAlign: "center" }}>
-                    {(e.assignedWorkDays || []).includes(d) ? <span style={{ color: T.teal, fontWeight: 700 }}>●</span> : <span style={{ color: T.border }}>—</span>}
+                <td style={{ padding: "10px 14px", fontSize: 12.5, color: r.mode ? T.text2 : T.muted, maxWidth: 260 }}>{planSummary(r)}</td>
+                {week.map((w) => (
+                  <td key={w.day} style={{ padding: "10px 6px", textAlign: "center" }}>
+                    {r.days?.[w.day] ? <OfficeChip office={r.days[w.day]} /> : <span style={{ color: T.border }}>—</span>}
                   </td>
                 ))}
+                <td style={{ padding: "10px 8px", whiteSpace: "nowrap", textAlign: "right" }}>
+                  <Button variant="ghost" small icon={PenLine} onClick={() => setEditing(r)}>{r.mode ? "Edit" : "Set"}</Button>
+                  {r.mode && (
+                    <button onClick={() => clearRow(r)} title={`Clear ${r.name}'s schedule`} aria-label={`Clear ${r.name}'s schedule`}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, marginLeft: 4, fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      <X size={14} /> Clear
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </Card>
+
+      {editing && <ScheduleEditor row={editing} onClose={() => setEditing(null)} onSaved={async (msg) => { setEditing(null); notify(msg); await load(); }} />}
     </div>
   );
 }
@@ -2540,36 +3067,39 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
   return (
     <div>
       <SectionTitle sub={`Reviewing variable earnings and deductions for ${CURRENT_MONTH}`}>Payroll — {CURRENT_MONTH}</SectionTitle>
+      <Card style={{ padding: "20px 22px 4px", marginBottom: 16 }}>
+        <div className="kk-card-title">Batch progress</div>
+        <PipelineStepper stages={STAGES} current={stageIdx} />
+      </Card>
       <div style={{ marginBottom: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <Pill tone="teal">Status: {payrollStage}</Pill>
         {payrollLoading && <span style={{ fontSize: 12, color: T.muted }}>Loading real payroll data…</span>}
         {API_BASE_URL && !payrollLoading && !hasRealRecords && <Pill tone="amber">Showing estimated figures — couldn't load real payroll data</Pill>}
         {API_BASE_URL && !payrollLoading && EMPLOYEES.length > visibleEmployees.length && (
           <Pill tone="muted">{EMPLOYEES.length - visibleEmployees.length} employee(s) hidden — salary not yet set</Pill>
         )}
         {advanceStage && (stageIdx < STAGES.length - 1
-          ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1]}</Button>
+          ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1].charAt(0) + STAGES[stageIdx + 1].slice(1).toLowerCase()}</Button>
           : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>)}
       </div>
       <Card style={{ overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Basic", "Overtime", "Bonus", "Gross", "Deductions", "Net Pay", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
             {visibleEmployees.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.muted }}>No employees have a salary set yet — add one under Employees to generate their payslip.</td></tr>
+              <EmptyRow colSpan={8} icon={Banknote}>No employees have a salary set yet — add one under Employees to generate their payslip.</EmptyRow>
             )}
             {visibleEmployees.map((e) => {
               const real = hasRealRecords ? payrollRecords[e.id] : null;
               const f = real || calcPayroll(e, 3);
               return (
                 <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600 }}>{e.name}</div><div style={{ fontFamily: mono, fontSize: 11, color: T.muted }}>{e.id}</div></td>
+                  <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.id} /></td>
                   <td style={{ padding: "10px 14px", fontFamily: mono }}>{money(f.basic)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, color: T.muted }}>{money(f.overtime)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, color: T.muted }}>{money(f.bonus)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 600 }}>{money(f.gross)}</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, color: T.red }}>-{money(f.totalDeductions)}</td>
-                  <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 700, color: T.navy }}>{money(f.net)}</td>
+                  <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 700, color: T.text }}>{money(f.net)}</td>
                   <td style={{ padding: "10px 14px" }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       {real ? (
@@ -2611,14 +3141,15 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
     <div>
       <SectionTitle sub="Organization-wide visibility over leave applications">Leave Requests</SectionTitle>
       <Card style={{ overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Type", "Dates", "Days", "Reason", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
+            {leaveRequests.length === 0 && <EmptyRow colSpan={7} icon={CalendarDays}>No leave requests yet — new applications will show up here.</EmptyRow>}
             {leaveRequests.map((r) => {
               const e = empById(r.emp);
               return (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px" }}>{e.name}</td>
+                  <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} /></td>
                   <td style={{ padding: "10px 14px", color: T.muted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {r.type}
@@ -2632,8 +3163,8 @@ function HrLeave({ leaveRequests, decider, onDecide }) {
                   <td style={{ padding: "10px 14px" }}>
                     {r.status === "Pending" ? (
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => setTarget({ request: r, intent: "approve" })} style={{ background: "none", border: "none", cursor: "pointer" }} title="Approve"><CheckCircle2 size={17} color={T.green} /></button>
-                        <button onClick={() => setTarget({ request: r, intent: "reject" })} style={{ background: "none", border: "none", cursor: "pointer" }} title="Decline"><XCircle size={17} color={T.red} /></button>
+                        <Button variant="success" small icon={CheckCircle2} onClick={() => setTarget({ request: r, intent: "approve" })}>Approve</Button>
+                        <Button variant="danger" small icon={XCircle} onClick={() => setTarget({ request: r, intent: "reject" })}>Decline</Button>
                       </div>
                     ) : (
                       <button onClick={() => downloadLeaveLetter(r, e)} style={{ background: "none", border: "none", cursor: "pointer", color: T.teal }} title="Download signed letter"><Download size={16} /></button>
@@ -2661,20 +3192,20 @@ function AdminOverview({ supportTickets, officeIssues }) {
   return (
     <div>
       <SectionTitle sub="System-level status for the whole platform">System Overview</SectionTitle>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-        <StatCard icon={Users} label="User Accounts" value={EMPLOYEES.length} />
-        <StatCard icon={Building2} label="Departments" value={DEPARTMENTS.length} />
+      <div className="kk-stat-grid">
+        <StatCard icon={Users} label="User Accounts" value={EMPLOYEES.length} tone={T.purple} />
+        <StatCard icon={Building2} label="Departments" value={DEPARTMENTS.length} tone={T.indigo} />
         <StatCard icon={LifeBuoy} label="Open Support Tickets" value={openTickets} tone={openTickets > 0 ? T.amber : T.green} />
         <StatCard icon={MapPin} label="Open Office Issues" value={openOfficeIssues} tone={openOfficeIssues > 0 ? T.amber : T.green} />
       </div>
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Accounts by Role</div>
+        <div className="kk-card-title" style={{ marginBottom: 14 }}>Accounts by Role</div>
         {roleCounts.map((r) => (
           <div key={r.role} style={{ marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
               <span style={{ color: T.muted }}>{ROLE_LABEL[r.role]}</span><span style={{ fontFamily: mono, fontWeight: 600 }}>{r.count}</span>
             </div>
-            <div style={{ height: 6, background: "#EEF0F3", borderRadius: 3 }}><div style={{ height: 6, borderRadius: 3, background: T.purple, width: `${(r.count / EMPLOYEES.length) * 100}%` }} /></div>
+            <div className="kk-progress" style={{ "--accent": { master: "var(--kk-red)", it_support: "var(--kk-indigo)", admin: "var(--kk-purple)", hr: "var(--kk-brand)", manager: "var(--kk-amber)", employee: "var(--kk-green)" }[r.role] }}><div style={{ width: `${EMPLOYEES.length ? (r.count / EMPLOYEES.length) * 100 : 0}%` }} /></div>
           </div>
         ))}
       </Card>
@@ -2729,7 +3260,7 @@ function AdminCompanySettings({ onUpdateCompany, payrollSettings, onUpdatePayrol
       <SectionTitle sub="Company profile and automated payslip delivery">Company & Settings</SectionTitle>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 14 }}>Company Profile</div>
+          <div className="kk-card-title" style={{ marginBottom: 14 }}>Company Profile</div>
           {field("Company Name", "name")}
           {field("Registration No.", "regNo", "Enter your CIPC registration number")}
           {field("Address", "address")}
@@ -2743,7 +3274,7 @@ function AdminCompanySettings({ onUpdateCompany, payrollSettings, onUpdatePayrol
           {!API_BASE_URL && <div style={{ fontSize: 11, color: T.muted, marginTop: 8 }}>Not connected to a backend — changes are kept locally for this session only.</div>}
         </Card>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Payslip Delivery</div>
+          <div className="kk-card-title" style={{ marginBottom: 4 }}>Payslip Delivery</div>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>Automatic monthly payslip generation and email delivery.</div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <span style={{ fontSize: 13 }}>Automatic Sending</span>
@@ -2773,7 +3304,7 @@ function AdminCompanySettings({ onUpdateCompany, payrollSettings, onUpdatePayrol
           </div>
         </Card>
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>Email Delivery</div>
+          <div className="kk-card-title" style={{ marginBottom: 4 }}>Email Delivery</div>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>
             Sends a real test email, through the same system that sends payslips and account verification codes, to your own account's inbox — confirms mail is actually configured without needing to check server logs.
           </div>
@@ -2879,7 +3410,7 @@ function AdminLevels({ onUpdateLevel, onAddLevel }) {
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <div style={{ flex: "2 1 460px" }}>
           <Card style={{ overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <table className="data-table">
               <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Level", "Default Salary", "Range", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
               <tbody>
                 {LEVELS.map((l) => <LevelRow key={l.name} level={l} onSave={onUpdateLevel} />)}
@@ -2891,7 +3422,7 @@ function AdminLevels({ onUpdateLevel, onAddLevel }) {
           </div>
         </div>
         <Card style={{ padding: 18, flex: "1 1 220px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 12 }}>Departments</div>
+          <div className="kk-card-title" style={{ marginBottom: 12 }}>Departments</div>
           {DEPARTMENTS.map((d) => (
             <div key={d} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
               <span>{d}</span><span style={{ fontFamily: mono, color: T.muted }}>{EMPLOYEES.filter((e) => e.dept === d).length}</span>
@@ -2908,20 +3439,16 @@ const ASSIGNABLE_ROLES = ["employee", "manager", "hr", "admin", "it_support"];
 function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh, onVerifyEmail }) {
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <SectionTitle sub={isMaster ? "Every account — you're the only one who can change roles" : "Every account and its assigned system role"}>User Accounts</SectionTitle>
-        {isMaster && onRefresh && (
-          <Button variant="ghost" small icon={RefreshCw} onClick={onRefresh}>Refresh (pulls in new signups)</Button>
-        )}
-      </div>
+      <SectionTitle sub={isMaster ? "Every account — you're the only one who can change roles" : "Every account and its assigned system role"}
+        actions={isMaster && onRefresh ? <Button variant="ghost" small icon={RefreshCw} onClick={onRefresh}>Refresh</Button> : null}>User Accounts</SectionTitle>
       <Card style={{ overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee ID", "Name", "Role", "Email", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
             {EMPLOYEES.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}`, background: e.id === currentUserId ? T.tealLight : "transparent" }}>
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
-                <td style={{ padding: "10px 14px", fontWeight: 600 }}>{e.name}{e.id === currentUserId && <span style={{ color: T.muted, fontWeight: 400 }}> (you)</span>}</td>
+                <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} suffix={e.id === currentUserId && <span style={{ color: T.muted, fontWeight: 450 }}> (you)</span>} /></td>
                 <td style={{ padding: "10px 14px" }}>
                   {isMaster && e.role !== "master" && e.id !== currentUserId ? (
                     <select value={e.role} onChange={(ev) => onChangeRole(e.id, ev.target.value)} style={{ ...inputStyle, padding: "5px 8px", fontSize: 12, width: "auto" }}>
@@ -2968,18 +3495,18 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
   return (
     <div>
       <SectionTitle sub={`Signed in as ${manager.name} · ${manager.position}`}>My Team</SectionTitle>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-        <StatCard icon={Users} label="Team Members" value={team.length} />
+      <div className="kk-stat-grid">
+        <StatCard icon={Users} label="Team Members" value={team.length} tone={T.green} />
         <StatCard icon={Clock} label="Pending Approvals" value={pending.length} tone={T.amber} />
       </div>
       <SectionTitle>Team Members</SectionTitle>
       <Card style={{ overflow: "hidden", marginBottom: 22 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Level", "Position", "Leave Balance (Annual)"].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
             {team.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                <td style={{ padding: "10px 14px" }}>{e.name}</td>
+                <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} /></td>
                 <td style={{ padding: "10px 14px" }}>{e.level ? <Pill tone="teal">{e.level}</Pill> : <span style={{ color: T.muted }}>—</span>}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
                 <td style={{ padding: "10px 14px", fontFamily: mono }}>{(LEAVE_BALANCES[e.id] || {})["Annual Leave"] ?? "—"} days</td>
@@ -2990,15 +3517,15 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
       </Card>
       <SectionTitle sub="Requests from employees reporting to you">Leave Requests To Review</SectionTitle>
       <Card style={{ overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table className="data-table">
           <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Type", "Dates", "Days", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
-            {teamRequests.length === 0 && <tr><td colSpan={6} style={{ padding: 18, color: T.muted, textAlign: "center" }}>No leave requests from your team.</td></tr>}
+            {teamRequests.length === 0 && <EmptyRow colSpan={6} icon={CalendarDays}>No leave requests from your team.</EmptyRow>}
             {teamRequests.map((r) => {
               const e = empById(r.emp);
               return (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "10px 14px" }}>{e.name}</td>
+                  <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.position || e.dept} /></td>
                   <td style={{ padding: "10px 14px", color: T.muted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {r.type}
@@ -3038,14 +3565,30 @@ function ManagerView({ manager, leaveRequests, onDecide, allEmployees }) {
 /* ---------------------------------------------------------------------- */
 function ITAssistantChat() {
   const [messages, setMessages] = useState([
-    { from: "bot", text: "Hi! I can help with common IT issues — Outlook, Teams, printers, email setup, WiFi, and more. Try asking, or use the quick suggestions below." },
+    { from: "bot", text: "Hi! I can help with common IT issues — Outlook, Teams, printers, email setup, WiFi, and more. Ask me anything, or use the quick suggestions below." },
   ]);
   const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
+  // null = still checking; true/false = whether the server has a Groq key.
+  // The "AI" badge only shows once the server confirms it's set up.
+  const [aiAvailable, setAiAvailable] = useState(API_BASE_URL ? null : false);
+  const [aiProblem, setAiProblem] = useState("");
+  useEffect(() => {
+    if (!API_BASE_URL) return;
+    apiFetch("/api/me/assistant/status")
+      .then((s) => { setAiAvailable(Boolean(s && s.configured)); if (!s?.configured) setAiProblem("AI is off — GROQ_API_KEY isn't set on the server, so built-in answers are used."); })
+      .catch((e) => {
+        setAiAvailable(false);
+        setAiProblem(/\((403|404)\)|No static resource/i.test(e.message)
+          ? "AI is off — the server hasn't been updated with the AI assistant yet (redeploy the backend on Render)."
+          : `AI is off — ${e.message}`);
+      });
+  }, []);
   const listRef = useRef(null);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [messages]);
+  }, [messages, thinking]);
 
   const findAnswer = (text) => {
     const lower = text.toLowerCase();
@@ -3057,37 +3600,78 @@ function ITAssistantChat() {
     return match ? match.answer : "I don't have guidance for that yet. Please log a Support or Office Issue ticket and IT support will help you directly.";
   };
 
-  const send = (text) => {
-    if (!text.trim()) return;
-    setMessages((m) => [...m, { from: "user", text }, { from: "bot", text: findAnswer(text) }]);
+  const send = async (text) => {
+    if (!text.trim() || thinking) return;
+    const history = [...messages, { from: "user", text }];
+    setMessages(history);
     setInput("");
+    if (aiAvailable === false) {
+      setMessages((m) => [...m, { from: "bot", text: findAnswer(text) }]);
+      return;
+    }
+    setThinking(true);
+    try {
+      const res = await apiFetch("/api/me/assistant", {
+        method: "POST",
+        body: JSON.stringify({ messages: history.filter((m) => !m.notice).map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text })) }),
+      });
+      setAiProblem("");
+      setMessages((m) => [...m, { from: "bot", text: res.reply, ai: true }]);
+    } catch (e) {
+      // Say what went wrong instead of silently swapping in a canned answer.
+      const tooFast = /too quickly/i.test(e.message);
+      setAiProblem(tooFast ? "" : `AI couldn't answer: ${e.message}`);
+      setMessages((m) => [...m, tooFast
+        ? { from: "bot", text: e.message }
+        : { from: "bot", notice: true, text: `The AI couldn't answer (${e.message}). Built-in answer:\n\n${findAnswer(text)}` }]);
+    }
+    setThinking(false);
   };
 
   return (
-    <Card style={{ padding: 0, maxWidth: 540, overflow: "hidden" }}>
-      <div style={{ background: T.navy, padding: "12px 16px", display: "flex", alignItems: "center", gap: 8 }}>
-        <Bot size={16} color="#fff" />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 13.5 }}>IT Assistant</span>
+    <div className="kk-chat">
+      <div className="kk-chat-head">
+        <div className="kk-chat-bot"><Bot size={18} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 750, fontSize: 15, color: "#fff", fontFamily: "var(--kk-font-display)" }}>IT Assistant</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="kk-online-dot" /> {aiAvailable === true ? "AI-powered · replies in seconds" : "Online · quick fixes for common issues"}
+          </div>
+        </div>
+        {aiAvailable === true && <span className="kk-chat-badge"><Sparkles size={11} /> AI</span>}
       </div>
-      <div ref={listRef} style={{ padding: 16, height: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div ref={listRef} className="kk-chat-body">
         {messages.map((m, i) => (
-          <div key={i} style={{
-            alignSelf: m.from === "user" ? "flex-end" : "flex-start",
-            background: m.from === "user" ? T.navy : T.bg, color: m.from === "user" ? "#fff" : T.text,
-            padding: "8px 12px", borderRadius: 10, maxWidth: "82%", fontSize: 13, lineHeight: 1.5,
-          }}>{m.text}</div>
+          <div key={i} className={`kk-msg ${m.from === "user" ? "kk-msg--me" : ""}`}>
+            {m.from !== "user" && <div className="kk-msg-avatar"><Bot size={14} /></div>}
+            <div className={`kk-bubble ${m.from === "user" ? "kk-bubble--me" : ""} ${m.notice ? "kk-bubble--notice" : ""}`}>{m.text}</div>
+          </div>
+        ))}
+        {thinking && (
+          <div className="kk-msg">
+            <div className="kk-msg-avatar"><Bot size={14} /></div>
+            <div className="kk-bubble kk-typing" aria-label="Assistant is typing"><span /><span /><span /></div>
+          </div>
+        )}
+      </div>
+      <div className="kk-chat-suggest">
+        {["Outlook frozen", "Teams won't load", "Printer not working", "Set up email", "WiFi not working"].map((q) => (
+          <button key={q} onClick={() => send(q)} disabled={thinking} className="kk-chip">{q}</button>
         ))}
       </div>
-      <div style={{ padding: "10px 12px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {["Outlook frozen", "Teams won't load", "Printer not working", "Set up email"].map((q) => (
-          <button key={q} onClick={() => send(q)} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 14, border: `1px solid ${T.border}`, background: "#fff", cursor: "pointer", color: T.muted }}>{q}</button>
-        ))}
+      {aiProblem && (
+        <div style={{ margin: "0 14px 10px", display: "flex", gap: 6, alignItems: "flex-start", color: T.amber, background: T.amberBg, padding: "8px 12px", borderRadius: 12, fontSize: 12, lineHeight: 1.45 }}>
+          <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{aiProblem}</span>
+        </div>
+      )}
+      <form className="kk-chat-input" onSubmit={(e) => { e.preventDefault(); send(input); }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Describe your issue…" maxLength={2000} aria-label="Message" />
+        <button type="submit" className="kk-send" disabled={thinking || !input.trim()} aria-label="Send"><Send size={16} /></button>
+      </form>
+      <div style={{ padding: "0 16px 14px", fontSize: 11, color: T.muted, textAlign: "center" }}>
+        {aiAvailable ? "AI answers can be wrong — never share passwords here. Still stuck? Log a ticket." : "Never share passwords here. Still stuck? Log a ticket."}
       </div>
-      <div style={{ padding: 12, borderTop: `1px solid ${T.border}`, display: "flex", gap: 8 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(input); }} style={{ ...inputStyle, flex: 1 }} placeholder="Describe your issue…" />
-        <Button variant="teal" small onClick={() => send(input)}>Send</Button>
-      </div>
-    </Card>
+    </div>
   );
 }
 
@@ -3095,44 +3679,155 @@ function ITAssistantChat() {
 /* PORTAL CHOOSER — first thing shown after login (for the employee-      */
 /* facing side): choose Payroll & Leave, or IT Support                    */
 /* ---------------------------------------------------------------------- */
-function ChoicePortalCard({ icon: Icon, title, desc, onClick }) {
+function ChoicePortalCard({ icon: Icon, title, desc, tags, stat, statLabel, accent, onClick }) {
   return (
-    <button onClick={onClick} style={{
-      flex: "1 1 240px", textAlign: "left", background: T.surface, border: `1px solid ${T.border}`,
-      borderRadius: 10, padding: 22, cursor: "pointer", display: "flex", flexDirection: "column", gap: 10,
-    }}>
-      <div style={{ width: 38, height: 38, borderRadius: 8, background: T.tealLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Icon size={19} color={T.teal} />
+    <button onClick={onClick} className="kk-portal-card" style={{ "--accent": accent }}>
+      <div className="kk-portal-glow" />
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        <div className="kk-portal-icon"><Icon size={22} color="#fff" /></div>
+        <span className="kk-portal-arrow"><ArrowRight size={18} /></span>
       </div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{title}</div>
-      <div style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.5 }}>{desc}</div>
-      <div style={{ fontSize: 12.5, color: T.teal, fontWeight: 600, marginTop: 4 }}>Continue →</div>
+      <div style={{ marginTop: 18 }}>
+        <div style={{ fontSize: 18, fontWeight: 750, letterSpacing: "-0.015em", color: T.text }}>{title}</div>
+        <div style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.55, marginTop: 6 }}>{desc}</div>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 14 }}>
+        {tags.map((t) => <span key={t} className="kk-portal-tag">{t}</span>)}
+      </div>
+      <div style={{ marginTop: "auto", paddingTop: 18 }}>
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 14, display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span className="num" style={{ fontSize: 20, fontWeight: 750, color: T.text, letterSpacing: "-0.02em" }}>{stat}</span>
+          <span style={{ fontSize: 12.5, color: T.muted }}>{statLabel}</span>
+        </div>
+      </div>
     </button>
   );
 }
 
-function PortalChooser({ empName, mySchedule, onChoose }) {
+/** Mon-Fri strip showing which office (if any) someone is in each day. */
+function MyWeekGrid({ schedule, weekOffset = 0 }) {
   return (
-    <div style={{ maxWidth: 640 }}>
-      <SectionTitle sub={`Welcome, ${empName}. What would you like to do?`}>Choose a Portal</SectionTitle>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <ChoicePortalCard icon={Banknote} title="Payroll & Leave" desc="View your payslips, apply for leave, and check your leave balance." onClick={() => onChoose("leave")} />
-        <ChoicePortalCard icon={LifeBuoy} title="IT Support" desc="Ask the assistant, or log a system or office issue." onClick={() => onChoose("itSupport")} />
-      </div>
-      {mySchedule && mySchedule.daysPerWeek != null && (
-        <Card style={{ padding: 18, marginTop: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>This Week's Office Schedule</div>
-            <div style={{ fontSize: 11.5, color: T.muted }}>{mySchedule.daysPerWeek} day{mySchedule.daysPerWeek === 1 ? "" : "s"}/week · {mySchedule.office}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8 }}>
+      {thisWeekDates(weekOffset).map(({ day, date, label }) => {
+        const office = officeOnDay(schedule, day);
+        const st = OFFICE_STYLE[office] || { fg: T.teal, bg: T.tealLight };
+        return (
+          <div key={day} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 10, background: office ? st.bg : T.bg, border: `1px solid ${office ? st.fg : T.border}` }}>
+            <div style={{ fontSize: 10.5, color: T.muted, fontWeight: 700, letterSpacing: 0.3 }}>{label}</div>
+            <div style={{ fontSize: 10, color: T.muted, marginBottom: 6 }}>{date}</div>
+            {office ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                <Building2 size={14} color={st.fg} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: st.fg, overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{office}</span>
+              </div>
+            ) : (
+              <span style={{ fontSize: 11, color: T.muted }}>Remote</span>
+            )}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
-            {thisWeekDates().map(({ day, date, label }) => {
-              const inOffice = (mySchedule.assignedWorkDays || []).includes(day);
+        );
+      })}
+    </div>
+  );
+}
+
+function PortalChooser({ empName, emp, mySchedule, onChoose, annualLeaveLeft, pendingLeave, latestPayslip }) {
+  const [showNextWeek, setShowNextWeek] = useState(false);
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const firstName = (empName || "").split(" ")[0];
+  const dateLabel = now.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const week = thisWeekDates(showNextWeek ? 1 : 0);
+  const todayIso = now.getDay() >= 1 && now.getDay() <= 5 ? WEEKDAY_ORDER[now.getDay() - 1] : null;
+  const scheduleThisWeek = mySchedule || null;
+  const scheduleShown = showNextWeek ? { days: mySchedule?.nextWeekDays || {} } : scheduleThisWeek;
+  const hasSchedule = mySchedule && (Object.keys(mySchedule.days || {}).length > 0 || Object.keys(mySchedule.nextWeekDays || {}).length > 0 || (mySchedule.assignedWorkDays || []).length > 0);
+  const todayOffice = todayIso ? officeOnDay(scheduleThisWeek, todayIso) : null;
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+  const nextOfficeDay = (() => {
+    const order = thisWeekDates(0);
+    const idx = todayIso ? order.findIndex((d) => d.day === todayIso) : -1;
+    for (let i = idx + 1; i < order.length; i++) { const o = officeOnDay(scheduleThisWeek, order[i].day); if (o) return `${order[i].label} · ${o}`; }
+    for (const d of thisWeekDates(1)) { const o = mySchedule?.nextWeekDays?.[d.day]; if (o) return `Next ${d.label} · ${o}`; }
+    return null;
+  })();
+  const officeDaysShown = week.filter((d) => officeOnDay(scheduleShown, d.day)).length;
+
+  return (
+    <div style={{ maxWidth: 1040 }}>
+      {/* Hero */}
+      <section className="kk-hero">
+        <div style={{ position: "relative", zIndex: 1, display: "flex", justifyContent: "space-between", gap: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.65)", fontWeight: 600, letterSpacing: "0.02em" }}>{dateLabel}</div>
+            <h1 style={{ margin: "8px 0 6px", fontSize: 30, lineHeight: 1.15, fontWeight: 800, letterSpacing: "-0.025em", color: "#fff" }}>{greeting}, {firstName}</h1>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.7)" }}>
+              {[emp?.position, emp?.dept].filter(Boolean).join(" · ") || "Welcome to your workspace"}
+            </div>
+          </div>
+          <div className="kk-hero-status">
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}>Today</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: todayOffice ? "#4ADE80" : isWeekend ? "#94A3B8" : "#FBBF24", boxShadow: `0 0 0 4px ${todayOffice ? "rgba(74,222,128,.2)" : "rgba(251,191,36,.18)"}` }} />
+              <span style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{isWeekend ? "Weekend" : todayOffice ? `In office · ${todayOffice}` : hasSchedule ? "Working remotely" : "No office days set"}</span>
+            </div>
+            {nextOfficeDay && <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.65)", marginTop: 6 }}>Next in office: {nextOfficeDay}</div>}
+          </div>
+        </div>
+      </section>
+
+      {/* Portals */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "28px 0 14px" }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em" }}>Where do you want to go?</h2>
+      </div>
+      <div className="kk-portal-grid">
+        <ChoicePortalCard icon={Banknote} accent="var(--kk-brand)" title="Payroll & Leave"
+          desc="Payslips, leave applications and balances — all in one place."
+          tags={["Payslips", "Apply for leave", "Leave history", "My schedule"]}
+          stat={annualLeaveLeft != null ? `${annualLeaveLeft} days` : latestPayslip ? latestPayslip : "—"}
+          statLabel={annualLeaveLeft != null ? `annual leave left${pendingLeave ? ` · ${pendingLeave} pending` : ""}` : "latest payslip"}
+          onClick={() => onChoose("leave")} />
+        <ChoicePortalCard icon={LifeBuoy} accent="var(--kk-indigo)" title="IT Support"
+          desc="Get a quick fix from the assistant, or log a system or office issue."
+          tags={["Ask the assistant", "System issue", "Office issue"]}
+          stat="24/7" statLabel="assistant available"
+          onClick={() => onChoose("itSupport")} />
+      </div>
+
+      {/* Schedule */}
+      {hasSchedule && (
+        <Card style={{ padding: 22, marginTop: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>Office schedule</div>
+              <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{week[0].date} – {week[4].date} · {officeDaysShown} day{officeDaysShown === 1 ? "" : "s"} in office</div>
+            </div>
+            <div className="kk-tabs" style={{ marginBottom: 0 }} role="tablist">
+              <button role="tab" className="kk-tab" aria-selected={!showNextWeek} onClick={() => setShowNextWeek(false)}>This week</button>
+              <button role="tab" className="kk-tab" aria-selected={showNextWeek} onClick={() => setShowNextWeek(true)}>Next week</button>
+            </div>
+          </div>
+          <div className="kk-week">
+            {week.map(({ day, date, label }) => {
+              const office = officeOnDay(scheduleShown, day);
+              const st = OFFICE_STYLE[office] || { fg: T.teal, bg: T.tealLight };
+              const isToday = !showNextWeek && day === todayIso;
               return (
-                <div key={day} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 8, background: inOffice ? T.tealLight : T.bg, border: `1px solid ${inOffice ? T.teal : T.border}` }}>
-                  <div style={{ fontSize: 10.5, color: T.muted, fontWeight: 700, letterSpacing: 0.3 }}>{label}</div>
-                  <div style={{ fontSize: 10, color: T.muted, marginBottom: 6 }}>{date}</div>
-                  {inOffice ? <Building2 size={14} color={T.teal} style={{ margin: "0 auto" }} /> : <span style={{ fontSize: 13, color: T.border }}>—</span>}
+                <div key={day} className={`kk-day ${office ? "kk-day--office" : ""} ${isToday ? "kk-day--today" : ""}`} style={office ? { "--office-fg": st.fg, "--office-bg": st.bg } : undefined}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: T.text2 }}>{label}</span>
+                    {isToday && <span className="kk-today-pill">Today</span>}
+                  </div>
+                  <div className="num" style={{ fontSize: 22, fontWeight: 750, letterSpacing: "-0.02em", margin: "6px 0 10px", color: T.text }}>{date.split(" ")[0]}</div>
+                  {office ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: st.fg, fontSize: 12.5, fontWeight: 700 }}>
+                      <Building2 size={14} /> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{office}</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: T.muted, fontSize: 12.5, fontWeight: 600 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", opacity: 0.6 }} /> Remote
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -3156,14 +3851,7 @@ function ITSupportPortal({ goSupport, goOfficeIssues }) {
   return (
     <div>
       <SectionTitle sub="Ask the assistant for a quick fix, or log a ticket directly">IT Support</SectionTitle>
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => (t.id === "system" ? goSupport() : t.id === "office" ? goOfficeIssues() : setTab(t.id))} style={{
-            background: "none", border: "none", cursor: "pointer", padding: "8px 4px", fontSize: 13, fontWeight: 600,
-            color: tab === t.id ? T.navy : T.muted, borderBottom: tab === t.id ? `2px solid ${T.teal}` : "2px solid transparent",
-          }}>{t.label}</button>
-        ))}
-      </div>
+      <Tabs tabs={tabs} active={tab} onChange={(id) => (id === "system" ? goSupport() : id === "office" ? goOfficeIssues() : setTab(id))} />
       {tab === "assistant" && <ITAssistantChat />}
     </div>
   );
@@ -3218,26 +3906,43 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
       <SectionTitle sub={emp.role === "employee" ? `Signed in as ${emp.name} · ${emp.position}` : `Personal self-service · ${emp.name} (${ROLE_LABEL[emp.role]})`}>
         {emp.role === "employee" ? "Employee Dashboard" : "My Profile"}
       </SectionTitle>
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${T.border}` }}>
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "8px 4px", fontSize: 13, fontWeight: 600, color: tab === t.id ? T.navy : T.muted, borderBottom: tab === t.id ? `2px solid ${T.teal}` : "2px solid transparent" }}>{t.label}</button>
-        ))}
-      </div>
+      <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
       {tab === "dashboard" && (
         <div>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-            {Object.entries(balances).map(([k, v]) => <StatCard key={k} icon={CalendarDays} label={k} value={`${v}d`} title={LEAVE_POLICY[k]} />)}
+          <div className="kk-stat-grid">
+            {Object.entries(balances).map(([k, v]) => {
+              const full = { "Annual Leave": 15, "Sick Leave": 30, "Family Responsibility Leave": 3 }[k];
+              const tone = { "Annual Leave": T.teal, "Sick Leave": T.indigo, "Family Responsibility Leave": T.purple }[k] || T.green;
+              return <StatCard key={k} icon={CalendarDays} label={k} value={`${v} days`} tone={tone} progress={full ? (v / full) * 100 : null} title={LEAVE_POLICY[k]} />;
+            })}
           </div>
-          <Card style={{ padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}><Bell size={15} color={T.teal} /><span style={{ fontWeight: 650, fontSize: 13.5 }}>Notifications</span></div>
-            <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 13, color: T.muted, lineHeight: 1.9 }}>
-              {myHistory.length > 0 && <li>Your {myHistory[myHistory.length - 1].month} payslip has been emailed to {emp.email}</li>}
+          <Card style={{ padding: 22 }}>
+            <div className="kk-card-title"><Bell size={16} color={T.teal} /> Recent activity</div>
+            <div className="kk-activity">
+              {myHistory.length > 0 && (
+                <div className="kk-activity-item" style={{ "--accent": "var(--kk-green)" }}>
+                  <div className="kk-activity-icon"><Banknote size={15} /></div>
+                  <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>{myHistory[myHistory.length - 1].month} payslip sent</div><div style={{ fontSize: 12.5, color: T.muted }}>Emailed to {emp.email}</div></div>
+                </div>
+              )}
               {myRequests.filter((r) => r.status !== "Pending").slice(-1).map((r) => (
-                <li key={r.id}>Your {r.type} request ({r.start} – {r.end}) was <strong style={{ color: r.status === "Approved" ? T.green : T.red }}>{r.status.toLowerCase()}</strong></li>
+                <div key={r.id} className="kk-activity-item" style={{ "--accent": r.status === "Approved" ? "var(--kk-green)" : "var(--kk-red)" }}>
+                  <div className="kk-activity-icon">{r.status === "Approved" ? <CheckCircle2 size={15} /> : <XCircle size={15} />}</div>
+                  <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.type} {r.status.toLowerCase()}</div><div style={{ fontSize: 12.5, color: T.muted }}>{r.start} – {r.end}</div></div>
+                </div>
               ))}
-              <li>Leave balance updated for the new leave cycle</li>
-            </ul>
+              {myRequests.filter((r) => r.status === "Pending").slice(0, 2).map((r) => (
+                <div key={r.id} className="kk-activity-item" style={{ "--accent": "var(--kk-amber)" }}>
+                  <div className="kk-activity-icon"><Clock size={15} /></div>
+                  <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.type} awaiting approval</div><div style={{ fontSize: 12.5, color: T.muted }}>{r.start} – {r.end} · {r.days} day{r.days === 1 ? "" : "s"}</div></div>
+                </div>
+              ))}
+              <div className="kk-activity-item" style={{ "--accent": "var(--kk-indigo)" }}>
+                <div className="kk-activity-icon"><CalendarDays size={15} /></div>
+                <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>Leave balances updated</div><div style={{ fontSize: 12.5, color: T.muted }}>For the new leave cycle</div></div>
+              </div>
+            </div>
           </Card>
         </div>
       )}
@@ -3247,7 +3952,7 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
           <Card style={{ padding: 24, textAlign: "center", color: T.muted, fontSize: 13 }}>No payslips yet — these appear once the first payroll run after you join has been sent.</Card>
         ) : (
           <Card style={{ overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <table className="data-table">
               <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Pay Period", "Net Pay", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
               <tbody>
                 {myHistory.map((h) => (
@@ -3278,7 +3983,9 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
       )}
 
       {tab === "applyLeave" && (
-        <Card style={{ padding: 22, maxWidth: 460 }}>
+        <div className="kk-split">
+        <Card style={{ padding: 24 }}>
+          <div className="kk-card-title">New leave application</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Leave Type</label>
@@ -3312,14 +4019,40 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
             <Button variant="teal" onClick={submit}>Submit Application</Button>
           </div>
         </Card>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Card style={{ padding: 22 }}>
+            <div className="kk-card-title">Your balances</div>
+            {Object.entries(balances).map(([k, v]) => {
+              const full = { "Annual Leave": 15, "Sick Leave": 30, "Family Responsibility Leave": 3 }[k] || v || 1;
+              return (
+                <div key={k} style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                    <span style={{ color: T.text2, fontWeight: 600 }}>{k}</span><span className="num" style={{ fontWeight: 700 }}>{v} days</span>
+                  </div>
+                  <div className="kk-progress" style={{ "--accent": k === form.type ? "var(--kk-brand)" : "var(--kk-indigo)" }}><div style={{ width: `${Math.min(100, (v / full) * 100)}%` }} /></div>
+                </div>
+              );
+            })}
+          </Card>
+          <Card style={{ padding: 22 }}>
+            <div className="kk-card-title">How it works</div>
+            <ol className="kk-steps-list">
+              <li>Pick the leave type and dates.</li>
+              <li>Attach proof if the type needs it (e.g. a medical certificate).</li>
+              <li>Sign and submit — {emp.role === "employee" ? "your manager or HR" : "HR"} reviews it.</li>
+              <li>You'll get a signed decision letter by email.</li>
+            </ol>
+          </Card>
+        </div>
+        </div>
       )}
 
       {tab === "leaveHistory" && (
         <Card style={{ overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="data-table">
             <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Type", "Dates", "Days", "Reason", "Status", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
             <tbody>
-              {myRequests.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.muted }}>No leave history yet.</td></tr>}
+              {myRequests.length === 0 && <EmptyRow colSpan={6} icon={CalendarDays}>No leave history yet.</EmptyRow>}
               {myRequests.map((r) => (
                 <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}>
@@ -3345,37 +4078,23 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
       )}
       {tab === "mySchedule" && (
         <Card style={{ padding: 20 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 4 }}>This Week's Office Schedule</div>
-          <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>
-            {mySchedule && mySchedule.daysPerWeek != null
-              ? `You're scheduled for ${mySchedule.daysPerWeek} day${mySchedule.daysPerWeek === 1 ? "" : "s"}/week at ${mySchedule.office || "your office"}.`
-              : "HR hasn't set your in-office schedule yet."}
-          </div>
-          {mySchedule && mySchedule.daysPerWeek != null ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-              {thisWeekDates().map(({ day, date, label }) => {
-                const inOffice = (mySchedule.assignedWorkDays || []).includes(day);
-                return (
-                  <div key={day} style={{ textAlign: "center", padding: "14px 6px", borderRadius: 8, background: inOffice ? T.tealLight : T.bg, border: `1px solid ${inOffice ? T.teal : T.border}` }}>
-                    <div style={{ fontSize: 11, color: T.muted, fontWeight: 700 }}>{label}</div>
-                    <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{date}</div>
-                    {inOffice ? (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                        <Building2 size={16} color={T.teal} />
-                        <span style={{ fontSize: 11, fontWeight: 700, color: T.teal }}>In Office</span>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                        <span style={{ fontSize: 16, color: T.muted }}>—</span>
-                        <span style={{ fontSize: 11, color: T.muted }}>Remote</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          {mySchedule && (Object.keys(mySchedule.days || {}).length > 0 || Object.keys(mySchedule.nextWeekDays || {}).length > 0 || mySchedule.daysPerWeek != null) ? (
+            <>
+              <div className="kk-card-title" style={{ marginBottom: 4 }}>This week</div>
+              <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Your office days rotate each week — check here before heading in.</div>
+              <MyWeekGrid schedule={mySchedule} />
+              {mySchedule.nextWeekDays && (
+                <>
+                  <div className="kk-card-title" style={{ margin: "22px 0 12px" }}>Next week</div>
+                  <MyWeekGrid schedule={{ days: mySchedule.nextWeekDays }} weekOffset={1} />
+                </>
+              )}
+            </>
           ) : (
-            <div style={{ fontSize: 12.5, color: T.muted }}>Once HR sets how many days/week you need to be in-office, your specific days will show here.</div>
+            <>
+              <div className="kk-card-title" style={{ marginBottom: 4 }}>Office schedule</div>
+              <div style={{ fontSize: 12.5, color: T.muted }}>HR hasn't set your office days yet. Once they do, your days (and which office) will show here.</div>
+            </>
           )}
         </Card>
       )}
@@ -3386,8 +4105,58 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
 /* ---------------------------------------------------------------------- */
 /* APP SHELL                                                              */
 /* ---------------------------------------------------------------------- */
+/** Top-bar search that jumps to any page the current user can open (Ctrl+K or "/" to focus). */
+function PageSearch({ items }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const inputRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      const typing = /input|textarea|select/i.test(document.activeElement?.tagName || "");
+      if ((e.key === "k" && (e.ctrlKey || e.metaKey)) || (e.key === "/" && !typing)) { e.preventDefault(); inputRef.current?.focus(); setOpen(true); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const results = items.filter((i) => i.label.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8);
+  const pick = (item) => { item.run(); setQ(""); setOpen(false); inputRef.current?.blur(); };
+  return (
+    <div className="kk-search kk-hide-sm" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
+      <Search size={15} className="kk-search-icon" />
+      <input ref={inputRef} value={q} placeholder="Search pages…" aria-label="Search pages"
+        onFocus={() => setOpen(true)} onChange={(e) => { setQ(e.target.value); setHi(0); setOpen(true); }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, results.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+          else if (e.key === "Enter" && results[hi]) pick(results[hi]);
+          else if (e.key === "Escape") { setOpen(false); e.currentTarget.blur(); }
+        }} />
+      <kbd className="kk-kbd">Ctrl K</kbd>
+      {open && results.length > 0 && (
+        <div className="kk-search-results" role="listbox">
+          {results.map((r, i) => (
+            <button key={r.label} role="option" aria-selected={i === hi} className="kk-search-item" onMouseEnter={() => setHi(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(r)}>
+              <span className="kk-search-item-icon"><r.icon size={15} /></span>{r.label}
+              {r.hint && <span style={{ marginLeft: "auto", fontSize: 11.5, color: T.muted }}>{r.hint}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NavItem({ icon: Icon, label, active, onClick }) {
+  return (
+    <button className="kk-nav-item" aria-current={active ? "page" : undefined} onClick={onClick}>
+      <Icon size={17} /> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+    </button>
+  );
+}
+
 export default function App() {
-  const [screen, setScreen] = useState("login"); // "login" | "signup" | "verify-email" | "app"
+  const [screen, setScreen] = useState(() => (API_BASE_URL && getStoredToken() ? "restoring" : "login")); // "restoring" | "login" | "signup" | "verify-email" | "app"
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [portalChoice, setPortalChoice] = useState(null); // null | "leave" | "itSupport"
@@ -3398,13 +4167,11 @@ export default function App() {
   const [levelsState, setLevelsState] = useState(LEVELS);
   const [companyState, setCompanyState] = useState(COMPANY);
   const [payrollSettingsState, setPayrollSettingsState] = useState({ autoSendEnabled: true, sendOn: "LAST_DAY_OF_MONTH", deliveryHour: 18, deliveryMinute: 0 });
-  const [scheduleCapacityState, setScheduleCapacityState] = useState({ Midrand: 15, Sandton: 10 });
   const [myScheduleState, setMyScheduleState] = useState(null);
   const [viewMode, setViewMode] = useState("role"); // "role" | "selfService" | "settings"
-  const [hrTab, setHrTab] = useState("dashboard");
-  const [adminTab, setAdminTab] = useState("overview");
-  const [itSupportTab, setItSupportTab] = useState("officeIssues");
-  const [masterTab, setMasterTab] = useState("users");
+  const [roleTab, setRoleTab] = useState(null); // active sidebar page for HR/Admin/IT Support/Master; null = that role's default
+  const [navOpen, setNavOpen] = useState(false); // mobile sidebar drawer
+  const theme = useTheme();
   const [leaveRequests, setLeaveRequests] = useState(INITIAL_LEAVE_REQUESTS);
   const [supportTickets, setSupportTickets] = useState([]);
   const [officeIssues, setOfficeIssues] = useState([]);
@@ -3461,7 +4228,7 @@ export default function App() {
       setPayrollRecords(mapped);
       if (rows.length > 0) setPayrollStage(rows[0].status);
     } catch (e) {
-      alert(`Couldn't advance payroll: ${e.message}`);
+      notify(`Couldn't advance payroll: ${e.message}`);
     }
   };
 
@@ -3471,9 +4238,9 @@ export default function App() {
       const updated = await apiFetch(`/api/hr/payroll/${payrollDbId}/resend-email`, { method: "POST" });
       const m = mapBackendPayroll(updated);
       setPayrollRecords((pr) => ({ ...pr, [m.empId]: m }));
-      alert(m.emailSent ? "Payslip email sent successfully." : `Send failed: ${m.emailFailureReason || "unknown reason"}`);
+      notify(m.emailSent ? "Payslip email sent successfully." : `Send failed: ${m.emailFailureReason || "unknown reason"}`);
     } catch (e) {
-      alert(`Couldn't resend: ${e.message}`);
+      notify(`Couldn't resend: ${e.message}`);
     }
   };
 
@@ -3489,7 +4256,7 @@ export default function App() {
         return next;
       });
     } catch (e) {
-      alert(`Couldn't remove this draft: ${e.message}`);
+      notify(`Couldn't remove this draft: ${e.message}`);
     }
   };
 
@@ -3545,66 +4312,6 @@ export default function App() {
     } catch (e) { /* non-fatal — falls back to the built-in default levels */ }
   };
 
-  const fetchScheduleCapacity = async () => {
-    if (!API_BASE_URL) return;
-    try {
-      const c = await apiFetch("/api/hr/schedule/capacity");
-      setScheduleCapacityState({ Midrand: c.Midrand ?? 15, Sandton: c.Sandton ?? 10 });
-    } catch (e) { /* non-fatal — falls back to the built-in default capacity */ }
-  };
-
-  const updateScheduleCapacity = async (fields) => {
-    if (API_BASE_URL) {
-      try {
-        const updated = await apiFetch("/api/hr/schedule/capacity", { method: "PUT", body: JSON.stringify(fields) });
-        setScheduleCapacityState({ Midrand: updated.Midrand ?? 15, Sandton: updated.Sandton ?? 10 });
-        return true;
-      } catch (e) {
-        alert(`Couldn't save office capacity: ${e.message}`);
-        return false;
-      }
-    }
-    setScheduleCapacityState((c) => ({ ...c, ...fields }));
-    return true;
-  };
-
-  const updateEmployeeDaysPerWeek = async (employeeId, days) => {
-    if (API_BASE_URL) {
-      const target = employeesState.find((e) => e.id === employeeId);
-      if (target && target._dbId) {
-        try {
-          await apiFetch(`/api/hr/employees/${target._dbId}/schedule`, { method: "PUT", body: JSON.stringify({ daysPerWeek: days }) });
-        } catch (e) {
-          alert(`Couldn't save this employee's schedule: ${e.message}`);
-          return;
-        }
-      }
-    }
-    setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, daysPerWeek: days } : e)));
-  };
-
-  const autoAssignSchedule = async () => {
-    if (!API_BASE_URL) {
-      alert("Auto-assign needs a connected backend.");
-      return;
-    }
-    try {
-      const updated = await apiFetch("/api/hr/schedule/auto-assign", { method: "POST" });
-      const mapped = updated.map(mapBackendEmployee);
-      setEmployeesState((es) => {
-        const byId = new Map(es.map((e) => [e.id, e]));
-        mapped.forEach((m) => {
-          const existing = byId.get(m.id);
-          byId.set(m.id, existing ? { ...existing, daysPerWeek: m.daysPerWeek, assignedWorkDays: m.assignedWorkDays } : m);
-        });
-        return Array.from(byId.values());
-      });
-      alert("Schedule generated for everyone with a days/week requirement set.");
-    } catch (e) {
-      alert(`Couldn't generate the schedule: ${e.message}`);
-    }
-  };
-
   const fetchMySchedule = async () => {
     if (!API_BASE_URL) return;
     try {
@@ -3629,7 +4336,7 @@ export default function App() {
         setPayrollSettingsState({ autoSendEnabled: !!updated.autoSendEnabled, sendOn: updated.sendOn, deliveryHour: updated.deliveryHour, deliveryMinute: updated.deliveryMinute });
         return true;
       } catch (e) {
-        alert(`Couldn't save payslip delivery settings: ${e.message}`);
+        notify(`Couldn't save payslip delivery settings: ${e.message}`);
         return false;
       }
     }
@@ -3678,7 +4385,7 @@ export default function App() {
         setCompanyState((c) => ({ ...c, officeAvailability: updated.officeAvailabilityNote || "" }));
         return;
       } catch (e) {
-        alert(`Couldn't save the availability note: ${e.message}`);
+        notify(`Couldn't save the availability note: ${e.message}`);
         return;
       }
     }
@@ -3701,7 +4408,7 @@ export default function App() {
         }));
         return true;
       } catch (e) {
-        alert(`Couldn't save company details: ${e.message}`);
+        notify(`Couldn't save company details: ${e.message}`);
         return false;
       }
     }
@@ -3766,6 +4473,110 @@ export default function App() {
     }
   };
 
+  /** Everything that happens once we hold a valid JWT — shared by a fresh
+   *  login and by restoring a saved session after a page refresh. Throws if
+   *  the token is rejected (expired, revoked) so callers can fall back to
+   *  the login screen. */
+  const startSession = async (auth, { restore = false } = {}) => {
+    setStoredToken(auth.token);
+    const be = await apiFetch("/api/me");
+    const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
+    setEmployeesState((es) => (es.some((e) => e.id === mapped.id) ? es.map((e) => (e.id === mapped.id ? mapped : e)) : [...es, mapped]));
+    if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
+      try {
+        // These three calls are independent of each other — running them
+        // concurrently instead of one-after-another is what actually cut
+        // login latency here, not just Render's cold-start behavior.
+        const [list, roleByCode, adminUsers] = await Promise.all([
+          apiFetch("/api/hr/employees"),
+          apiFetch("/api/hr/employee-roles").catch(() => ({})),
+          mapped.role === "master" ? apiFetch("/api/admin/users").catch(() => null) : Promise.resolve(null),
+        ]);
+        const mappedList = list.map(mapBackendEmployee);
+        const withRoles = mappedList.map((m) => {
+          // Never let this bulk fetch override the current user's own
+          // role — mapped.role came straight from the login response
+          // and is always authoritative. Employee objects from this
+          // endpoint have no role field at all, so anything else here
+          // is a best-effort fill-in for *other* people only.
+          if (m.id === mapped.id) return { ...m, role: mapped.role };
+          return roleByCode[m.id] ? { ...m, role: roleByCode[m.id].toLowerCase() } : m;
+        });
+        setEmployeesState((es) => {
+          const byId = new Map(es.map((e) => [e.id, e]));
+          withRoles.forEach((m) => byId.set(m.id, m));
+          return Array.from(byId.values());
+        });
+        if (adminUsers) applyAdminUserRows(adminUsers);
+        // Payroll processing (and the amounts it shows) is HR-only now — Admin/Master/IT
+        // Support don't have a payroll screen to feed, and the endpoint would 403 for them.
+        if (mapped.role === "hr") fetchPayrollForPeriod(mappedList);
+      } catch (e) { /* non-fatal — HR/Admin screens fall back to whatever's already known locally */ }
+    }
+    if (mapped.role === "manager") {
+      try {
+        const team = await apiFetch("/api/manager/team");
+        const mappedTeam = team.map(mapBackendEmployee);
+        setEmployeesState((es) => {
+          const byId = new Map(es.map((e) => [e.id, e]));
+          mappedTeam.forEach((m) => byId.set(m.id, m));
+          return Array.from(byId.values());
+        });
+      } catch (e) { /* non-fatal — team screen falls back to whatever's already known locally */ }
+    }
+    if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
+      fetchLevels();
+    }
+    if (["admin", "master", "it_support"].includes(mapped.role)) {
+      fetchSupportTickets();
+      fetchOfficeIssues();
+      fetchCompany();
+      fetchPayrollSettings();
+    }
+    fetchLeaveForRole(mapped.role, mapped.id);
+    fetchOfficeAvailability();
+    fetchMyPayslips(mapped.id);
+    fetchMySchedule();
+    setCurrentUserId(mapped.id);
+    const route = restore ? parseRoute(window.location.hash) : null;
+    setViewMode(route ? route.viewMode : "role");
+    setPortalChoice(route ? route.portalChoice : null);
+    setRoleTab(route ? route.roleTab : null);
+    setScreen("app");
+  };
+
+  // Restore the previous session on page load instead of forcing a fresh
+  // login every refresh. The JWT's own `exp` claim decides if it's usable.
+  useEffect(() => {
+    if (!API_BASE_URL) { setScreen("login"); return; }
+    const claims = decodeJwt(getStoredToken());
+    if (!claims || !claims.exp || claims.exp * 1000 < Date.now() + 30000) { setStoredToken(null); setScreen("login"); return; }
+    const role = String(claims.role || "ROLE_EMPLOYEE").replace(/^ROLE_/, "");
+    startSession({ token: getStoredToken(), role }, { restore: true }).catch(() => { setStoredToken(null); setScreen("login"); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // How many in-app pages are behind the current one, so on-screen "Back"
+  // buttons can step back exactly like the browser's Back button.
+  const inAppDepth = useRef(0);
+  // Keep the URL in step with where you are, so the browser's Back/Forward
+  // buttons and a refresh both land on the same page.
+  useEffect(() => {
+    if (screen !== "app") return;
+    const hash = buildRoute({ viewMode, portalChoice, roleTab });
+    if (window.location.hash !== hash) { window.history.pushState(null, "", hash); inAppDepth.current += 1; }
+  }, [screen, viewMode, portalChoice, roleTab]);
+  useEffect(() => {
+    const onPop = () => {
+      inAppDepth.current = Math.max(0, inAppDepth.current - 1);
+      const route = parseRoute(window.location.hash);
+      if (!route) return;
+      setViewMode(route.viewMode); setPortalChoice(route.portalChoice); setRoleTab(route.roleTab);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   const handleLogin = async (email, password) => {
     if (!API_BASE_URL) {
       const user = employeesState.find((e) => e.email.toLowerCase() === email.toLowerCase());
@@ -3775,6 +4586,7 @@ export default function App() {
       setCurrentUserId(user.id);
       setViewMode("role");
       setPortalChoice(null);
+      setRoleTab(null);
       setScreen("app");
       return null;
     }
@@ -3785,70 +4597,7 @@ export default function App() {
         setScreen("verify-email");
         return null;
       }
-      setStoredToken(auth.token);
-      const be = await apiFetch("/api/me");
-      const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
-      setEmployeesState((es) => (es.some((e) => e.id === mapped.id) ? es.map((e) => (e.id === mapped.id ? mapped : e)) : [...es, mapped]));
-      if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
-        try {
-          // These three calls are independent of each other — running them
-          // concurrently instead of one-after-another is what actually cut
-          // login latency here, not just Render's cold-start behavior.
-          const [list, roleByCode, adminUsers] = await Promise.all([
-            apiFetch("/api/hr/employees"),
-            apiFetch("/api/hr/employee-roles").catch(() => ({})),
-            mapped.role === "master" ? apiFetch("/api/admin/users").catch(() => null) : Promise.resolve(null),
-          ]);
-          const mappedList = list.map(mapBackendEmployee);
-          const withRoles = mappedList.map((m) => {
-            // Never let this bulk fetch override the current user's own
-            // role — mapped.role came straight from the login response
-            // and is always authoritative. Employee objects from this
-            // endpoint have no role field at all, so anything else here
-            // is a best-effort fill-in for *other* people only.
-            if (m.id === mapped.id) return { ...m, role: mapped.role };
-            return roleByCode[m.id] ? { ...m, role: roleByCode[m.id].toLowerCase() } : m;
-          });
-          setEmployeesState((es) => {
-            const byId = new Map(es.map((e) => [e.id, e]));
-            withRoles.forEach((m) => byId.set(m.id, m));
-            return Array.from(byId.values());
-          });
-          if (adminUsers) applyAdminUserRows(adminUsers);
-          // Payroll processing (and the amounts it shows) is HR-only now — Admin/Master/IT
-          // Support don't have a payroll screen to feed, and the endpoint would 403 for them.
-          if (mapped.role === "hr") fetchPayrollForPeriod(mappedList);
-        } catch (e) { /* non-fatal — HR/Admin screens fall back to whatever's already known locally */ }
-      }
-      if (mapped.role === "manager") {
-        try {
-          const team = await apiFetch("/api/manager/team");
-          const mappedTeam = team.map(mapBackendEmployee);
-          setEmployeesState((es) => {
-            const byId = new Map(es.map((e) => [e.id, e]));
-            mappedTeam.forEach((m) => byId.set(m.id, m));
-            return Array.from(byId.values());
-          });
-        } catch (e) { /* non-fatal — team screen falls back to whatever's already known locally */ }
-      }
-      if (["hr", "admin", "master", "it_support"].includes(mapped.role)) {
-        fetchLevels();
-        fetchScheduleCapacity();
-      }
-      if (["admin", "master", "it_support"].includes(mapped.role)) {
-        fetchSupportTickets();
-        fetchOfficeIssues();
-        fetchCompany();
-        fetchPayrollSettings();
-      }
-      fetchLeaveForRole(mapped.role, mapped.id);
-      fetchOfficeAvailability();
-      fetchMyPayslips(mapped.id);
-      fetchMySchedule();
-      setCurrentUserId(mapped.id);
-      setViewMode("role");
-      setPortalChoice(null);
-      setScreen("app");
+      await startSession(auth);
       return null;
     } catch (e) {
       return e.message;
@@ -3902,20 +4651,7 @@ export default function App() {
   /** Shared by a fresh signup and a just-verified account — both are the
    *  same case: a brand-new Employee-role session with no HR/manager data
    *  to warm up yet. */
-  const completeEmployeeSession = async (auth) => {
-    setStoredToken(auth.token);
-    const be = await apiFetch("/api/me");
-    const mapped = { ...mapBackendEmployee(be), role: (auth.role || "employee").toLowerCase() };
-    setEmployeesState((es) => (es.some((e) => e.id === mapped.id) ? es.map((e) => (e.id === mapped.id ? mapped : e)) : [...es, mapped]));
-    fetchLeaveForRole(mapped.role, mapped.id);
-    fetchOfficeAvailability();
-    fetchMyPayslips(mapped.id);
-    fetchMySchedule();
-    setCurrentUserId(mapped.id);
-    setViewMode("role");
-    setPortalChoice(null);
-    setScreen("app");
-  };
+  const completeEmployeeSession = (auth) => startSession(auth);
 
   const handleVerifyEmail = async (code) => {
     try {
@@ -3943,7 +4679,10 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => { setStoredToken(null); setCurrentUserId(null); setScreen("login"); setViewMode("role"); setPortalChoice(null); };
+  const handleLogout = () => {
+    setStoredToken(null); setCurrentUserId(null); setScreen("login"); setViewMode("role"); setPortalChoice(null); setRoleTab(null);
+    window.history.replaceState(null, "", window.location.pathname);
+  };
 
   const handleSaveProfile = async (fields) => {
     const payload = { ...fields };
@@ -3961,7 +4700,7 @@ export default function App() {
       try {
         await apiFetch("/api/me/profile", { method: "PUT", body: JSON.stringify(payload) });
       } catch (e) {
-        alert(`Couldn't save: ${e.message}`);
+        notify(`Couldn't save: ${e.message}`);
         return;
       }
     }
@@ -3991,7 +4730,7 @@ export default function App() {
           setLevelsState((ls) => ls.map((l) => (l.name === name ? { _dbId: updated.id, name: updated.name, default: Number(updated.defaultSalary) || 0, min: Number(updated.minSalary) || 0, max: Number(updated.maxSalary) || 0 } : l)));
           return;
         } catch (e) {
-          alert(`Couldn't save this level: ${e.message}`);
+          notify(`Couldn't save this level: ${e.message}`);
           return;
         }
       }
@@ -4008,7 +4747,7 @@ export default function App() {
         setLevelsState((ls) => [...ls, { _dbId: created.id, name: created.name, default: Number(created.defaultSalary) || 0, min: Number(created.minSalary) || 0, max: Number(created.maxSalary) || 0 }]);
         return;
       } catch (e) {
-        alert(`Couldn't add this level: ${e.message}`);
+        notify(`Couldn't add this level: ${e.message}`);
         return;
       }
     }
@@ -4022,7 +4761,7 @@ export default function App() {
           await apiFetch(`/api/hr/employees/${target._dbId}/profile`, { method: "PUT", body: JSON.stringify({ salary: newSalary }) });
           fetchPayrollForPeriod(employeesState.map((e) => (e.id === employeeId ? { ...e, salary: newSalary } : e)));
         } catch (e) {
-          alert(`Couldn't save the salary: ${e.message}`);
+          notify(`Couldn't save the salary: ${e.message}`);
           return;
         }
       }
@@ -4036,7 +4775,7 @@ export default function App() {
         try {
           await apiFetch(`/api/hr/employees/${target._dbId}/deactivate`, { method: "PUT" });
         } catch (e) {
-          alert(`Couldn't deactivate this employee: ${e.message}`);
+          notify(`Couldn't deactivate this employee: ${e.message}`);
           return;
         }
       }
@@ -4050,7 +4789,7 @@ export default function App() {
         try {
           await apiFetch(`/api/hr/employees/${target._dbId}/reactivate`, { method: "PUT" });
         } catch (e) {
-          alert(`Couldn't reactivate this employee: ${e.message}`);
+          notify(`Couldn't reactivate this employee: ${e.message}`);
           return;
         }
       }
@@ -4064,7 +4803,7 @@ export default function App() {
         try {
           await apiFetch(`/api/hr/employees/${target._dbId}/profile`, { method: "PUT", body: JSON.stringify(fields) });
         } catch (e) {
-          alert(`Couldn't save this employee's details: ${e.message}`);
+          notify(`Couldn't save this employee's details: ${e.message}`);
           return;
         }
       }
@@ -4072,7 +4811,7 @@ export default function App() {
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, ...fields } : e)));
     setProfileEmp((pe) => (pe && pe.id === employeeId ? { ...pe, ...fields } : pe));
     setPersonalInfoTarget(null);
-    alert("Saved.");
+    notify("Saved.");
   };
   const updateEmployeeManager = async (employeeId, managerId) => {
     if (API_BASE_URL) {
@@ -4081,7 +4820,7 @@ export default function App() {
         try {
           await apiFetch(`/api/hr/employees/${target._dbId}/profile`, { method: "PUT", body: JSON.stringify({ managerEmployeeCode: managerId || "" }) });
         } catch (e) {
-          alert(`Couldn't update the manager: ${e.message}`);
+          notify(`Couldn't update the manager: ${e.message}`);
           return;
         }
       }
@@ -4093,23 +4832,30 @@ export default function App() {
     if (API_BASE_URL) {
       const appUserId = appUserIdByEmployeeCode[employeeId];
       if (!appUserId) {
-        alert("Couldn't find this account's server record — try logging out and back in as Master to refresh the list.");
+        notify("Couldn't find this account's server record — try logging out and back in as Master to refresh the list.");
         return;
       }
       try {
         await apiFetch(`/api/admin/users/${appUserId}/role`, { method: "PUT", body: JSON.stringify({ role: newRole }) });
       } catch (e) {
-        alert(`Couldn't change the role: ${e.message}`);
+        notify(`Couldn't change the role: ${e.message}`);
         return;
       }
     }
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, role: newRole } : e)));
   };
 
-  if (screen === "login") return <LoginScreen onLogin={handleLogin} goSignup={() => setScreen("signup")} />;
-  if (screen === "signup") return <SignupScreen onSignup={handleSignup} goLogin={() => setScreen("login")} />;
+  if (screen === "restoring") return (
+    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, color: T.muted, fontSize: 13.5 }}>
+      <div className="kk-spinner" />
+      Signing you back in…
+    </div>
+  );
+  if (screen === "login") return <><LoginScreen onLogin={handleLogin} goSignup={() => setScreen("signup")} theme={theme} /><Toaster /></>;
+  if (screen === "signup") return <><SignupScreen onSignup={handleSignup} goLogin={() => setScreen("login")} theme={theme} /><Toaster /></>;
   if (screen === "verify-email") return (
     <VerifyEmailScreen
+      theme={theme}
       email={pendingVerificationEmail}
       onVerify={handleVerifyEmail}
       onResend={handleResendVerification}
@@ -4131,7 +4877,7 @@ export default function App() {
           setLeaveRequests((rs) => rs.map((r) => (r.id === id ? mapped : r)));
           return;
         } catch (e) {
-          alert(`Couldn't record this decision: ${e.message}`);
+          notify(`Couldn't record this decision: ${e.message}`);
           return;
         }
       }
@@ -4160,7 +4906,7 @@ export default function App() {
         setLeaveRequests((rs) => [mapped, ...rs]);
         return;
       } catch (e) {
-        alert(`Couldn't submit your leave application: ${e.message}`);
+        notify(`Couldn't submit your leave application: ${e.message}`);
         return;
       }
     }
@@ -4177,7 +4923,7 @@ export default function App() {
           setSupportTickets((ts) => ts.map((t) => (t.id === id ? mapped : t)));
           return;
         } catch (e) {
-          alert(`Couldn't save this ticket: ${e.message}`);
+          notify(`Couldn't save this ticket: ${e.message}`);
           return;
         }
       }
@@ -4190,7 +4936,7 @@ export default function App() {
       try {
         await apiFetch(`/api/admin/support/${target._dbId}`, { method: "DELETE" });
       } catch (e) {
-        alert(`Couldn't clear this ticket: ${e.message}`);
+        notify(`Couldn't clear this ticket: ${e.message}`);
         return;
       }
     }
@@ -4207,7 +4953,7 @@ export default function App() {
           setOfficeIssues((is) => is.map((i) => (i.id === id ? mapped : i)));
           return;
         } catch (e) {
-          alert(`Couldn't save this office issue: ${e.message}`);
+          notify(`Couldn't save this office issue: ${e.message}`);
           return;
         }
       }
@@ -4220,220 +4966,216 @@ export default function App() {
       try {
         await apiFetch(`/api/admin/office-issues/${target._dbId}`, { method: "DELETE" });
       } catch (e) {
-        alert(`Couldn't clear this issue: ${e.message}`);
+        notify(`Couldn't clear this issue: ${e.message}`);
         return;
       }
     }
     setOfficeIssues((is) => is.filter((i) => i.id !== id));
   };
 
-  const hrNav = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "employees", label: "Employees", icon: Users },
-    { id: "payroll", label: "Payroll", icon: Banknote }, { id: "leave", label: "Leave", icon: CalendarDays },
-    { id: "salaryStructure", label: "Salary Structure", icon: SlidersHorizontal },
-    { id: "workSchedule", label: "Work Schedule", icon: Clock },
-  ];
-  const adminNav = [
-    { id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
-    { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
-    { id: "support", label: "Support Tickets", icon: LifeBuoy }, { id: "officeIssues", label: "Office Issues", icon: MapPin },
-  ];
-  const itSupportNav = [
-    { id: "officeIssues", label: "Office Issues", icon: MapPin }, { id: "support", label: "Support Tickets", icon: LifeBuoy },
-    { id: "overview", label: "Overview", icon: LayoutDashboard },
-    { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
-    { id: "levels", label: "Levels & Departments", icon: Building2 }, { id: "users", label: "User Accounts", icon: ShieldCheck },
-  ];
-  const masterNav = [
-    { id: "users", label: "User Accounts", icon: ShieldCheck }, { id: "employees", label: "Employees", icon: Users },
-    { id: "leave", label: "Leave", icon: CalendarDays },
-    { id: "workSchedule", label: "Work Schedule", icon: Clock },
-    { id: "overview", label: "Overview", icon: LayoutDashboard },
-    { id: "settings", label: "Company & Settings", icon: SlidersHorizontal },
-    { id: "levels", label: "Levels & Departments", icon: Building2 },
-    { id: "support", label: "Support Tickets", icon: LifeBuoy }, { id: "officeIssues", label: "Office Issues", icon: MapPin },
-  ];
-  const roleTitle = { master: "Master", admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" }[role];
+  // One page registry for every back-office role. Each role's sidebar is
+  // just an ordered list of ids from here, so adding a page (or giving a
+  // role access to one) is a one-line change instead of another copy of the
+  // whole render chain.
+  const supportCenterAdmin = <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onClearTicket={clearSupportTicket} onRefresh={fetchSupportTickets} />;
+  const officeIssuesAdmin = <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onClearIssue={clearOfficeIssue} onRefresh={fetchOfficeIssues} />;
+  const PAGES = {
+    dashboard: { label: "Dashboard", icon: LayoutDashboard, render: () => <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} /> },
+    employees: { label: "Employees", icon: Users, render: () => <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} canSeeSalary={role === "hr"} /> },
+    payroll: { label: "Payroll", icon: Banknote, render: () => <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} /> },
+    leave: { label: "Leave", icon: CalendarDays, render: () => <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} /> },
+    salaryStructure: { label: "Salary Structure", icon: SlidersHorizontal, render: () => <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} /> },
+    workSchedule: { label: "Work Schedule", icon: Clock, render: () => <HrWorkSchedule /> },
+    overview: { label: "Overview", icon: LayoutDashboard, render: () => <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} /> },
+    settings: { label: "Company & Settings", icon: SlidersHorizontal, render: () => <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} /> },
+    levels: { label: "Levels & Departments", icon: Building2, render: () => <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} /> },
+    users: { label: "User Accounts", icon: ShieldCheck, render: () => (role === "master"
+      ? <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} onVerifyEmail={verifyUserEmail} />
+      : <AdminUsers currentUserId={currentUserId} isMaster={false} />) },
+    support: { label: "Support Tickets", icon: LifeBuoy, render: () => supportCenterAdmin },
+    officeIssues: { label: "Office Issues", icon: MapPin, render: () => officeIssuesAdmin },
+  };
+  const NAV_BY_ROLE = {
+    hr: ["dashboard", "employees", "payroll", "leave", "salaryStructure", "workSchedule"],
+    admin: ["overview", "settings", "levels", "users", "support", "officeIssues"],
+    it_support: ["officeIssues", "support", "overview", "settings", "levels", "users"],
+    master: ["users", "employees", "leave", "workSchedule", "overview", "settings", "levels", "support", "officeIssues"],
+  };
+  const roleNav = NAV_BY_ROLE[role] || [];
+  const activeTab = roleNav.includes(roleTab) ? roleTab : roleNav[0];
+  const roleTitle = ROLE_LABEL[role];
   // True on the chooser itself, and anywhere inside whichever portal was
   // chosen (including sub-pages like Support/Office Issues reached from
   // the IT Support portal) — regardless of which viewMode got us there.
   const inEmployeeFlow = role === "employee" || viewMode === "selfService" || portalChoice !== null;
+  const showPortal = (viewMode === "role" && role === "employee") || (viewMode === "selfService" && role !== "employee");
 
-  const goRoleTab = (setter, id) => { setter(id); setViewMode("role"); };
+  const go = (fn) => { fn(); setNavOpen(false); };
+  // Return to the previous screen (e.g. from Support back to the IT Support
+  // portal it was opened from), not to the role's home page. Falls back to
+  // the screen this one was opened from when there's no in-app history
+  // (e.g. the page was refreshed).
+  const goBack = () => {
+    if (inAppDepth.current > 0) { window.history.back(); return; }
+    setViewMode(role !== "employee" && portalChoice ? "selfService" : "role");
+  };
+  const goRoleTab = (id) => go(() => { setRoleTab(id); setViewMode("role"); });
+  const portalLabel = { leave: "Payroll & Leave", itSupport: "IT Support" };
+
+  const pageTitle =
+    viewMode === "settings" ? "Settings"
+    : viewMode === "support" ? "Support"
+    : viewMode === "officeIssues" ? "Office Issues"
+    : showPortal ? (portalChoice ? portalLabel[portalChoice] : "Home")
+    : role === "manager" ? "My Team"
+    : PAGES[activeTab]?.label || "";
+  const crumb = showPortal && role !== "employee" ? "My profile" : roleTitle;
+
+  const toPortal = (choice) => go(() => { setViewMode(role === "employee" ? "role" : "selfService"); setPortalChoice(choice); });
+  const searchItems = [
+    ...roleNav.map((id) => ({ label: PAGES[id].label, icon: PAGES[id].icon, hint: roleTitle, run: () => goRoleTab(id) })),
+    ...(role === "manager" ? [{ label: "My Team", icon: Users, hint: "Manager", run: () => go(() => { setViewMode("role"); setPortalChoice(null); }) }] : []),
+    { label: "Home", icon: LayoutDashboard, hint: role === "employee" ? "Workspace" : "My profile", run: () => toPortal(null) },
+    { label: "Payroll & Leave", icon: Banknote, hint: "Payslips, leave", run: () => toPortal("leave") },
+    { label: "IT Support", icon: LifeBuoy, hint: "Assistant, tickets", run: () => toPortal("itSupport") },
+    { label: "Report a system issue", icon: LifeBuoy, hint: "Support", run: () => go(() => setViewMode("support")) },
+    { label: "Report an office issue", icon: MapPin, hint: "Office Issues", run: () => go(() => setViewMode("officeIssues")) },
+    { label: "Settings", icon: SettingsIcon, hint: "Profile, password", run: () => go(() => setViewMode("settings")) },
+  ];
 
   return (
-    <div style={{ fontFamily: sans, background: T.bg, minHeight: 640, color: T.text, display: "flex", borderRadius: 10, overflow: "hidden", border: `1px solid ${T.border}` }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
-      `}</style>
+    <div className="kk-shell" data-nav-open={navOpen} style={{ fontFamily: sans, color: T.text }}>
+      <div className="kk-scrim" onClick={() => setNavOpen(false)} />
 
       {/* SIDEBAR */}
-      <div style={{ width: 220, background: T.navy, color: "#fff", padding: "20px 14px", flexShrink: 0, display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "0 6px 16px" }}>
-          <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 30, objectFit: "contain", display: "block" }} />
+      <nav className="kk-sidebar" aria-label="Main navigation">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px 18px" }}>
+          <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 32, objectFit: "contain", display: "block" }} />
+          <button className="kk-menu-btn kk-icon-btn" onClick={() => setNavOpen(false)} aria-label="Close menu" style={{ background: "transparent", borderColor: "rgba(255,255,255,0.12)", color: "#fff", width: 32, height: 32 }}><X size={16} /></button>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 9, background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: "9px 10px", marginBottom: 16 }}>
-          <div style={{ width: 30, height: 30, borderRadius: "50%", background: T.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-            {loginEmp.name.split(" ").map((n) => n[0]).join("")}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{loginEmp.name}</div>
-            <RolePill role={role} />
-          </div>
-        </div>
-
-        {role !== "employee" && (
-          <button onClick={() => { setViewMode((v) => (v === "selfService" ? "role" : "selfService")); setPortalChoice(null); }} style={{
-            display: "flex", alignItems: "center", gap: 7, background: viewMode === "selfService" ? T.teal : "rgba(255,255,255,0.08)",
-            border: "none", color: "#fff", padding: "8px 10px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer", marginBottom: 6, width: "100%",
-          }}>
-            <ArrowLeftRight size={14} />{viewMode === "selfService" ? `Back to ${roleTitle} view` : "Switch to my profile"}
-          </button>
-        )}
-
-        {viewMode === "role" && role === "hr" && (
+        {showPortal ? (
           <>
-            <div style={{ fontSize: 10.5, color: "#8F8280", fontWeight: 700, letterSpacing: 0.4, padding: "10px 6px 8px" }}>HR</div>
-            {hrNav.map((n) => (
-              <button key={n.id} onClick={() => goRoleTab(setHrTab, n.id)} style={{ display: "flex", alignItems: "center", gap: 8, background: hrTab === n.id ? "rgba(255,255,255,0.08)" : "transparent", border: "none", color: hrTab === n.id ? "#fff" : "#C9BFBC", padding: "8px 10px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 2 }}><n.icon size={15} /> {n.label}</button>
+            <div className="kk-nav-label">{role === "employee" ? "Workspace" : "My profile"}</div>
+            <NavItem icon={LayoutDashboard} label="Home" active={portalChoice === null} onClick={() => go(() => setPortalChoice(null))} />
+            {portalChoice !== null && (
+              <NavItem icon={portalChoice === "leave" ? Banknote : LifeBuoy} label={portalLabel[portalChoice]} active onClick={() => setNavOpen(false)} />
+            )}
+          </>
+        ) : viewMode === "role" && roleNav.length > 0 ? (
+          <>
+            <div className="kk-nav-label">{roleTitle}</div>
+            {roleNav.map((id) => (
+              <NavItem key={id} icon={PAGES[id].icon} label={PAGES[id].label} active={activeTab === id} onClick={() => goRoleTab(id)} />
             ))}
+          </>
+        ) : viewMode === "role" && role === "manager" ? (
+          <>
+            <div className="kk-nav-label">Manager</div>
+            <NavItem icon={Users} label="My Team" active onClick={() => setNavOpen(false)} />
+          </>
+        ) : (
+          <>
+            <div className="kk-nav-label">Navigate</div>
+            <NavItem icon={ArrowLeft} label="Back" onClick={() => go(goBack)} />
           </>
         )}
 
-        {viewMode === "role" && role === "admin" && (
-          <>
-            <div style={{ fontSize: 10.5, color: "#8F8280", fontWeight: 700, letterSpacing: 0.4, padding: "10px 6px 8px" }}>ADMIN</div>
-            {adminNav.map((n) => (
-              <button key={n.id} onClick={() => goRoleTab(setAdminTab, n.id)} style={{ display: "flex", alignItems: "center", gap: 8, background: adminTab === n.id ? "rgba(255,255,255,0.08)" : "transparent", border: "none", color: adminTab === n.id ? "#fff" : "#C9BFBC", padding: "8px 10px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 2 }}><n.icon size={15} /> {n.label}</button>
-            ))}
-          </>
-        )}
-
-        {viewMode === "role" && role === "it_support" && (
-          <>
-            <div style={{ fontSize: 10.5, color: "#8F8280", fontWeight: 700, letterSpacing: 0.4, padding: "10px 6px 8px" }}>IT SUPPORT</div>
-            {itSupportNav.map((n) => (
-              <button key={n.id} onClick={() => goRoleTab(setItSupportTab, n.id)} style={{ display: "flex", alignItems: "center", gap: 8, background: itSupportTab === n.id ? "rgba(255,255,255,0.08)" : "transparent", border: "none", color: itSupportTab === n.id ? "#fff" : "#C9BFBC", padding: "8px 10px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 2 }}><n.icon size={15} /> {n.label}</button>
-            ))}
-          </>
-        )}
-
-        {viewMode === "role" && role === "master" && (
-          <>
-            <div style={{ fontSize: 10.5, color: "#8F8280", fontWeight: 700, letterSpacing: 0.4, padding: "10px 6px 8px" }}>MASTER</div>
-            {masterNav.map((n) => (
-              <button key={n.id} onClick={() => goRoleTab(setMasterTab, n.id)} style={{ display: "flex", alignItems: "center", gap: 8, background: masterTab === n.id ? "rgba(255,255,255,0.08)" : "transparent", border: "none", color: masterTab === n.id ? "#fff" : "#C9BFBC", padding: "8px 10px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 2 }}><n.icon size={15} /> {n.label}</button>
-            ))}
-          </>
-        )}
-
-        {viewMode === "role" && role === "manager" && <div style={{ fontSize: 12, color: "#C9BFBC", padding: "10px 6px" }}>Viewing your team's dashboard.</div>}
-
-        <div style={{ marginTop: "auto", paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+        <div style={{ marginTop: "auto", paddingTop: 16 }}>
+          <div className="kk-nav-label">General</div>
           {!inEmployeeFlow && (
             <>
-              <button onClick={() => setViewMode("support")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "support" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "support" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
-                <LifeBuoy size={14} /> Support
-              </button>
-              <button onClick={() => setViewMode("officeIssues")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "officeIssues" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "officeIssues" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
-                <MapPin size={14} /> Office Issues
-              </button>
+              <NavItem icon={LifeBuoy} label="Support" active={viewMode === "support"} onClick={() => go(() => setViewMode("support"))} />
+              <NavItem icon={MapPin} label="Office Issues" active={viewMode === "officeIssues"} onClick={() => go(() => setViewMode("officeIssues"))} />
             </>
           )}
           {inEmployeeFlow && portalChoice !== null && (
-            <button onClick={() => { setPortalChoice(null); setViewMode(role === "employee" ? "role" : "selfService"); }} style={{ display: "flex", alignItems: "center", gap: 8, color: "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
-              <ArrowLeft size={14} /> Back to Portal Selection
-            </button>
+            <NavItem icon={ArrowLeft} label="Back to Portal Selection" onClick={() => go(() => { setPortalChoice(null); setViewMode(role === "employee" ? "role" : "selfService"); })} />
           )}
-          <button onClick={() => setViewMode("settings")} style={{ display: "flex", alignItems: "center", gap: 8, color: viewMode === "settings" ? "#fff" : "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: viewMode === "settings" ? "rgba(255,255,255,0.08)" : "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
-            <SettingsIcon size={14} /> Settings
-          </button>
-          <button onClick={handleLogout} style={{ display: "flex", alignItems: "center", gap: 8, color: "#C9BFBC", fontSize: 12.5, padding: "7px 6px", background: "transparent", border: "none", borderRadius: 6, width: "100%", cursor: "pointer", fontWeight: 600 }}>
-            <LogOut size={14} /> Log out
-          </button>
-          <div style={{ textAlign: "center", marginTop: 10, fontSize: 10.5 }}>
-            <a href="https://axeconnect.co.za/" target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.35)", textDecoration: "none" }}>
+          <NavItem icon={SettingsIcon} label="Settings" active={viewMode === "settings"} onClick={() => go(() => setViewMode("settings"))} />
+          <NavItem icon={LogOut} label="Log out" onClick={handleLogout} />
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <Avatar name={loginEmp.name} size={34} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#fff" }}>{loginEmp.name}</div>
+              <div style={{ fontSize: 11.5, color: "var(--kk-chrome-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{[roleTitle, loginEmp.position || loginEmp.dept].filter(Boolean).join(" · ")}</div>
+            </div>
+          </div>
+          <div style={{ textAlign: "center", marginTop: 12, fontSize: 11 }}>
+            <a href="https://axeconnect.co.za/" target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.3)", textDecoration: "none" }}>
               Built by Axe Connect
             </a>
           </div>
         </div>
-      </div>
+      </nav>
 
-      {/* CONTENT */}
-      <div style={{ flex: 1, padding: "26px 30px", overflowY: "auto", maxHeight: 720 }}>
-        {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} onBack={() => setViewMode("role")} />}
-        {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={() => setViewMode("role")} isAdminView={false} onUpdateTicket={updateSupportTicket} />}
-        {viewMode === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} onBack={() => setViewMode("role")} isAdminView={false} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
+      <div className="kk-main">
+        {/* TOP BAR */}
+        <header className="kk-topbar">
+          <button className="kk-menu-btn kk-icon-btn" onClick={() => setNavOpen(true)} aria-label="Open menu"><Menu size={18} /></button>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="kk-hide-sm" style={{ fontSize: 11.5, color: T.muted, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+              {crumb} <ChevronRight size={12} />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pageTitle}</div>
+          </div>
+          <PageSearch items={searchItems} />
+          {role !== "employee" && (
+            <button onClick={() => { setViewMode((v) => (v === "selfService" ? "role" : "selfService")); setPortalChoice(null); }}
+              className="kk-btn kk-btn--ghost" title={viewMode === "selfService" ? `Back to ${roleTitle} view` : "Your own payslips, leave and IT support"}
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, background: viewMode === "selfService" ? T.tealLight : T.surface, color: viewMode === "selfService" ? T.teal : T.text, border: `1px solid ${viewMode === "selfService" ? "transparent" : T.border}`, borderRadius: 999, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              <ArrowLeftRight size={15} /><span className="kk-hide-sm">{viewMode === "selfService" ? `${roleTitle} view` : "My profile"}</span>
+            </button>
+          )}
+          <ThemeToggle theme={theme} />
+          <div className="kk-hide-sm" style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 12, marginLeft: 4, borderLeft: `1px solid ${T.border}` }}>
+            <Avatar name={loginEmp.name} size={32} />
+            <div style={{ lineHeight: 1.25 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{loginEmp.name.split(" ")[0]}</div>
+              <div style={{ fontSize: 11.5, color: T.muted }}>{roleTitle}</div>
+            </div>
+          </div>
+        </header>
 
-        {viewMode === "selfService" && role !== "employee" && portalChoice === null && (
-          <PortalChooser empName={loginEmp.name} mySchedule={myScheduleState} onChoose={setPortalChoice} />
-        )}
-        {viewMode === "selfService" && role !== "employee" && portalChoice === "leave" && (
-          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} mySchedule={myScheduleState} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
-        )}
-        {viewMode === "selfService" && role !== "employee" && portalChoice === "itSupport" && (
-          <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
-        )}
+        {/* CONTENT */}
+        <main className="kk-content kk-page" key={`${viewMode}-${activeTab}-${portalChoice}`}>
+          {viewMode === "settings" && <Settings emp={loginEmp} onSaveProfile={handleSaveProfile} onChangePassword={handleChangePassword} onBack={goBack} />}
+          {viewMode === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} onBack={goBack} isAdminView={false} onUpdateTicket={updateSupportTicket} />}
+          {viewMode === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} onBack={goBack} isAdminView={false} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} />}
 
-        {viewMode === "role" && role === "hr" && hrTab === "dashboard" && <HrDashboard leaveRequests={leaveRequests} payrollStage={payrollStage} advanceStage={advanceStage} />}
-        {viewMode === "role" && role === "hr" && hrTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} canSeeSalary={true} />}
-        {viewMode === "role" && role === "hr" && hrTab === "payroll" && <HrPayroll payrollStage={payrollStage} setPayslipView={setPayslipView} payrollRecords={payrollRecords} resendPayslipEmail={resendPayslipEmail} deletePayrollDraft={deletePayrollDraft} payrollLoading={payrollLoading} advanceStage={advanceStage} />}
-        {viewMode === "role" && role === "hr" && hrTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
-        {viewMode === "role" && role === "hr" && hrTab === "salaryStructure" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
-        {viewMode === "role" && role === "hr" && hrTab === "workSchedule" && <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} />}
+          {showPortal && portalChoice === null && (
+            <PortalChooser empName={loginEmp.name} emp={loginEmp} mySchedule={myScheduleState} onChoose={setPortalChoice}
+              annualLeaveLeft={balancesState[loginEmp.id]?.["Annual Leave"]}
+              pendingLeave={leaveRequests.filter((r) => r.emp === loginEmp.id && r.status === "Pending").length}
+              latestPayslip={(myPayslipsState[loginEmp.id] || []).length ? money((myPayslipsState[loginEmp.id] || [])[0].net) : null} />
+          )}
+          {showPortal && portalChoice === "leave" && (
+            <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} mySchedule={myScheduleState} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
+          )}
+          {showPortal && portalChoice === "itSupport" && (
+            <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
+          )}
 
-        {viewMode === "role" && role === "admin" && adminTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
-        {viewMode === "role" && role === "admin" && adminTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}
-        {viewMode === "role" && role === "admin" && adminTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
-        {viewMode === "role" && role === "admin" && adminTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
-        {viewMode === "role" && role === "admin" && adminTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onClearTicket={clearSupportTicket} onRefresh={fetchSupportTickets} />}
-        {viewMode === "role" && role === "admin" && adminTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onClearIssue={clearOfficeIssue} onRefresh={fetchOfficeIssues} />}
-
-        {viewMode === "role" && role === "it_support" && itSupportTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onClearIssue={clearOfficeIssue} onRefresh={fetchOfficeIssues} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onClearTicket={clearSupportTicket} onRefresh={fetchSupportTickets} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
-        {viewMode === "role" && role === "it_support" && itSupportTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={false} />}
-
-        {viewMode === "role" && role === "master" && masterTab === "users" && <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} onVerifyEmail={verifyUserEmail} />}
-        {viewMode === "role" && role === "master" && masterTab === "employees" && <HrEmployees onOpenProfile={setProfileEmp} onUpdateSalary={updateEmployeeSalary} onDeactivate={deactivateEmployee} onReactivate={reactivateEmployee} canSeeSalary={false} />}
-        {viewMode === "role" && role === "master" && masterTab === "leave" && <HrLeave leaveRequests={leaveRequests} decider={loginEmp} onDecide={decideLeave} />}
-        {viewMode === "role" && role === "master" && masterTab === "workSchedule" && <HrWorkSchedule capacity={scheduleCapacityState} onUpdateCapacity={updateScheduleCapacity} onUpdateDaysPerWeek={updateEmployeeDaysPerWeek} onAutoAssign={autoAssignSchedule} />}
-        {viewMode === "role" && role === "master" && masterTab === "overview" && <AdminOverview supportTickets={supportTickets} officeIssues={officeIssues} />}
-        {viewMode === "role" && role === "master" && masterTab === "settings" && <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} />}
-        {viewMode === "role" && role === "master" && masterTab === "levels" && <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} />}
-        {viewMode === "role" && role === "master" && masterTab === "support" && <SupportCenter emp={loginEmp} tickets={supportTickets} onSubmit={addSupportTicket} isAdminView={true} onUpdateTicket={updateSupportTicket} onClearTicket={clearSupportTicket} onRefresh={fetchSupportTickets} />}
-        {viewMode === "role" && role === "master" && masterTab === "officeIssues" && <OfficeIssueCenter emp={loginEmp} issues={officeIssues} onSubmit={addOfficeIssue} isAdminView={true} availability={companyState.officeAvailability} onSetAvailability={updateOfficeAvailability} onUpdateIssue={updateOfficeIssue} onClearIssue={clearOfficeIssue} onRefresh={fetchOfficeIssues} />}
-
-        {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
-
-        {viewMode === "role" && role === "employee" && portalChoice === null && (
-          <PortalChooser empName={loginEmp.name} mySchedule={myScheduleState} onChoose={setPortalChoice} />
-        )}
-        {viewMode === "role" && role === "employee" && portalChoice === "leave" && (
-          <EmployeeView emp={loginEmp} leaveRequests={leaveRequests} addLeaveRequest={addLeaveRequest} history={history} myPayslips={myPayslipsState[loginEmp.id]} mySchedule={myScheduleState} setPayslipView={setPayslipView} onBackToChooser={() => setPortalChoice(null)} />
-        )}
-        {viewMode === "role" && role === "employee" && portalChoice === "itSupport" && (
-          <ITSupportPortal goSupport={() => setViewMode("support")} goOfficeIssues={() => setViewMode("officeIssues")} />
-        )}
+          {viewMode === "role" && roleNav.length > 0 && PAGES[activeTab].render()}
+          {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
+        </main>
       </div>
 
       {profileEmp && <ProfileDrawer emp={profileEmp} onClose={() => setProfileEmp(null)} onUpdateManager={updateEmployeeManager} onOpenPersonalInfo={setPersonalInfoTarget} canSeeSalary={role === "hr"} />}
       {personalInfoTarget && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(20,10,9,0.45)", zIndex: 50, display: "flex", justifyContent: "center", alignItems: "flex-start", overflowY: "auto", padding: "40px 20px" }} onClick={() => setPersonalInfoTarget(null)}>
-          <div style={{ width: "100%", maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+        <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 50, display: "flex", justifyContent: "center", alignItems: "flex-start", overflowY: "auto", padding: "40px 16px" }} onClick={() => setPersonalInfoTarget(null)}>
+          <div className="kk-pop" style={{ width: "100%", maxWidth: 680 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{personalInfoTarget.name} — Personal & Payroll Information</div>
-              <button onClick={() => setPersonalInfoTarget(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#fff" }}><X size={20} /></button>
+              <button onClick={() => setPersonalInfoTarget(null)} aria-label="Close" style={{ background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer", color: "#fff", borderRadius: 8, padding: 6, lineHeight: 0 }}><X size={18} /></button>
             </div>
             <PersonalInfoSection emp={personalInfoTarget} onSave={(fields) => updateEmployeePersonalInfo(personalInfoTarget.id, fields)} />
           </div>
         </div>
       )}
       {payslipView && <Payslip {...payslipView} onClose={() => setPayslipView(null)} />}
+      <Toaster />
     </div>
   );
 }

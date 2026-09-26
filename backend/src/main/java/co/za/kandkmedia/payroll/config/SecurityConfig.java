@@ -3,6 +3,7 @@ package co.za.kandkmedia.payroll.config;
 import co.za.kandkmedia.payroll.security.AppUserDetailsService;
 import co.za.kandkmedia.payroll.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -67,6 +68,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Spring renders every error response (404, 503, 502...) by forwarding to
+                        // /error. That forward has no JWT context, so without this every real
+                        // error on a protected endpoint reached the browser as a bare 403.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()

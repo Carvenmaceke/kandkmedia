@@ -1,71 +1,59 @@
 package co.za.kandkmedia.payroll.service;
 
+import co.za.kandkmedia.payroll.domain.Company;
+import co.za.kandkmedia.payroll.domain.Department;
 import co.za.kandkmedia.payroll.domain.Employee;
 import co.za.kandkmedia.payroll.domain.Payroll;
 import co.za.kandkmedia.payroll.domain.PayrollStatus;
 import co.za.kandkmedia.payroll.repository.CompanyRepository;
 import co.za.kandkmedia.payroll.repository.PayrollRepository;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 /**
- * Verifies the payslip pipeline built on the real company .docx template
- * (PayslipDocxTemplateService) rather than the old hand-drawn PDFBox
- * layout. The docx-level assertions run everywhere; the full PDF
- * conversion only runs where headless LibreOffice ("soffice") is
- * actually installed, same as this project's other environment-dependent
- * checks skip cleanly where their dependency is unavailable.
+ * Renders a real payslip PDF and reads its text back, checking it follows
+ * the approved K &amp; K Media payslip design and carries the employee's own
+ * details and figures.
  */
 class PayslipPdfServiceTest {
 
     private final PayrollRepository payrollRepository = Mockito.mock(PayrollRepository.class);
     private final CompanyRepository companyRepository = Mockito.mock(CompanyRepository.class);
-    private final PayslipDocxTemplateService docxTemplateService = new PayslipDocxTemplateService(companyRepository);
-    private final DocxToPdfConverter docxToPdfConverter = new DocxToPdfConverter();
-    private final PayslipPdfService payslipPdfService = new PayslipPdfService(docxTemplateService, docxToPdfConverter, payrollRepository);
+    private final PayslipPdfService service = new PayslipPdfService(payrollRepository, companyRepository);
 
-    PayslipPdfServiceTest() {
-        // A Company with a logoUrl that refuses the connection immediately (nothing listens on
-        // port 1) rather than an empty Company list — with no company row at all,
-        // PayslipDocxTemplateService now falls back to the real kandkmedia.co.za default logo
-        // URL, and hitting that from every test run would make the suite depend on the network
-        // and a third-party site staying up. The fetch failing fast still exercises (and proves
-        // non-fatal) the "logo unreachable" path without either problem.
-        when(companyRepository.findAll()).thenReturn(List.of(
-                co.za.kandkmedia.payroll.domain.Company.builder().logoUrl("http://127.0.0.1:1/unreachable.png").build()));
-        ReflectionTestUtils.setField(docxTemplateService, "verificationBaseUrl", "https://kandkmedia.example/api/public/verify");
+    @BeforeEach
+    void setUp() {
+        when(companyRepository.findAll()).thenReturn(List.of(Company.builder().name("K & K Media (Pty) Ltd").build()));
+        ReflectionTestUtils.setField(service, "verificationBaseUrl", "https://kandkmedia.example/api/public/verify");
     }
 
     private Employee employee() {
         return Employee.builder()
+                .id(42L)
                 .employeeCode("EMP-00042")
-                .firstName("John")
-                .lastName("Test-Employee")
-                .email("john.test@kandkmedia.co.za")
-                .office("Midrand")
+                .firstName("Belle")
+                .lastName("Petersen")
+                .email("belle.petersen@kandkmedia.co.za")
+                .position("Graphic Designer")
+                .department(Department.builder().name("Creative Services").build())
                 .salary(BigDecimal.valueOf(22000))
-                .startDate(LocalDate.of(2024, 8, 1))
-                .bankAccountNumber("1234567890")
-                .bankBranchCode("250655")
+                .startDate(LocalDate.of(2026, 8, 1))
+                .bankAccountNumber("1706477870")
+                .bankBranchCode("470010")
                 .resStreetNumber("42")
                 .resStreetName("Example Street")
                 .resSuburb("Sandton")
@@ -78,131 +66,89 @@ class PayslipPdfServiceTest {
     private Payroll payroll(Employee employee) {
         return Payroll.builder()
                 .employee(employee)
-                .payPeriod("2024-11")
+                .payPeriod("2026-09")
                 .basicSalary(BigDecimal.valueOf(22000))
                 .housingAllowance(BigDecimal.valueOf(3000))
                 .transportAllowance(BigDecimal.valueOf(1500))
-                .overtime(BigDecimal.ZERO)
-                .bonus(BigDecimal.ZERO)
                 .grossPay(BigDecimal.valueOf(26500))
                 .paye(BigDecimal.valueOf(850))
                 .uif(BigDecimal.valueOf(220))
-                .otherDeductions(BigDecimal.ZERO)
                 .totalDeductions(BigDecimal.valueOf(1070))
                 .netPay(BigDecimal.valueOf(25430))
                 .status(PayrollStatus.SENT)
-                .payslipId("PAY-2024-11-000042")
+                .payslipId("PAY-2026-09-000042")
                 .verificationCode("ABC123XYZ")
-                .documentGeneratedAt(LocalDateTime.of(2024, 12, 2, 9, 15))
-                .documentHash("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
+                .documentGeneratedAt(LocalDateTime.of(2026, 9, 30, 9, 15))
                 .build();
     }
 
-    @Test
-    void buildsWellFormedDocxWithNoLeftoverPlaceholderTokens() throws Exception {
-        when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of());
-        Employee employee = employee();
-        Payroll payroll = payroll(employee);
-
-        byte[] docx = docxTemplateService.build(payroll, new BigDecimal[]{BigDecimal.valueOf(245000), BigDecimal.valueOf(10700), BigDecimal.valueOf(234300)});
-
-        String documentXml = null;
-        boolean hasQrMedia = false;
-        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(docx))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                if (entry.getName().equals("word/document.xml")) {
-                    documentXml = new String(zis.readAllBytes(), StandardCharsets.UTF_8);
-                }
-                if (entry.getName().equals("word/media/verification-qr.png")) {
-                    hasQrMedia = true;
-                }
-            }
+    private String render(Payroll payroll) throws Exception {
+        byte[] pdf = service.generate(payroll);
+        assertThat(new String(pdf, 0, 5)).isEqualTo("%PDF-");
+        try (PDDocument doc = PDDocument.load(pdf)) {
+            assertThat(doc.getNumberOfPages()).isEqualTo(1);
+            assertThat(doc.getPage(0).getMediaBox().getWidth()).isEqualTo(PDRectangle.LETTER.getWidth());
+            assertThat(doc.getDocumentInformation().getTitle()).isEqualTo("Payslip - K & K Media (Pty) Ltd");
+            return new PDFTextStripper().getText(doc);
         }
-
-        assertThat(documentXml).isNotNull();
-        assertThat(documentXml).doesNotContainPattern("___[A-Z][A-Z_]*___"); // no unsubstituted placeholder tokens (the template's own "_____________" signature line is not one)
-        assertThat(documentXml).contains("John Test-Employee"); // employee name present, as stored (we don't uppercase it)
-        assertThat(documentXml).contains("EMP-00042");
-        assertThat(documentXml).contains("Housing Allowance");
-        assertThat(documentXml).contains("Transport Allowance");
-        assertThat(documentXml).contains("25430.00"); // nett pay
-        assertThat(documentXml).contains("Gross Earnings"); // YTD row label
-        assertThat(documentXml).contains("PAY-2024-11-000042"); // verification block
-        assertThat(hasQrMedia).isTrue();
-        // "Sage VIP" is removed from mc:Choice (the branch every renderer we care about uses —
-        // see PayslipDocxTemplateService's class doc); it deliberately stays in mc:Fallback,
-        // dead markup nothing renders, so only the Choice branch is checked here.
-        int choiceStart = documentXml.indexOf("<mc:Choice");
-        int choiceEnd = documentXml.indexOf("</mc:Choice>") + "</mc:Choice>".length();
-        assertThat(documentXml.substring(choiceStart, choiceEnd)).doesNotContain("Sage VIP");
-        // The template resource's static company address text was truncated mid-word
-        // ("...OFFIC") — regression check for that fix.
-        assertThat(documentXml.substring(choiceStart, choiceEnd)).contains("CONSTANTIA SQUARE OFFICE");
-
-        javax.xml.parsers.DocumentBuilderFactory factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(true);
-        factory.newDocumentBuilder().parse(new ByteArrayInputStream(documentXml.getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
-    void skipsVerificationBlockWhenPayslipNotYetSealed() throws Exception {
+    void followsTheApprovedDesignWithTheEmployeesOwnDetails() throws Exception {
         when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of());
-        Employee employee = employee();
-        Payroll payroll = payroll(employee);
+
+        String text = render(payroll(employee()));
+
+        // The design's fixed sections and labels
+        assertThat(text).contains("PAYSLIP", "EARNINGS", "DEDUCTIONS", "NETT PAY", "YEAR TO DATE TOTALS",
+                "CURRENT PERIOD", "ADDITIONAL INFO", "Emp Code", "Emp Name", "Co. Address", "Payment Date",
+                "Date Engaged", "Account No", "Branch Code", "Opening Bal.", "Co. Contributions",
+                "CONSTANTIA SQUARE OFFICE", "RANDJESFONTEIN, MIDRAND", "Page 1 of 1");
+        // Per-employee values
+        assertThat(text).contains("K & K MEDIA (PTY) LTD", "EMP-00042", "BELLE PETERSEN", "42 EXAMPLE STREET",
+                "SANDTON, JOHANNESBURG", "30/09/2026", "01/08/2026", "1706477870", "470010");
+        // Figures, formatted like the design (thousands separators, "R " on nett pay)
+        assertThat(text).contains("Normal Time", "22,000.00", "Housing Allowance", "3,000.00", "Transport Allowance",
+                "26,500.00", "850.00", "220.00", "1,070.00", "R 25,430.00");
+        // Additional info the employee needs
+        assertThat(text).contains("September 2026", "Graphic Designer", "Creative Services", "PAY-2026-09-000042", "ABC123XYZ");
+    }
+
+    @Test
+    void omitsVerificationDetailsUntilThePayslipIsSealed() throws Exception {
+        when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of());
+        Payroll payroll = payroll(employee());
         payroll.setPayslipId(null);
         payroll.setVerificationCode(null);
-        payroll.setDocumentHash(null);
 
-        byte[] docx = docxTemplateService.build(payroll, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+        String text = render(payroll);
 
-        String documentXml = null;
-        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(docx))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                if (entry.getName().equals("word/document.xml")) {
-                    documentXml = new String(zis.readAllBytes(), StandardCharsets.UTF_8);
-                }
-            }
-        }
-        assertThat(documentXml).doesNotContain("Payslip ID:");
-        assertThat(documentXml).doesNotContainPattern("___[A-Z][A-Z_]*___");
+        assertThat(text).doesNotContain("Payslip ID", "Scan to verify");
+        assertThat(text).contains("BELLE PETERSEN", "R 25,430.00");
     }
 
     @Test
-    void unreachableLogoUrlDoesNotFailGeneration() {
-        // The constructor's companyRepository stub already points at an unreachable logoUrl —
-        // this just asserts explicitly that the docx still builds (the QR/verification-style
-        // "non-fatal, just skip it" handling applies to the logo fetch too).
-        when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of());
-        byte[] docx = docxTemplateService.build(payroll(employee()), new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
-        assertThat(docx).isNotEmpty();
-    }
-
-    @Test
-    void convertsToRealPdfViaLibreOfficeWhenAvailable(@TempDir Path tempDir) throws IOException, InterruptedException {
-        assumeTrue(isSofficeAvailable(), "soffice not installed in this environment — skipping PDF conversion check");
-
-        when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of());
+    void sumsYearToDateFromMarchOnly() throws Exception {
         Employee employee = employee();
-        Payroll payroll = payroll(employee);
+        Payroll current = payroll(employee);
+        Payroll august = Payroll.builder().payPeriod("2026-08").grossPay(BigDecimal.valueOf(26500)).totalDeductions(BigDecimal.valueOf(1070)).build();
+        Payroll lastTaxYear = Payroll.builder().payPeriod("2026-02").grossPay(BigDecimal.valueOf(99999)).totalDeductions(BigDecimal.valueOf(9999)).build();
+        when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of(current, august, lastTaxYear));
 
-        byte[] pdf = payslipPdfService.generate(payroll);
+        String text = render(current);
 
-        assertThat(pdf).isNotEmpty();
-        assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
-
-        Path out = tempDir.resolve("payslip.pdf");
-        Files.write(out, pdf);
-        assertThat(Files.size(out)).isGreaterThan(1000);
+        assertThat(text).contains("53,000.00", "2,140.00");
+        assertThat(text).doesNotContain("99,999.00");
     }
 
-    private boolean isSofficeAvailable() {
-        try {
-            Process p = new ProcessBuilder("soffice", "--version").start();
-            return p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0;
-        } catch (Exception e) {
-            return false;
-        }
+    @Test
+    void handlesMissingOptionalDetailsAndNonLatinCharacters() throws Exception {
+        when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of());
+        Employee employee = Employee.builder().id(7L).employeeCode("EMP-00007").firstName("Łukasz").lastName("Nkosi").build();
+        Payroll payroll = Payroll.builder().employee(employee).payPeriod("2026-09").build();
+
+        String text = render(payroll);
+
+        assertThat(text).contains("EMP-00007", "NKOSI", "R 0.00");
     }
 }

@@ -19,7 +19,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Actually sends mail — this is not a stub. Sends via Resend's HTTPS API
+ * Actually sends mail — this is not a stub. Two ways to send, picked by
+ * MAIL_PROVIDER:
+ *
+ * <ul>
+ *   <li><b>resend</b> (default) — Resend's HTTPS API, described below.</li>
+ *   <li><b>smtp</b> — logs in to an ordinary company mailbox (e.g.
+ *   payroll@kandkmedia.co.za on mail.kandkmedia.co.za) with SMTP_USERNAME /
+ *   SMTP_PASSWORD and sends from it, like Outlook would. Needs no DNS
+ *   changes, but the host must allow outbound SMTP (see below).</li>
+ * </ul>
+ *
+ * Resend: sends via Resend's HTTPS API
  * (https://api.resend.com/emails) rather than raw SMTP: Render (and many
  * other hosts) block outbound SMTP ports 25/465/587 as an anti-spam
  * measure, which surfaces as a MailConnectException / connection timeout
@@ -60,9 +71,217 @@ public class EmailService {
     @Value("${spring.mail.password:}")
     private String resendApiKey;
 
+    /** "resend" (default) or "smtp". */
+    @Value("${app.mail.provider:resend}")
+    private String provider;
+
+    @Value("${app.mail.smtp.host:mail.kandkmedia.co.za}")
+    private String smtpHost;
+    @Value("${app.mail.smtp.port:465}")
+    private int smtpPort;
+    /** "ssl" (port 465), "starttls" (port 587) or "none"; blank = decide from the port. */
+    @Value("${app.mail.smtp.security:}")
+    private String smtpSecurity;
+    @Value("${app.mail.smtp.username:}")
+    private String smtpUsername;
+    @Value("${app.mail.smtp.password:}")
+    private String smtpPassword;
+    /** Sender address when it isn't the login itself — needed for relay services like Brevo,
+     *  whose login (e.g. 8a1b2c001@smtp-brevo.com) isn't a mailbox; must be a sender verified there. */
+    @Value("${app.mail.smtp.from:}")
+    private String smtpFrom;
+
+    /** Brevo transactional-email API key (xkeysib-…) — for MAIL_PROVIDER=brevo, sending over HTTPS. */
+    @Value("${app.mail.brevo.api-key:}")
+    private String brevoApiKey;
+    private String brevoUrl = "https://api.brevo.com/v3/smtp/email";
+
     private record SendResult(boolean ok, String errorMessage) {
         static SendResult success() { return new SendResult(true, null); }
         static SendResult failure(String msg) { return new SendResult(false, msg); }
+    }
+
+    /** Every email in this class goes through here, whichever provider is configured. */
+    private SendResult send(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
+        if (usingBrevo()) return sendViaBrevo(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes);
+        return usingSmtp()
+                ? sendViaSmtp(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes)
+                : sendViaResend(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes);
+    }
+
+    private boolean usingBrevo() {
+        return "brevo".equalsIgnoreCase(provider == null ? "" : provider.trim());
+    }
+
+    private boolean usingSmtp() {
+        return "smtp".equalsIgnoreCase(provider == null ? "" : provider.trim());
+    }
+
+    /** The sender address. With SMTP: SMTP_FROM if set (relay services like Brevo), otherwise the
+     *  logged-in mailbox (mail servers reject any other From), keeping MAIL_FROM's display name if it
+     *  has one. With Resend: MAIL_FROM. */
+    private String effectiveFrom() {
+        if (usingBrevo()) {
+            String f = smtpFrom != null && !smtpFrom.isBlank() ? smtpFrom.trim() : fromAddress;
+            return f.contains("<") ? f : "K and K Media <" + f + ">";
+        }
+        if (usingSmtp()) {
+            if (smtpFrom != null && !smtpFrom.isBlank()) {
+                return smtpFrom.contains("<") ? smtpFrom.trim() : "K and K Media <" + smtpFrom.trim() + ">";
+            }
+            if (smtpUsername != null && !smtpUsername.isBlank()) {
+                if (fromAddress != null && fromAddress.toLowerCase().contains(smtpUsername.trim().toLowerCase())) return fromAddress;
+                return "K and K Media <" + smtpUsername.trim() + ">";
+            }
+        }
+        return fromAddress;
+    }
+
+    /** Env values pasted into a dashboard often pick up spaces, line breaks or surrounding quotes. */
+    static String cleanSecret(String value) {
+        if (value == null) return null;
+        String v = value.strip();
+        if (v.length() >= 2 && ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'")))) {
+            v = v.substring(1, v.length() - 1).strip();
+        }
+        return v;
+    }
+
+    private String loginFailureMessage() {
+        String user = cleanSecret(smtpUsername);
+        String pass = cleanSecret(smtpPassword);
+        if (smtpHost != null && smtpHost.toLowerCase().contains("brevo")) {
+            if (pass.startsWith("xkeysib-")) {
+                return "Brevo rejected the login: SMTP_PASSWORD is a Brevo API key (xkeysib-…). Use an SMTP key (xsmtpsib-…) from Brevo > SMTP & API > SMTP tab.";
+            }
+            return "Brevo rejected the login for " + user + ". Check SMTP_PASSWORD is a current SMTP key (xsmtpsib-…) from Brevo > SMTP & API > SMTP tab "
+                    + "(a deleted or regenerated key stops working), and that the Brevo account's SMTP sending is activated.";
+        }
+        return "The mail server rejected the login for " + user + " — check SMTP_USERNAME / SMTP_PASSWORD.";
+    }
+
+    private SendResult sendViaSmtp(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
+        if (smtpUsername == null || smtpUsername.isBlank() || smtpPassword == null || smtpPassword.isBlank()) {
+            return SendResult.failure("Email is not configured — set SMTP_USERNAME and SMTP_PASSWORD for the company mailbox.");
+        }
+        try {
+            org.springframework.mail.javamail.JavaMailSenderImpl sender = new org.springframework.mail.javamail.JavaMailSenderImpl();
+            sender.setHost(smtpHost);
+            sender.setPort(smtpPort);
+            sender.setUsername(cleanSecret(smtpUsername));
+            sender.setPassword(cleanSecret(smtpPassword));
+            sender.setDefaultEncoding("UTF-8");
+            String security = smtpSecurity == null || smtpSecurity.isBlank()
+                    ? (smtpPort == 465 ? "ssl" : "starttls") // 587 and 2525 (e.g. Brevo) use STARTTLS
+                    : smtpSecurity.trim().toLowerCase();
+            java.util.Properties props = sender.getJavaMailProperties();
+            props.put("mail.smtp.auth", "true");
+            props.put("mail.smtp.connectiontimeout", "15000");
+            props.put("mail.smtp.timeout", "20000");
+            props.put("mail.smtp.writetimeout", "20000");
+            if (security.equals("ssl")) {
+                props.put("mail.smtp.ssl.enable", "true");
+            } else if (security.equals("starttls")) {
+                props.put("mail.smtp.starttls.enable", "true");
+                props.put("mail.smtp.starttls.required", "true");
+            }
+
+            jakarta.mail.internet.MimeMessage message = sender.createMimeMessage();
+            org.springframework.mail.javamail.MimeMessageHelper helper =
+                    new org.springframework.mail.javamail.MimeMessageHelper(message, attachmentBytes != null, "UTF-8");
+            helper.setFrom(effectiveFrom());
+            helper.setTo(to);
+            if (replyTo != null && !replyTo.isBlank()) helper.setReplyTo(replyTo);
+            helper.setSubject(subject);
+            helper.setText(textBody, false);
+            if (attachmentBytes != null && attachmentFilename != null) {
+                helper.addAttachment(attachmentFilename, new org.springframework.core.io.ByteArrayResource(attachmentBytes), "application/pdf");
+            }
+            sender.send(message);
+            return SendResult.success();
+        } catch (org.springframework.mail.MailAuthenticationException e) {
+            log.error("SMTP login failed for {}", smtpUsername, e);
+            return SendResult.failure(loginFailureMessage());
+        } catch (Exception e) {
+            log.error("Failed to send email via SMTP ({}:{})", smtpHost, smtpPort, e);
+            if (isConnectionProblem(e)) {
+                return SendResult.failure("Couldn't connect to " + smtpHost + " on port " + smtpPort
+                        + ". The server's host may be blocking outgoing mail ports (Render does on some plans) — "
+                        + "use a relay that listens on port 2525 (e.g. Brevo: SMTP_HOST=smtp-relay.brevo.com, SMTP_PORT=2525), "
+                        + "or switch MAIL_PROVIDER back to resend. (" + rootMessage(e) + ")");
+            }
+            return SendResult.failure("SMTP error: " + rootMessage(e));
+        }
+    }
+
+    private static boolean isConnectionProblem(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.net.ConnectException || t instanceof java.net.SocketTimeoutException
+                    || t instanceof java.net.UnknownHostException || t instanceof jakarta.mail.MessagingException && String.valueOf(t.getMessage()).startsWith("Couldn't connect")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String rootMessage(Throwable e) {
+        Throwable t = e;
+        while (t.getCause() != null && t.getCause() != t) t = t.getCause();
+        return t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
+    }
+
+    /** Sends through Brevo's HTTPS API: no SMTP port or SMTP key involved, and Brevo's errors come back readable. */
+    private SendResult sendViaBrevo(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
+        String key = cleanSecret(brevoApiKey);
+        if (key == null || key.isBlank()) {
+            return SendResult.failure("Email is not configured — set BREVO_API_KEY (an API key, xkeysib-…, from Brevo > SMTP & API > API Keys).");
+        }
+        if (key.startsWith("xsmtpsib-")) {
+            return SendResult.failure("BREVO_API_KEY is an SMTP key (xsmtpsib-…). The Brevo API needs an API key (xkeysib-…) from Brevo > SMTP & API > API Keys.");
+        }
+        try {
+            String from = effectiveFrom();
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("^\\s*(.*?)\\s*<([^>]+)>\\s*$").matcher(from);
+            Map<String, Object> sender = new LinkedHashMap<>();
+            if (m.matches()) {
+                if (!m.group(1).isBlank()) sender.put("name", m.group(1).replace("\"", ""));
+                sender.put("email", m.group(2).trim());
+            } else {
+                sender.put("email", from.trim());
+            }
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("sender", sender);
+            body.put("to", List.of(Map.of("email", to)));
+            body.put("subject", subject);
+            body.put("textContent", textBody);
+            if (replyTo != null && !replyTo.isBlank()) body.put("replyTo", Map.of("email", replyTo));
+            if (attachmentBytes != null && attachmentFilename != null) {
+                body.put("attachment", List.of(Map.of("name", attachmentFilename, "content", Base64.getEncoder().encodeToString(attachmentBytes))));
+            }
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(brevoUrl))
+                    .header("api-key", key)
+                    .header("accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(20))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) return SendResult.success();
+            log.error("Brevo API returned {}: {}", response.statusCode(), response.body());
+            String msg = response.body();
+            try {
+                String parsed = objectMapper.readTree(response.body()).path("message").asText("");
+                if (!parsed.isBlank()) msg = parsed;
+            } catch (Exception ignored) { /* not JSON */ }
+            if (response.statusCode() == 401) {
+                return SendResult.failure("Brevo rejected BREVO_API_KEY (" + msg + "). Create a new API key in Brevo > SMTP & API > API Keys.");
+            }
+            return SendResult.failure("Brevo API error (" + response.statusCode() + "): " + msg);
+        } catch (Exception e) {
+            log.error("Failed to send email via Brevo API", e);
+            return SendResult.failure("Couldn't reach Brevo: " + e.getMessage());
+        }
     }
 
     private SendResult sendViaResend(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
@@ -71,7 +290,7 @@ public class EmailService {
         }
         try {
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("from", fromAddress);
+            body.put("from", effectiveFrom());
             body.put("to", List.of(to));
             body.put("subject", subject);
             body.put("text", textBody);
@@ -121,7 +340,7 @@ public class EmailService {
                 "Regards,\nK and K Media Payroll";
         String filename = payroll.getPayPeriod() + "-" + employee.getEmployeeCode() + ".pdf";
 
-        SendResult result = sendViaResend(employee.getEmail(), null, subject, text, filename, pdf);
+        SendResult result = send(employee.getEmail(), null, subject, text, filename, pdf);
         if (result.ok()) {
             payroll.setEmailSent(true);
             payroll.setEmailSentAt(LocalDateTime.now());
@@ -150,7 +369,7 @@ public class EmailService {
                 "\n\nThe signed letter is attached.\n\nRegards,\nK and K Media";
         String filename = "Leave-" + request.getStatus() + "-" + request.getId() + "-" + employee.getEmployeeCode() + ".pdf";
 
-        SendResult result = sendViaResend(employee.getEmail(), null, subject, text, filename, pdf);
+        SendResult result = send(employee.getEmail(), null, subject, text, filename, pdf);
         request.setLetterEmailSent(result.ok());
         request.setLetterEmailFailureReason(result.ok() ? null : result.errorMessage());
         return result.ok();
@@ -163,14 +382,19 @@ public class EmailService {
      * this service sends — no separate mail configuration to maintain.
      */
     public boolean sendVerificationCode(String toEmail, String firstName, String code) {
+        return verificationCodeSendError(toEmail, firstName, code) == null;
+    }
+
+    /** Same as sendVerificationCode, but returns why sending failed (null on success). */
+    public String verificationCodeSendError(String toEmail, String firstName, String code) {
         String subject = "Verify your K and K Media account";
         String text = "Hi " + firstName + ",\n\n" +
                 "Your verification code is: " + code + "\n\n" +
                 "Enter this code to finish creating your account. It expires in 15 minutes.\n\n" +
                 "If you didn't try to sign up, you can ignore this email.\n\n" +
                 "Regards,\nK and K Media";
-        SendResult result = sendViaResend(toEmail, null, subject, text, null, null);
-        return result.ok();
+        SendResult result = send(toEmail, null, subject, text, null, null);
+        return result.ok() ? null : (result.errorMessage() == null ? "unknown error" : result.errorMessage());
     }
 
     /**
@@ -191,7 +415,7 @@ public class EmailService {
                 "Ticket ID: " + ticket.getId();
         String replyTo = (ticket.getEmployeeEmail() != null && !ticket.getEmployeeEmail().isBlank()) ? ticket.getEmployeeEmail() : null;
 
-        SendResult result = sendViaResend(supportEmail, replyTo, subject, text, null, null);
+        SendResult result = send(supportEmail, replyTo, subject, text, null, null);
         ticket.setEmailSent(result.ok());
         ticket.setEmailFailureReason(result.ok() ? null : result.errorMessage());
         return result.ok();
@@ -216,7 +440,7 @@ public class EmailService {
                 "Issue ID: " + issue.getId();
         String replyTo = (issue.getEmployeeEmail() != null && !issue.getEmployeeEmail().isBlank()) ? issue.getEmployeeEmail() : null;
 
-        SendResult result = sendViaResend(supportEmail, replyTo, subject, text, null, null);
+        SendResult result = send(supportEmail, replyTo, subject, text, null, null);
         issue.setEmailSent(result.ok());
         issue.setEmailFailureReason(result.ok() ? null : result.errorMessage());
         return result.ok();
@@ -242,9 +466,9 @@ public class EmailService {
      */
     public EmailSendResult sendTestEmail(String toEmail) {
         String subject = "K and K Media — test email";
-        String text = "This confirms the payroll system's email delivery (via Resend) is working.\n\n" +
+        String text = "This confirms the payroll system's email delivery (via " + (usingBrevo() ? "Brevo" : usingSmtp() ? "the company mailbox " + smtpUsername : "Resend") + ") is working.\n\n" +
                 "Sent at " + java.time.LocalDateTime.now() + ".";
-        SendResult result = sendViaResend(toEmail, null, subject, text, null, null);
+        SendResult result = send(toEmail, null, subject, text, null, null);
         return new EmailSendResult(result.ok(), result.errorMessage());
     }
 }

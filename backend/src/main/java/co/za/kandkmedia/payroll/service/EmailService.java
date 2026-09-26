@@ -398,6 +398,22 @@ public class EmailService {
     }
 
     /**
+     * Sends the 6-digit code that confirms a password reset request — same
+     * send() path (and so the same MAIL_PROVIDER) as every other email this
+     * service sends. Returns why sending failed, or null on success.
+     */
+    public String passwordResetCodeSendError(String toEmail, String firstName, String code) {
+        String subject = "Reset your K and K Media password";
+        String text = "Hi " + firstName + ",\n\n" +
+                "Your password reset code is: " + code + "\n\n" +
+                "Enter this code to set a new password. It expires in 15 minutes.\n\n" +
+                "If you didn't request this, you can ignore this email — your password hasn't been changed.\n\n" +
+                "Regards,\nK and K Media";
+        SendResult result = send(toEmail, null, subject, text, null, null);
+        return result.ok() ? null : (result.errorMessage() == null ? "unknown error" : result.errorMessage());
+    }
+
+    /**
      * Sends a support ticket straight to the support inbox — this is the
      * "press Send, nothing opens" path: the browser calls the backend, the
      * backend sends the mail server-side. No mailto:, no user email client

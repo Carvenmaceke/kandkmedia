@@ -2,8 +2,10 @@ package co.za.kandkmedia.payroll.service;
 
 import co.za.kandkmedia.payroll.domain.*;
 import co.za.kandkmedia.payroll.dto.AuthResponse;
+import co.za.kandkmedia.payroll.dto.ForgotPasswordRequest;
 import co.za.kandkmedia.payroll.dto.LoginRequest;
 import co.za.kandkmedia.payroll.dto.ResendVerificationRequest;
+import co.za.kandkmedia.payroll.dto.ResetPasswordRequest;
 import co.za.kandkmedia.payroll.dto.SignupRequest;
 import co.za.kandkmedia.payroll.dto.VerifyEmailRequest;
 import co.za.kandkmedia.payroll.repository.*;
@@ -284,6 +286,55 @@ public class AuthService {
         if (sendError != null) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Couldn't send the email — please contact IT support. (" + sendError + ")");
         }
+    }
+
+    /** Emails a fresh code to confirm a password reset — same code shape, expiry and
+     *  cooldown as email verification, but tracked separately (resetPasswordCode*)
+     *  so the two flows can't invalidate or race each other. */
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequest req) {
+        AppUser user = userRepository.findByEmail(req.getEmail().trim().toLowerCase())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "No account found with that email."));
+
+        if (user.getResetPasswordCodeSentAt() != null
+                && Duration.between(user.getResetPasswordCodeSentAt(), LocalDateTime.now()).compareTo(RESEND_COOLDOWN) < 0) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Please wait a moment before requesting another code.");
+        }
+
+        String code = generateCode();
+        user.setResetPasswordCode(code);
+        user.setResetPasswordCodeExpiresAt(LocalDateTime.now().plus(CODE_VALIDITY));
+        user.setResetPasswordCodeSentAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        String firstName = user.getEmployee() != null ? user.getEmployee().getFirstName() : "there";
+        String sendError = emailService.passwordResetCodeSendError(user.getEmail(), firstName, code);
+        if (sendError != null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Couldn't send the email — please contact IT support. (" + sendError + ")");
+        }
+    }
+
+    /** Confirms the code from forgotPassword and sets the new password — does not log the
+     *  account in; the person still enters their new password on the login screen afterward,
+     *  same as any other password change. */
+    @Transactional
+    public void resetPassword(ResetPasswordRequest req) {
+        AppUser user = userRepository.findByEmail(req.getEmail().trim().toLowerCase())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email or code."));
+
+        if (user.getResetPasswordCode() == null || user.getResetPasswordCodeExpiresAt() == null
+                || LocalDateTime.now().isAfter(user.getResetPasswordCodeExpiresAt())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That code has expired — request a new one.");
+        }
+        if (!user.getResetPasswordCode().equals(req.getCode().trim())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Incorrect verification code.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(req.getNewPassword()));
+        user.setResetPasswordCode(null);
+        user.setResetPasswordCodeExpiresAt(null);
+        user.setResetPasswordCodeSentAt(null);
+        userRepository.save(user);
     }
 
     /** Six digits, zero-padded — simple to type from an email on a phone. */

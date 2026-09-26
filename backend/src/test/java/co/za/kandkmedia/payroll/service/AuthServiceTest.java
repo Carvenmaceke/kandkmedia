@@ -4,8 +4,10 @@ import co.za.kandkmedia.payroll.domain.AppUser;
 import co.za.kandkmedia.payroll.domain.Employee;
 import co.za.kandkmedia.payroll.domain.Role;
 import co.za.kandkmedia.payroll.dto.AuthResponse;
+import co.za.kandkmedia.payroll.dto.ForgotPasswordRequest;
 import co.za.kandkmedia.payroll.dto.LoginRequest;
 import co.za.kandkmedia.payroll.dto.ResendVerificationRequest;
+import co.za.kandkmedia.payroll.dto.ResetPasswordRequest;
 import co.za.kandkmedia.payroll.dto.SignupRequest;
 import co.za.kandkmedia.payroll.dto.VerifyEmailRequest;
 import co.za.kandkmedia.payroll.repository.AppUserRepository;
@@ -279,6 +281,140 @@ class AuthServiceTest {
     void signupFailureShowsWhyTheEmailDidNotSend() {
         when(emailService.verificationCodeSendError(anyString(), anyString(), anyString())).thenReturn("Resend API error (403): verify a domain");
         assertThatThrownBy(() -> authService.signup(signupRequest())).hasMessageContaining("verify a domain");
+    }
+
+    private AppUser verifiedUser() {
+        Employee employee = Employee.builder().id(1L).employeeCode("EMP-00001").firstName("Jane").lastName("Doe").build();
+        return AppUser.builder()
+                .id(1L).email("jane@kandkmedia.co.za")
+                .passwordHash(passwordEncoder.encode("password123"))
+                .role(Role.EMPLOYEE).employee(employee).emailVerified(true)
+                .build();
+    }
+
+    @Test
+    void forgotPasswordSendsACode() {
+        AppUser user = verifiedUser();
+        when(userRepository.findByEmail("jane@kandkmedia.co.za")).thenReturn(Optional.of(user));
+        when(emailService.passwordResetCodeSendError(anyString(), anyString(), anyString())).thenReturn(null);
+
+        ForgotPasswordRequest req = new ForgotPasswordRequest();
+        req.setEmail("jane@kandkmedia.co.za");
+        authService.forgotPassword(req);
+
+        assertThat(user.getResetPasswordCode()).matches("\\d{6}");
+        verify(emailService).passwordResetCodeSendError(org.mockito.ArgumentMatchers.eq("jane@kandkmedia.co.za"), anyString(), anyString());
+    }
+
+    @Test
+    void forgotPasswordRejectsAnUnknownEmail() {
+        when(userRepository.findByEmail("nobody@kandkmedia.co.za")).thenReturn(Optional.empty());
+
+        ForgotPasswordRequest req = new ForgotPasswordRequest();
+        req.setEmail("nobody@kandkmedia.co.za");
+
+        assertThatThrownBy(() -> authService.forgotPassword(req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("No account found");
+    }
+
+    @Test
+    void forgotPasswordIsThrottledWithinTheCooldownWindow() {
+        AppUser user = verifiedUser();
+        user.setResetPasswordCodeSentAt(LocalDateTime.now().minusSeconds(5));
+        when(userRepository.findByEmail("jane@kandkmedia.co.za")).thenReturn(Optional.of(user));
+
+        ForgotPasswordRequest req = new ForgotPasswordRequest();
+        req.setEmail("jane@kandkmedia.co.za");
+
+        assertThatThrownBy(() -> authService.forgotPassword(req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("wait");
+    }
+
+    @Test
+    void forgotPasswordSurfacesWhyTheEmailDidNotSend() {
+        AppUser user = verifiedUser();
+        when(userRepository.findByEmail("jane@kandkmedia.co.za")).thenReturn(Optional.of(user));
+        when(emailService.passwordResetCodeSendError(anyString(), anyString(), anyString())).thenReturn("Brevo rejected BREVO_API_KEY");
+
+        ForgotPasswordRequest req = new ForgotPasswordRequest();
+        req.setEmail("jane@kandkmedia.co.za");
+
+        assertThatThrownBy(() -> authService.forgotPassword(req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Brevo rejected BREVO_API_KEY");
+    }
+
+    @Test
+    void resetPasswordWithTheCorrectCodeChangesThePasswordAndLetsTheOldOneLoginFail() {
+        AppUser user = verifiedUser();
+        user.setResetPasswordCode("654321");
+        user.setResetPasswordCodeExpiresAt(LocalDateTime.now().plusMinutes(10));
+        when(userRepository.findByEmail("jane@kandkmedia.co.za")).thenReturn(Optional.of(user));
+
+        ResetPasswordRequest req = new ResetPasswordRequest();
+        req.setEmail("jane@kandkmedia.co.za");
+        req.setCode("654321");
+        req.setNewPassword("brandNewPassword1");
+        authService.resetPassword(req);
+
+        assertThat(user.getResetPasswordCode()).isNull();
+        assertThat(passwordEncoder.matches("brandNewPassword1", user.getPasswordHash())).isTrue();
+        assertThat(passwordEncoder.matches("password123", user.getPasswordHash())).isFalse();
+    }
+
+    @Test
+    void resetPasswordRejectsTheWrongCode() {
+        AppUser user = verifiedUser();
+        user.setResetPasswordCode("654321");
+        user.setResetPasswordCodeExpiresAt(LocalDateTime.now().plusMinutes(10));
+        when(userRepository.findByEmail("jane@kandkmedia.co.za")).thenReturn(Optional.of(user));
+
+        ResetPasswordRequest req = new ResetPasswordRequest();
+        req.setEmail("jane@kandkmedia.co.za");
+        req.setCode("000000");
+        req.setNewPassword("brandNewPassword1");
+
+        assertThatThrownBy(() -> authService.resetPassword(req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Incorrect");
+        assertThat(passwordEncoder.matches("password123", user.getPasswordHash())).isTrue();
+    }
+
+    @Test
+    void resetPasswordRejectsAnExpiredCode() {
+        AppUser user = verifiedUser();
+        user.setResetPasswordCode("654321");
+        user.setResetPasswordCodeExpiresAt(LocalDateTime.now().minusMinutes(1));
+        when(userRepository.findByEmail("jane@kandkmedia.co.za")).thenReturn(Optional.of(user));
+
+        ResetPasswordRequest req = new ResetPasswordRequest();
+        req.setEmail("jane@kandkmedia.co.za");
+        req.setCode("654321");
+        req.setNewPassword("brandNewPassword1");
+
+        assertThatThrownBy(() -> authService.resetPassword(req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("expired");
+    }
+
+    @Test
+    void resetPasswordDoesNotInterfereWithAPendingEmailVerification() {
+        AppUser user = unverifiedUser("111111", LocalDateTime.now().plusMinutes(10));
+        user.setResetPasswordCode("654321");
+        user.setResetPasswordCodeExpiresAt(LocalDateTime.now().plusMinutes(10));
+        when(userRepository.findByEmail("jane@kandkmedia.co.za")).thenReturn(Optional.of(user));
+
+        ResetPasswordRequest req = new ResetPasswordRequest();
+        req.setEmail("jane@kandkmedia.co.za");
+        req.setCode("654321");
+        req.setNewPassword("brandNewPassword1");
+        authService.resetPassword(req);
+
+        // Resetting the password doesn't touch the separate, still-pending signup verification code.
+        assertThat(user.getVerificationCode()).isEqualTo("111111");
+        assertThat(user.isEmailVerified()).isFalse();
     }
 
     @Test

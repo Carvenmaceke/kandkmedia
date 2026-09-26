@@ -77,6 +77,17 @@ public class AppUser implements UserDetails {
     @JsonIgnore
     private java.time.LocalDateTime verificationCodeSentAt;
 
+    /** Separate from verificationCode — signup verification and password reset are independent
+     *  flows and shouldn't be able to invalidate or race each other. Same lifecycle otherwise. */
+    @JsonIgnore
+    private String resetPasswordCode;
+
+    @JsonIgnore
+    private java.time.LocalDateTime resetPasswordCodeExpiresAt;
+
+    @JsonIgnore
+    private java.time.LocalDateTime resetPasswordCodeSentAt;
+
     @JsonIgnore
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

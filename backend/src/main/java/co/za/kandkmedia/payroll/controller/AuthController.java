@@ -1,8 +1,10 @@
 package co.za.kandkmedia.payroll.controller;
 
 import co.za.kandkmedia.payroll.dto.AuthResponse;
+import co.za.kandkmedia.payroll.dto.ForgotPasswordRequest;
 import co.za.kandkmedia.payroll.dto.LoginRequest;
 import co.za.kandkmedia.payroll.dto.ResendVerificationRequest;
+import co.za.kandkmedia.payroll.dto.ResetPasswordRequest;
 import co.za.kandkmedia.payroll.dto.SignupRequest;
 import co.za.kandkmedia.payroll.dto.VerifyEmailRequest;
 import co.za.kandkmedia.payroll.service.AuthService;
@@ -50,6 +52,20 @@ public class AuthController {
     @PostMapping("/resend-verification")
     public ResponseEntity<Void> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
         authService.resendVerification(request);
+        return ResponseEntity.ok().build();
+    }
+
+    /** Emails a code to confirm a "forgot password" request. */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+        return ResponseEntity.ok().build();
+    }
+
+    /** Confirms that code and sets the new password. */
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
         return ResponseEntity.ok().build();
     }
 }

@@ -1279,7 +1279,7 @@ function FormError({ children }) {
   );
 }
 
-function LoginScreen({ onLogin, goSignup, theme }) {
+function LoginScreen({ onLogin, goSignup, goForgotPassword, theme }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -1316,8 +1316,134 @@ function LoginScreen({ onLogin, goSignup, theme }) {
         <FormError>{error}</FormError>
         <Button type="submit" variant="teal" full disabled={loading} icon={loading ? undefined : ArrowRight}>{loading ? "Logging in…" : "Log in"}</Button>
       </form>
+      <div style={{ marginTop: 10, textAlign: "right" }}>
+        <button type="button" onClick={goForgotPassword} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 12.5, padding: 0, textDecoration: "underline" }}>Forgot password?</button>
+      </div>
       <div style={{ marginTop: 22, paddingTop: 20, borderTop: `1px solid ${T.border}`, fontSize: 13.5, color: T.muted, textAlign: "center" }}>
         New to K and K Media? <button onClick={goSignup} style={{ background: "none", border: "none", color: T.teal, fontWeight: 650, cursor: "pointer", fontSize: 13.5, padding: 0 }}>Create an account</button>
+      </div>
+    </AuthShell>
+  );
+}
+
+function ForgotPasswordScreen({ onSubmit, goLogin, theme }) {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) { setError("Enter your account's email address."); return; }
+    setError(""); setSubmitting(true);
+    const err = await onSubmit(email.trim());
+    setSubmitting(false);
+    if (err) setError(err);
+  };
+
+  return (
+    <AuthShell theme={theme}>
+      <AuthHeading title="Reset your password" sub="Enter your account's email and we'll send a 6-digit code to confirm the reset." />
+      <form onSubmit={submit}>
+        <Field label="Email Address">
+          <div style={{ position: "relative" }}>
+            <Mail size={14} color={T.muted} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" autoFocus placeholder={`you@${ALLOWED_EMAIL_DOMAIN}`} style={{ ...inputStyle, paddingLeft: 36 }} required />
+          </div>
+        </Field>
+        <FormError>{error}</FormError>
+        <Button type="submit" variant="teal" full disabled={submitting} icon={submitting ? undefined : ArrowRight}>{submitting ? "Sending…" : "Send Reset Code"}</Button>
+      </form>
+      <div style={{ marginTop: 16, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
+        <button onClick={goLogin} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 12.5, padding: 0, textDecoration: "underline" }}>Back to log in</button>
+      </div>
+    </AuthShell>
+  );
+}
+
+function ResetPasswordScreen({ email, onReset, onResend, goLogin, theme }) {
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!code.trim()) { setError("Enter the 6-digit code we emailed you."); return; }
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (newPassword !== confirm) { setError("Passwords do not match."); return; }
+    setError(""); setNotice(""); setSubmitting(true);
+    const err = await onReset(code.trim(), newPassword);
+    setSubmitting(false);
+    if (err) setError(err); else setDone(true);
+  };
+
+  const resend = async () => {
+    setError(""); setNotice(""); setResending(true);
+    const err = await onResend();
+    setResending(false);
+    if (err) setError(err); else setNotice("A new code is on its way — check your inbox.");
+  };
+
+  if (done) {
+    return (
+      <AuthShell theme={theme}>
+        <AuthHeading title="Password reset" sub="Your password has been changed. Log in with your new password." />
+        <Button variant="teal" full onClick={goLogin} icon={ArrowRight}>Back to log in</Button>
+      </AuthShell>
+    );
+  }
+
+  return (
+    <AuthShell theme={theme}>
+      <AuthHeading title="Enter your reset code" sub={<>We've sent a 6-digit code to <strong style={{ color: T.text }}>{email}</strong>. Enter it below with your new password.</>} />
+      <form onSubmit={submit}>
+        <Field label="Reset Code">
+          <div style={{ position: "relative" }}>
+            <Mail size={14} color={T.muted} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              style={{ ...inputStyle, paddingLeft: 36, letterSpacing: 3, fontSize: 16, fontWeight: 600 }}
+              maxLength={6}
+              required
+            />
+          </div>
+        </Field>
+        <Field label="New Password">
+          <div style={{ position: "relative" }}>
+            <Lock size={14} color={T.muted} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+            <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} type="password" autoComplete="new-password" placeholder="••••••••" style={{ ...inputStyle, paddingLeft: 36 }} required />
+          </div>
+        </Field>
+        <Field label="Confirm New Password">
+          <div style={{ position: "relative" }}>
+            <Lock size={14} color={T.muted} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+            <input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" autoComplete="new-password" placeholder="••••••••" style={{ ...inputStyle, paddingLeft: 36 }} required />
+          </div>
+        </Field>
+        <FormError>{error}</FormError>
+        {notice && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", color: T.teal, background: T.bg, padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 14 }}>
+            <ShieldCheck size={14} /> {notice}
+          </div>
+        )}
+        <Button type="submit" variant="teal" full disabled={submitting}>{submitting ? "Resetting…" : "Reset Password"}</Button>
+      </form>
+      <div style={{ marginTop: 16, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
+        Didn't get it?{" "}
+        <button onClick={resend} disabled={resending} style={{ background: "none", border: "none", color: T.teal, fontWeight: 700, cursor: resending ? "default" : "pointer", fontSize: 12.5, padding: 0 }}>
+          {resending ? "Sending…" : "Resend code"}
+        </button>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 12.5, color: T.muted, textAlign: "center" }}>
+        <button onClick={goLogin} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 12.5, padding: 0, textDecoration: "underline" }}>Back to log in</button>
       </div>
     </AuthShell>
   );
@@ -1600,7 +1726,8 @@ function setStoredToken(token) {
  *  callers can just try/catch and show err.message. */
 async function apiFetch(path, options = {}) {
   const isAuthEndpoint = path === "/api/auth/login" || path === "/api/auth/signup"
-    || path === "/api/auth/verify-email" || path === "/api/auth/resend-verification" || path.startsWith("/api/auth/check-email");
+    || path === "/api/auth/verify-email" || path === "/api/auth/resend-verification" || path.startsWith("/api/auth/check-email")
+    || path === "/api/auth/forgot-password" || path === "/api/auth/reset-password";
   const token = isAuthEndpoint ? null : getStoredToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -4156,8 +4283,9 @@ function NavItem({ icon: Icon, label, active, onClick }) {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState(() => (API_BASE_URL && getStoredToken() ? "restoring" : "login")); // "restoring" | "login" | "signup" | "verify-email" | "app"
+  const [screen, setScreen] = useState(() => (API_BASE_URL && getStoredToken() ? "restoring" : "login")); // "restoring" | "login" | "signup" | "verify-email" | "forgot-password" | "reset-password" | "app"
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState(null);
+  const [pendingResetEmail, setPendingResetEmail] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [portalChoice, setPortalChoice] = useState(null); // null | "leave" | "itSupport"
   const [appUserIdByEmployeeCode, setAppUserIdByEmployeeCode] = useState({});
@@ -4679,6 +4807,39 @@ export default function App() {
     }
   };
 
+  const handleForgotPassword = async (email) => {
+    try {
+      await apiFetch("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+      setPendingResetEmail(email);
+      setScreen("reset-password");
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  };
+
+  const handleResendResetCode = async () => {
+    try {
+      await apiFetch("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email: pendingResetEmail }) });
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  };
+
+  const handleResetPassword = async (code, newPassword) => {
+    try {
+      await apiFetch("/api/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ email: pendingResetEmail, code, newPassword }),
+      });
+      setPendingResetEmail(null);
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  };
+
   const handleLogout = () => {
     setStoredToken(null); setCurrentUserId(null); setScreen("login"); setViewMode("role"); setPortalChoice(null); setRoleTab(null);
     window.history.replaceState(null, "", window.location.pathname);
@@ -4851,7 +5012,7 @@ export default function App() {
       Signing you back in…
     </div>
   );
-  if (screen === "login") return <><LoginScreen onLogin={handleLogin} goSignup={() => setScreen("signup")} theme={theme} /><Toaster /></>;
+  if (screen === "login") return <><LoginScreen onLogin={handleLogin} goSignup={() => setScreen("signup")} goForgotPassword={() => setScreen("forgot-password")} theme={theme} /><Toaster /></>;
   if (screen === "signup") return <><SignupScreen onSignup={handleSignup} goLogin={() => setScreen("login")} theme={theme} /><Toaster /></>;
   if (screen === "verify-email") return (
     <VerifyEmailScreen
@@ -4859,6 +5020,18 @@ export default function App() {
       email={pendingVerificationEmail}
       onVerify={handleVerifyEmail}
       onResend={handleResendVerification}
+      goLogin={() => setScreen("login")}
+    />
+  );
+  if (screen === "forgot-password") return (
+    <ForgotPasswordScreen theme={theme} onSubmit={handleForgotPassword} goLogin={() => setScreen("login")} />
+  );
+  if (screen === "reset-password") return (
+    <ResetPasswordScreen
+      theme={theme}
+      email={pendingResetEmail}
+      onReset={handleResetPassword}
+      onResend={handleResendResetCode}
       goLogin={() => setScreen("login")}
     />
   );

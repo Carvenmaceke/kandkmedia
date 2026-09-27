@@ -170,6 +170,21 @@ BREVO_API_KEY=<Brevo API key, xkeysib-...>   # SMTP & API → API Keys
 SMTP_FROM=support@kandkmedia.co.za           # a sender verified in Brevo
 ```
 
+Or send through EmailJS (called from the server, so codes never reach the
+browser). In EmailJS: Account → Security → turn on "Allow EmailJS API for
+non-browser applications", and make a template with **To** = `{{to_email}}`,
+**Subject** = `{{subject}}`, body = `{{message}}` (also available:
+`{{from_name}}`, `{{reply_to}}`).
+
+```bash
+MAIL_PROVIDER=emailjs
+EMAILJS_SERVICE_ID=service_...
+EMAILJS_TEMPLATE_ID=template_...
+EMAILJS_PUBLIC_KEY=...                       # Account → API keys
+EMAILJS_PRIVATE_KEY=...                      # Account → API keys — never commit
+BREVO_API_KEY=xkeysib-...                    # optional: emails with a PDF (payslips) go via Brevo
+```
+
 Use **Company & Settings → Send Test
 Email** to check: a wrong password, or the host blocking outgoing mail
 ports (Render does on some plans), is reported in plain words. Set

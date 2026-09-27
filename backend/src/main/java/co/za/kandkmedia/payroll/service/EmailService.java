@@ -96,6 +96,17 @@ public class EmailService {
     private String brevoApiKey;
     private String brevoUrl = "https://api.brevo.com/v3/smtp/email";
 
+    /** EmailJS (MAIL_PROVIDER=emailjs): its REST API, called from the server so codes never reach the browser. */
+    @Value("${app.mail.emailjs.service-id:}")
+    private String emailJsServiceId;
+    @Value("${app.mail.emailjs.template-id:}")
+    private String emailJsTemplateId;
+    @Value("${app.mail.emailjs.public-key:}")
+    private String emailJsPublicKey;
+    @Value("${app.mail.emailjs.private-key:}")
+    private String emailJsPrivateKey;
+    private String emailJsUrl = "https://api.emailjs.com/api/v1.0/email/send";
+
     private record SendResult(boolean ok, String errorMessage) {
         static SendResult success() { return new SendResult(true, null); }
         static SendResult failure(String msg) { return new SendResult(false, msg); }
@@ -103,10 +114,15 @@ public class EmailService {
 
     /** Every email in this class goes through here, whichever provider is configured. */
     private SendResult send(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
+        if (usingEmailJs()) return sendViaEmailJs(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes);
         if (usingBrevo()) return sendViaBrevo(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes);
         return usingSmtp()
                 ? sendViaSmtp(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes)
                 : sendViaResend(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes);
+    }
+
+    private boolean usingEmailJs() {
+        return "emailjs".equalsIgnoreCase(provider == null ? "" : provider.trim());
     }
 
     private boolean usingBrevo() {
@@ -228,6 +244,60 @@ public class EmailService {
         Throwable t = e;
         while (t.getCause() != null && t.getCause() != t) t = t.getCause();
         return t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
+    }
+
+    /**
+     * Sends through EmailJS. The template must use {{to_email}} as "To", {{subject}} as the subject and
+     * {{message}} as the body. EmailJS can't take attachments on the free plan, so emails with a PDF
+     * (payslips, leave letters) go through the Brevo API instead when BREVO_API_KEY is set.
+     */
+    private SendResult sendViaEmailJs(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
+        if (attachmentBytes != null) {
+            String brevoKey = cleanSecret(brevoApiKey);
+            if (brevoKey != null && !brevoKey.isBlank()) {
+                return sendViaBrevo(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes);
+            }
+            return SendResult.failure("This email has a PDF attached, which EmailJS can't send on its free plan. Set BREVO_API_KEY so emails with attachments go through Brevo.");
+        }
+        String serviceId = cleanSecret(emailJsServiceId);
+        String templateId = cleanSecret(emailJsTemplateId);
+        String publicKey = cleanSecret(emailJsPublicKey);
+        String privateKey = cleanSecret(emailJsPrivateKey);
+        if (serviceId == null || serviceId.isBlank() || templateId == null || templateId.isBlank()
+                || publicKey == null || publicKey.isBlank() || privateKey == null || privateKey.isBlank()) {
+            return SendResult.failure("Email is not configured — set EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY and EMAILJS_PRIVATE_KEY.");
+        }
+        try {
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("to_email", to);
+            params.put("subject", subject);
+            params.put("message", textBody);
+            params.put("from_name", "K and K Media");
+            params.put("reply_to", replyTo != null && !replyTo.isBlank() ? replyTo : supportEmail);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("service_id", serviceId);
+            body.put("template_id", templateId);
+            body.put("user_id", publicKey);
+            body.put("accessToken", privateKey);
+            body.put("template_params", params);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(emailJsUrl))
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(20))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) return SendResult.success();
+            log.error("EmailJS returned {}: {}", response.statusCode(), response.body());
+            String reason = response.body() == null ? "" : response.body().trim();
+            if (reason.toLowerCase().contains("non-browser")) {
+                return SendResult.failure("EmailJS blocked the request: turn on \"Allow EmailJS API for non-browser applications\" in EmailJS > Account > Security.");
+            }
+            return SendResult.failure("EmailJS error (" + response.statusCode() + "): " + reason);
+        } catch (Exception e) {
+            log.error("Failed to send email via EmailJS", e);
+            return SendResult.failure("Couldn't reach EmailJS: " + e.getMessage());
+        }
     }
 
     /** Sends through Brevo's HTTPS API: no SMTP port or SMTP key involved, and Brevo's errors come back readable. */
@@ -482,7 +552,7 @@ public class EmailService {
      */
     public EmailSendResult sendTestEmail(String toEmail) {
         String subject = "K and K Media — test email";
-        String text = "This confirms the payroll system's email delivery (via " + (usingBrevo() ? "Brevo" : usingSmtp() ? "the company mailbox " + smtpUsername : "Resend") + ") is working.\n\n" +
+        String text = "This confirms the payroll system's email delivery (via " + (usingEmailJs() ? "EmailJS" : usingBrevo() ? "Brevo" : usingSmtp() ? "the company mailbox " + smtpUsername : "Resend") + ") is working.\n\n" +
                 "Sent at " + java.time.LocalDateTime.now() + ".";
         SendResult result = send(toEmail, null, subject, text, null, null);
         return new EmailSendResult(result.ok(), result.errorMessage());

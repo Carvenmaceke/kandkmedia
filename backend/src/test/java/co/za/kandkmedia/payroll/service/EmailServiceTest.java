@@ -174,4 +174,85 @@ class EmailServiceTest {
             assertThat(bodies).isEmpty();
         }
     }
+
+    /** EmailJS REST API sending, against a local stand-in for api.emailjs.com. */
+    @org.junit.jupiter.api.Nested
+    class ViaEmailJs {
+        private com.sun.net.httpserver.HttpServer server;
+        private final java.util.List<String> bodies = new java.util.ArrayList<>();
+        private final java.util.List<String> brevoBodies = new java.util.ArrayList<>();
+        private int status = 200;
+        private String reply = "OK";
+
+        @org.junit.jupiter.api.BeforeEach
+        void start() throws Exception {
+            server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/api/v1.0/email/send", ex -> respond(ex, bodies, status, reply));
+            server.createContext("/v3/smtp/email", ex -> respond(ex, brevoBodies, 201, "{}"));
+            server.start();
+        }
+
+        private void respond(com.sun.net.httpserver.HttpExchange ex, java.util.List<String> sink, int code, String text) throws java.io.IOException {
+            sink.add(new String(ex.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+            byte[] out = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(code, out.length);
+            ex.getResponseBody().write(out);
+            ex.close();
+        }
+
+        @org.junit.jupiter.api.AfterEach
+        void stop() { server.stop(0); }
+
+        private EmailService emailJs() {
+            String base = "http://127.0.0.1:" + server.getAddress().getPort();
+            EmailService svc = new EmailService(Mockito.mock(PayslipPdfService.class), Mockito.mock(LeaveLetterPdfService.class));
+            ReflectionTestUtils.setField(svc, "provider", "emailjs");
+            ReflectionTestUtils.setField(svc, "emailJsServiceId", "service_nkapwdh");
+            ReflectionTestUtils.setField(svc, "emailJsTemplateId", "template_x");
+            ReflectionTestUtils.setField(svc, "emailJsPublicKey", " pub ");
+            ReflectionTestUtils.setField(svc, "emailJsPrivateKey", "priv\n");
+            ReflectionTestUtils.setField(svc, "emailJsUrl", base + "/api/v1.0/email/send");
+            ReflectionTestUtils.setField(svc, "brevoUrl", base + "/v3/smtp/email");
+            ReflectionTestUtils.setField(svc, "supportEmail", "itsupport@kandkmedia.co.za");
+            ReflectionTestUtils.setField(svc, "fromAddress", "support@kandkmedia.co.za");
+            return svc;
+        }
+
+        @Test
+        void sendsTheVerificationCodeThroughTheTemplate() {
+            assertThat(emailJs().verificationCodeSendError("thabo@insideeducation.co.za", "Thabo", "112233")).isNull();
+            assertThat(bodies.get(0)).contains("\"service_id\":\"service_nkapwdh\"").contains("\"template_id\":\"template_x\"")
+                    .contains("\"user_id\":\"pub\"").contains("\"accessToken\":\"priv\"")
+                    .contains("\"to_email\":\"thabo@insideeducation.co.za\"").contains("112233");
+        }
+
+        @Test
+        void explainsTheNonBrowserSetting() {
+            status = 403; reply = "API calls are disabled for non-browser applications";
+            assertThat(emailJs().sendTestEmail("someone@kandkmedia.co.za").errorMessage()).contains("Allow EmailJS API for non-browser applications");
+        }
+
+        @Test
+        void missingSettingsAreNamed() {
+            EmailService svc = emailJs();
+            ReflectionTestUtils.setField(svc, "emailJsTemplateId", "");
+            assertThat(svc.sendTestEmail("someone@kandkmedia.co.za").errorMessage()).contains("EMAILJS_TEMPLATE_ID");
+        }
+
+        @Test
+        void attachmentsGoThroughBrevoWhenItIsConfigured() {
+            EmailService svc = emailJs();
+            ReflectionTestUtils.setField(svc, "brevoApiKey", "xkeysib-abc");
+            Object r = ReflectionTestUtils.invokeMethod(svc, "send", "a@kandkmedia.co.za", null, "Payslip", "Attached", "p.pdf", new byte[]{1, 2});
+            assertThat(r.toString()).contains("ok=true");
+            assertThat(bodies).isEmpty();
+            assertThat(brevoBodies).hasSize(1);
+        }
+
+        @Test
+        void attachmentsWithoutBrevoFailClearly() {
+            Object r = ReflectionTestUtils.invokeMethod(emailJs(), "send", "a@kandkmedia.co.za", null, "Payslip", "Attached", "p.pdf", new byte[]{1, 2});
+            assertThat(r.toString()).contains("ok=false").contains("BREVO_API_KEY");
+        }
+    }
 }

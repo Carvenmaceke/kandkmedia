@@ -39,6 +39,7 @@ class PayslipPdfServiceTest {
     void setUp() {
         when(companyRepository.findAll()).thenReturn(List.of(Company.builder().name("K & K Media (Pty) Ltd").build()));
         ReflectionTestUtils.setField(service, "verificationBaseUrl", "https://kandkmedia.example/api/public/verify");
+        ReflectionTestUtils.setField(service, "defaultLogoUrl", ""); // no network in tests: text wordmark
     }
 
     private Employee employee() {
@@ -68,13 +69,9 @@ class PayslipPdfServiceTest {
                 .employee(employee)
                 .payPeriod("2026-09")
                 .basicSalary(BigDecimal.valueOf(22000))
-                .housingAllowance(BigDecimal.valueOf(3000))
-                .transportAllowance(BigDecimal.valueOf(1500))
-                .grossPay(BigDecimal.valueOf(26500))
-                .paye(BigDecimal.valueOf(850))
-                .uif(BigDecimal.valueOf(220))
-                .totalDeductions(BigDecimal.valueOf(1070))
-                .netPay(BigDecimal.valueOf(25430))
+                .grossPay(BigDecimal.valueOf(22000))
+                .totalDeductions(BigDecimal.ZERO)
+                .netPay(BigDecimal.valueOf(22000))
                 .status(PayrollStatus.SENT)
                 .payslipId("PAY-2026-09-000042")
                 .verificationCode("ABC123XYZ")
@@ -94,23 +91,24 @@ class PayslipPdfServiceTest {
     }
 
     @Test
-    void followsTheApprovedDesignWithTheEmployeesOwnDetails() throws Exception {
+    void salaryOnlyPayslipWithTheEmployeesOwnDetails() throws Exception {
         when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of());
 
         String text = render(payroll(employee()));
 
-        // The design's fixed sections and labels
-        assertThat(text).contains("PAYSLIP", "EARNINGS", "DEDUCTIONS", "NETT PAY", "YEAR TO DATE TOTALS",
-                "CURRENT PERIOD", "ADDITIONAL INFO", "Emp Code", "Emp Name", "Co. Address", "Payment Date",
-                "Date Engaged", "Account No", "Branch Code", "Opening Bal.", "Co. Contributions",
-                "CONSTANTIA SQUARE OFFICE", "RANDJESFONTEIN, MIDRAND", "Page 1 of 1");
+        // Sections and labels
+        assertThat(text).contains("PAYSLIP", "EARNINGS", "NETT PAY", "YEAR TO DATE TOTALS", "CURRENT PERIOD",
+                "ADDITIONAL INFO", "Emp Code", "Emp Name", "Co. Address", "Payment Date", "Date Engaged",
+                "Account No", "Branch Code", "CONSTANTIA SQUARE OFFICE", "RANDJESFONTEIN, MIDRAND", "Page 1 of 1",
+                "K&K", "MEDIA");
+        // Paid a fixed monthly salary: no hours, tax, UIF or any deductions
+        assertThat(text).contains("Monthly Salary", "Total Earnings", "Deductions:", "None", "Pay Basis", "Monthly salary");
+        assertThat(text).doesNotContain("DEDUCTIONS", "Tax", "U.I.F", "Normal Time", "Days", "Overtime", "Opening Bal.", "Co. Contributions");
         // Per-employee values
         assertThat(text).contains("K & K MEDIA (PTY) LTD", "EMP-00042", "BELLE PETERSEN", "42 EXAMPLE STREET",
                 "SANDTON, JOHANNESBURG", "30/09/2026", "01/08/2026", "1706477870", "470010");
-        // Figures, formatted like the design (thousands separators, "R " on nett pay)
-        assertThat(text).contains("Normal Time", "22,000.00", "Housing Allowance", "3,000.00", "Transport Allowance",
-                "26,500.00", "850.00", "220.00", "1,070.00", "R 25,430.00");
-        // Additional info the employee needs
+        // Salary = total earnings = nett pay
+        assertThat(text).contains("22,000.00", "R 22,000.00");
         assertThat(text).contains("September 2026", "Graphic Designer", "Creative Services", "PAY-2026-09-000042", "ABC123XYZ");
     }
 
@@ -124,20 +122,20 @@ class PayslipPdfServiceTest {
         String text = render(payroll);
 
         assertThat(text).doesNotContain("Payslip ID", "Scan to verify");
-        assertThat(text).contains("BELLE PETERSEN", "R 25,430.00");
+        assertThat(text).contains("BELLE PETERSEN", "R 22,000.00");
     }
 
     @Test
     void sumsYearToDateFromMarchOnly() throws Exception {
         Employee employee = employee();
         Payroll current = payroll(employee);
-        Payroll august = Payroll.builder().payPeriod("2026-08").grossPay(BigDecimal.valueOf(26500)).totalDeductions(BigDecimal.valueOf(1070)).build();
-        Payroll lastTaxYear = Payroll.builder().payPeriod("2026-02").grossPay(BigDecimal.valueOf(99999)).totalDeductions(BigDecimal.valueOf(9999)).build();
+        Payroll august = Payroll.builder().payPeriod("2026-08").grossPay(BigDecimal.valueOf(21000)).netPay(BigDecimal.valueOf(21000)).build();
+        Payroll lastTaxYear = Payroll.builder().payPeriod("2026-02").grossPay(BigDecimal.valueOf(99999)).netPay(BigDecimal.valueOf(99999)).build();
         when(payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(anyLong())).thenReturn(List.of(current, august, lastTaxYear));
 
         String text = render(current);
 
-        assertThat(text).contains("53,000.00", "2,140.00");
+        assertThat(text).contains("43,000.00"); // 22,000 + 21,000 earnings and nett pay
         assertThat(text).doesNotContain("99,999.00");
     }
 

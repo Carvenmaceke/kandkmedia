@@ -349,14 +349,21 @@ minute, and only the last 12 turns are sent to the model.
 
 ## Payslip layout
 
-`PayslipPdfService` draws every payslip with PDFBox in the approved
-K & K Media design (US Letter): a navy **PAYSLIP** header bar, a grey
-details panel (company, employee code/name/address, company address,
-payment date, date engaged, bank account and branch code), side-by-side
-**EARNINGS** / **DEDUCTIONS** boxes with shaded totals, a navy **NETT PAY**
-bar, **YEAR TO DATE TOTALS** (South African tax year, from March) with the
-employer's UIF contribution, and an **ADDITIONAL INFO** box with the pay
-period, job title, department, tax number and — once finalized — the
+Staff are paid a **fixed monthly salary** — no hours, overtime, allowances,
+tax (PAYE), UIF or other deductions — so gross pay and nett pay both equal
+the salary (`PayrollService.calculate`). On startup, any payroll record that
+hasn't been sent yet is brought in line with this; sent payslips are left
+as history.
+
+`PayslipPdfService` draws every payslip with PDFBox in the K & K Media brand
+colours (charcoal `#111827` and brand red `#E11D2E`, US Letter): a charcoal
+header with the company logo (`Company.logoUrl`, else `PAYSLIP_LOGO_URL`;
+a text wordmark if it can't be downloaded) and a red rule, a details panel
+(company, employee code/name/address, company address, payment date, date
+engaged, bank account and branch code), an **EARNINGS** box with the monthly
+salary, "Deductions: None", a red **NETT PAY** bar, **YEAR TO DATE TOTALS**
+(South African tax year, from March) and an **ADDITIONAL INFO** box with the
+pay period, pay basis, job title, department and — once finalized — the
 payslip ID, verification code and QR code. It uses the PDF standard
 Helvetica fonts, so the server needs no office software or system fonts.
 
@@ -478,8 +485,6 @@ shape, and "Payslip document security" above for the security-specific gaps):
 - Audit logging, database encryption at rest, and other production
   hardening from the spec's "Phase 8 — Production Improvements"
 
-The PAYE/UIF figures in `PayrollService` are simplified placeholders (flat
-15% / 1% capped) — the same illustrative numbers the frontend prototype
-uses — and need a real SARS-compliant tax table before this touches a real
-
-payslip.
+Payslips carry no PAYE/UIF: the company pays a fixed monthly salary with no
+deductions. If that ever changes, deductions belong in
+`PayrollService.calculate` (and a DEDUCTIONS box back on the payslip).

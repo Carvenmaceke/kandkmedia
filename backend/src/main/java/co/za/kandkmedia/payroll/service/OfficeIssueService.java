@@ -40,6 +40,8 @@ public class OfficeIssueService {
 
         issue = officeIssueRepository.save(issue);
         emailService.sendOfficeIssue(issue);
+        emailService.sendIssueReceived("Office Issue", issue.getId(), issue.getEmployeeEmail(), issue.getEmployeeName(), issue.getSubject(),
+                issue.getCategory(), issue.getPriority(), issue.getOffice());
         return officeIssueRepository.save(issue);
     }
 
@@ -56,9 +58,15 @@ public class OfficeIssueService {
             case "resolved" -> TicketStatus.RESOLVED;
             default -> TicketStatus.OPEN;
         };
+        boolean statusChanged = issue.getStatus() != mapped;
+        boolean newReply = response != null && !response.isBlank() && !response.trim().equals(issue.getResponse() == null ? "" : issue.getResponse().trim());
         issue.setStatus(mapped);
         issue.setResponse(response);
-        return officeIssueRepository.save(issue);
+        issue = officeIssueRepository.save(issue);
+        if (statusChanged || newReply) {
+            emailService.sendIssueUpdate("Office Issue", issue.getId(), issue.getEmployeeEmail(), issue.getEmployeeName(), issue.getSubject(), mapped, response);
+        }
+        return issue;
     }
 
     /** Removes an issue from the list entirely — only once it's Resolved. */

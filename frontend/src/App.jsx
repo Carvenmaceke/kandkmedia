@@ -2744,7 +2744,7 @@ function HrDashboard({ leaveRequests, payrollStage, advanceStage }) {
           <div className="kk-card-title" style={{ marginBottom: 4 }}>Payroll Pipeline — {CURRENT_MONTH}</div>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Advance the batch through review and approval before payslips are sent.</div>
           <PipelineStepper stages={STAGES} current={stageIdx} />
-          {stageIdx < STAGES.length - 1 ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1].charAt(0) + STAGES[stageIdx + 1].slice(1).toLowerCase()}</Button> : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>}
+          {stageIdx < STAGES.length - 1 ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1].charAt(0) + STAGES[stageIdx + 1].slice(1).toLowerCase()}</Button> : <Pill tone="green">{CURRENT_MONTH} payslips available — everyone notified</Pill>}
         </Card>
       </div>
       <div style={{ marginTop: 22 }}>
@@ -3206,7 +3206,7 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
         )}
         {advanceStage && (stageIdx < STAGES.length - 1
           ? <Button variant="teal" icon={ArrowRight} small onClick={advanceStage}>Advance to {STAGES[stageIdx + 1].charAt(0) + STAGES[stageIdx + 1].slice(1).toLowerCase()}</Button>
-          : <Pill tone="green">All payslips sent for {CURRENT_MONTH}</Pill>)}
+          : <Pill tone="green">{CURRENT_MONTH} payslips available — everyone notified</Pill>)}
       </div>
       <Card style={{ overflow: "hidden" }}>
         <table className="data-table">

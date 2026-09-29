@@ -65,6 +65,10 @@ public class EmailService {
     @Value("${app.mail-from:payroll@kandkmedia.co.za}")
     private String fromAddress;
 
+    /** Where employees sign in — linked from payslip notices. */
+    @Value("${app.portal-url:https://carvenmaceke.github.io/kandkmedia/}")
+    private String portalUrl;
+
     @Value("${app.support-email:itsupport@kandkmedia.co.za}")
     private String supportEmail;
 
@@ -399,21 +403,26 @@ public class EmailService {
     }
 
     /**
-     * Generates the payslip PDF and emails it to the employee. Returns true
+     * Emails the employee that their payslip for the month is ready to download
+     * in the app (no PDF attached). Returns true
      * and stamps emailSent/emailSentAt on success; on failure, returns false
      * and stamps emailFailureReason instead — callers should persist the
      * Payroll row either way so HR can see (and retry) failed sends.
      */
     public boolean sendPayslip(Payroll payroll) {
+        // A notice only — the payslip itself is downloaded from the app, so no PDF travels by email.
         Employee employee = payroll.getEmployee();
-        byte[] pdf = payslipPdfService.generate(payroll);
-        String subject = payroll.getPayPeriod() + " Payslip - " + employee.getFullName();
+        String month = monthName(payroll.getPayPeriod());
+        String subject = "Your " + month + " payslip is available";
         String text = "Hi " + employee.getFirstName() + ",\n\n" +
-                "Your payslip for " + payroll.getPayPeriod() + " is attached.\n\n" +
+                "Your payslip for " + month + " has been processed and is now available to download.\n\n" +
+                "To view or download it:\n" +
+                "1. Sign in at " + portalUrl + "\n" +
+                "2. Open Payroll & Leave > My Payslips\n\n" +
+                "If anything on your payslip looks wrong, log a Payslip Issue under Support in the app.\n\n" +
                 "Regards,\nK and K Media Payroll";
-        String filename = payroll.getPayPeriod() + "-" + employee.getEmployeeCode() + ".pdf";
 
-        SendResult result = send(employee.getEmail(), null, subject, text, filename, pdf);
+        SendResult result = send(employee.getEmail(), null, subject, text, null, null);
         if (result.ok()) {
             payroll.setEmailSent(true);
             payroll.setEmailSentAt(LocalDateTime.now());
@@ -423,6 +432,16 @@ public class EmailService {
         payroll.setEmailSent(false);
         payroll.setEmailFailureReason(result.errorMessage());
         return false;
+    }
+
+    /** "2026-09" -> "September 2026"; anything else is returned as-is. */
+    static String monthName(String payPeriod) {
+        try {
+            java.time.YearMonth ym = java.time.YearMonth.parse(payPeriod.trim());
+            return ym.getMonth().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH) + " " + ym.getYear();
+        } catch (Exception e) {
+            return payPeriod;
+        }
     }
 
     /**

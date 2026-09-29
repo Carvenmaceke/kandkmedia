@@ -227,6 +227,22 @@ class EmailServiceTest {
         }
 
         @Test
+        void payslipEmailIsANoticeWithoutThePdf() {
+            EmailService svc = emailJs();
+            ReflectionTestUtils.setField(svc, "portalUrl", "https://carvenmaceke.github.io/kandkmedia/");
+            co.za.kandkmedia.payroll.domain.Employee e = co.za.kandkmedia.payroll.domain.Employee.builder()
+                    .firstName("Thabo").lastName("M").email("thabo@kandkmedia.co.za").employeeCode("EMP-00001").build();
+            co.za.kandkmedia.payroll.domain.Payroll p = co.za.kandkmedia.payroll.domain.Payroll.builder().employee(e).payPeriod("2026-09").build();
+
+            assertThat(svc.sendPayslip(p)).isTrue();
+            assertThat(p.isEmailSent()).isTrue();
+            assertThat(bodies.get(0)).contains("Your September 2026 payslip is available")
+                    .contains("available to download").contains("https://carvenmaceke.github.io/kandkmedia/")
+                    .contains("My Payslips").doesNotContain("couldn't be attached");
+            assertThat(brevoBodies).isEmpty();
+        }
+
+        @Test
         void explainsTheNonBrowserSetting() {
             status = 403; reply = "API calls are disabled for non-browser applications";
             assertThat(emailJs().sendTestEmail("someone@kandkmedia.co.za").errorMessage()).contains("Allow EmailJS API for non-browser applications");

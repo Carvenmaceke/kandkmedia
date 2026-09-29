@@ -192,9 +192,11 @@ ports (Render does on some plans), is reported in plain words. Set
 
 ## Making payslip emails actually send
 
-This isn't a stub — `EmailService` sends via **Resend's HTTPS API**
-(`https://api.resend.com/emails`), building the payslip PDF via
-`PayslipPdfService` (Apache PDFBox) and attaching it as base64. It sends
+Payslip emails are a notice only: "Your <Month> payslip is available",
+with a sign-in link (`PORTAL_URL`, default the GitHub Pages site) and where to
+find it (Payroll & Leave → My Payslips). No PDF is attached — employees
+download it from the app. The notice goes through whichever provider
+`MAIL_PROVIDER` selects (Resend by default, or Brevo / EmailJS / SMTP). It sends
 automatically for every employee the moment HR advances a payroll batch to
 the `SENT` stage (`POST /api/hr/payroll/advance`), and can be retried
 per-employee via `POST /api/hr/payroll/{id}/resend-email`.

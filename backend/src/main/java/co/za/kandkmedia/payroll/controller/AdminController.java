@@ -37,6 +37,7 @@ public class AdminController {
     private final OfficeIssueService officeIssueService;
     private final PayrollSettingsRepository payrollSettingsRepository;
     private final EmailService emailService;
+    private final co.za.kandkmedia.payroll.service.AccountCleanupService accountCleanupService;
 
     @GetMapping("/company")
     public Company company() {
@@ -128,6 +129,21 @@ public class AdminController {
      * since letting any admin-tier account grant further admin access
      * would defeat the whole point of having a single gatekeeper.
      */
+    /**
+     * Master-only, irreversible: deletes every account except the caller's own (plus their payroll,
+     * leave requests and balances) — for clearing out test sign-ups before going live. The body must
+     * be {"confirm":"DELETE"} so it can't be triggered by accident.
+     */
+    @PostMapping("/clear-test-accounts")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('MASTER')")
+    public java.util.Map<String, Integer> clearTestAccounts(@RequestBody java.util.Map<String, String> body,
+                                                            @org.springframework.security.core.annotation.AuthenticationPrincipal co.za.kandkmedia.payroll.domain.AppUser user) {
+        if (!"DELETE".equals(body.get("confirm"))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Type DELETE to confirm.");
+        }
+        return accountCleanupService.deleteAllAccountsExcept(user);
+    }
+
     @PutMapping("/users/{id}/role")
     @org.springframework.security.access.prepost.PreAuthorize("hasRole('MASTER')")
     public AppUser changeUserRole(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {

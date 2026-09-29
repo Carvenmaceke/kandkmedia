@@ -3624,7 +3624,52 @@ function AdminLevels({ onUpdateLevel, onAddLevel }) {
 
 const ASSIGNABLE_ROLES = ["employee", "manager", "hr", "admin", "it_support"];
 
-function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh, onVerifyEmail }) {
+/** Master-only: permanently removes every other account (typing DELETE confirms). */
+function ClearTestAccounts({ onClear }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const others = EMPLOYEES.length - 1;
+  const run = async () => {
+    setBusy(true); setError("");
+    const err = await onClear();
+    setBusy(false);
+    if (err) setError(err); else { setOpen(false); setTyped(""); }
+  };
+  return (
+    <Card style={{ padding: 18, marginTop: 20, border: `1px solid ${T.red}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="kk-card-title" style={{ marginBottom: 4, color: T.red }}>Danger zone</div>
+          <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.5 }}>Delete every account except the Master account, with their payslips, leave and balances. Use this once to clear test sign-ups before going live.</div>
+        </div>
+        <Button variant="danger" small icon={Trash2} disabled={others < 1} onClick={() => setOpen(true)}>Clear test accounts</Button>
+      </div>
+      {open && (
+        <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => !busy && setOpen(false)}>
+          <div className="kk-pop" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
+            style={{ width: 440, maxWidth: "100%", background: T.surface, borderRadius: 20, padding: 24, boxShadow: "0 24px 60px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontSize: 18, fontWeight: 750, color: T.text, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={18} color={T.red} /> Delete {others} account{others === 1 ? "" : "s"}?</div>
+            <div style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.55, margin: "10px 0 14px" }}>
+              This permanently deletes every account except the Master account, including their payslips, leave requests and leave balances. <strong style={{ color: T.text }}>It can't be undone.</strong> Company settings, levels, departments and support tickets are kept.
+            </div>
+            <Field label='Type DELETE to confirm'>
+              <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus placeholder="DELETE" style={inputStyle} />
+            </Field>
+            <FormError>{error}</FormError>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Button variant="ghost" small disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+              <Button variant="danger" small icon={Trash2} disabled={typed !== "DELETE" || busy} onClick={run}>{busy ? "Deleting…" : "Delete accounts"}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh, onVerifyEmail, onClearTestAccounts }) {
   return (
     <div>
       <SectionTitle sub={isMaster ? "Every account — you're the only one who can change roles" : "Every account and its assigned system role"}
@@ -3667,6 +3712,7 @@ function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh, onVerify
           </tbody>
         </table>
       </Card>
+      {isMaster && onClearTestAccounts && <ClearTestAccounts onClear={onClearTestAccounts} />}
     </div>
   );
 }
@@ -5023,6 +5069,23 @@ export default function App() {
     }
     setEmployeesState((es) => es.map((e) => (e.id === employeeId ? { ...e, active: true, terminationDate: null } : e)));
   };
+  /** Master-only: delete every other account. Returns an error message, or null on success. */
+  const clearTestAccounts = async () => {
+    if (API_BASE_URL) {
+      try {
+        const r = await apiFetch("/api/admin/clear-test-accounts", { method: "POST", body: JSON.stringify({ confirm: "DELETE" }) });
+        notify(`Deleted ${r?.accounts ?? 0} account(s). Reloading…`);
+        setTimeout(() => window.location.reload(), 900);
+        return null;
+      } catch (e) {
+        return e.message;
+      }
+    }
+    setEmployeesState((es) => es.filter((e) => e.id === currentUserId));
+    setLeaveRequests((rs) => rs.filter((r) => r.emp === currentUserId));
+    notify("Test accounts deleted.");
+    return null;
+  };
   const updateEmployeePersonalInfo = async (employeeId, fields) => {
     if (API_BASE_URL) {
       const target = employeesState.find((e) => e.id === employeeId);
@@ -5229,7 +5292,7 @@ export default function App() {
     settings: { label: "Company & Settings", icon: SlidersHorizontal, render: () => <AdminCompanySettings onUpdateCompany={updateCompany} payrollSettings={payrollSettingsState} onUpdatePayrollSettings={updatePayrollSettings} /> },
     levels: { label: "Levels & Departments", icon: Building2, render: () => <AdminLevels onUpdateLevel={updateLevel} onAddLevel={addLevel} /> },
     users: { label: "User Accounts", icon: ShieldCheck, render: () => (role === "master"
-      ? <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} onVerifyEmail={verifyUserEmail} />
+      ? <AdminUsers currentUserId={currentUserId} isMaster={true} onChangeRole={updateEmployeeRole} onRefresh={refreshAppUsers} onVerifyEmail={verifyUserEmail} onClearTestAccounts={clearTestAccounts} />
       : <AdminUsers currentUserId={currentUserId} isMaster={false} />) },
     support: { label: "Support Tickets", icon: LifeBuoy, render: () => supportCenterAdmin },
     officeIssues: { label: "Office Issues", icon: MapPin, render: () => officeIssuesAdmin },

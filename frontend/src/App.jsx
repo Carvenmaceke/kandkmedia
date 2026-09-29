@@ -687,7 +687,7 @@ async function downloadPayslipPdf(emp, month, figures) {
   const value = (s, x, y) => txt(s, x, y, { size: 8 });
   label("Company", 46, 702); value(fit(companyName, 122), 104, 702);
   label("Emp Code", 46, 689); value(emp.id || "-", 104, 689);
-  label("Emp Name", 46, 676); value(fit((emp.name || "").toUpperCase(), 122), 104, 676);
+  label("Emp Name", 46, 676); value(fit(legalName(emp).toUpperCase(), 122), 104, 676);
   label("Emp Address", 46, 663);
   const addr = [
     [emp.resUnitNumber, emp.resComplexName].filter(Boolean).join(" "),
@@ -948,7 +948,7 @@ async function downloadOnboardingDocument(employee) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(20, 20, 20);
-  doc.text(employee.name, marginX, y);
+  doc.text(legalName(employee), marginX, y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(90, 82, 80);
@@ -1017,7 +1017,7 @@ async function downloadOnboardingDocument(employee) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(20, 20, 20);
-  doc.text(employee.name, marginX, y + sigHeight + 20);
+  doc.text(legalName(employee), marginX, y + sigHeight + 20);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(120, 110, 108);
@@ -1029,7 +1029,7 @@ async function downloadOnboardingDocument(employee) {
   doc.setTextColor(140, 130, 128);
   doc.text("This document was generated from information the employee entered and signed at sign-up.", marginX, y);
 
-  triggerPdfDownload(doc, `Onboarding-${employee.id}-${employee.name.replace(/\s+/g, "-")}.pdf`);
+  triggerPdfDownload(doc, `Onboarding-${employee.id}-${legalName(employee).replace(/\s+/g, "-")}.pdf`);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1054,7 +1054,7 @@ function Payslip({ emp, month, figures, onClose }) {
         <div className="kk-payslip">
           <div className="kk-ps-bar"><span style={{ fontSize: 20, fontWeight: 800, letterSpacing: "0.02em" }}>PAYSLIP</span><span style={{ fontSize: 12 }}>{(COMPANY.name || "").toUpperCase()}</span></div>
           <div className="kk-ps-panel">
-            <div>{detail("Emp Code", emp.id)}{detail("Emp Name", (emp.name || "").toUpperCase())}{detail("Position", emp.position)}</div>
+            <div>{detail("Emp Code", emp.id)}{detail("Emp Name", legalName(emp).toUpperCase())}{detail("Position", emp.position)}</div>
             <div>{detail("Pay Period", month)}{detail("Department", emp.dept)}{detail("Office", emp.office)}</div>
             <div>{detail("Date Engaged", emp.start)}{detail("Account No", emp.bankAccountNumber)}{detail("Branch Code", emp.bankBranchCode)}</div>
           </div>
@@ -1175,7 +1175,7 @@ function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo, canS
           <div style={{ marginTop: 10, display: "flex", gap: 6 }}>{emp.level && <Pill tone="teal">{emp.level}</Pill>}<RolePill role={emp.role} /></div>
         </div>
         <div className="kk-detail-grid">
-          {[["Position", emp.position], ["Department", emp.dept], ["Email", emp.email], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Employment Type", emp.employmentType || "—"], ...(canSeeSalary ? [["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]] : [])].map(([k, v]) => (
+          {[["Position", emp.position], ["Department", emp.dept], ["Email", shownEmail(emp)], ["Phone", emp.phone || "—"], ["Start Date", emp.start], ["Employment Type", emp.employmentType || "—"], ...(canSeeSalary ? [["Salary", emp.salary > 0 ? money(emp.salary) : "Not set"]] : [])].map(([k, v]) => (
             <div key={k} className="kk-detail">
               <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{k}</div>
               <div style={{ marginTop: 3, fontWeight: 550, overflowWrap: "anywhere" }}>{v}</div>
@@ -1923,6 +1923,18 @@ async function openRealPayslipPdf(path, filename, mode) {
  *  lets every existing component keep working unchanged — only the data
  *  source moves from local state to the real API. `_dbId` is kept for
  *  calls that need the real numeric primary key (e.g. role changes). */
+/** The master account is never shown under a person's name — everywhere in the UI it's just
+ *  "Master Account". The real name is kept as legalName for official documents (payslip,
+ *  onboarding PDF) and is never written back when the master edits their profile. */
+const MASTER_LABEL = "Master Account";
+function maskMaster(e) {
+  if (!e || e.role !== "master") return e;
+  return { ...e, name: MASTER_LABEL, legalName: e.legalName || e.name, position: "" };
+}
+const legalName = (e) => (e && (e.legalName || e.name)) || "";
+/** The master's email would identify them too, so lists and profiles show it as hidden. */
+const shownEmail = (e) => (e && e.role === "master" ? "Hidden" : (e && e.email) || "—");
+
 function mapBackendEmployee(be) {
   if (!be) return null;
   const onboardingKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
@@ -2699,7 +2711,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
         <Card style={{ padding: 20, flex: "1 1 320px" }}>
           <div className="kk-card-title" style={{ marginBottom: 14 }}>My Profile</div>
           <form onSubmit={saveProfile}>
-            <Field label="Full Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} /></Field>
+            {emp.role !== "master" && <Field label="Full Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} /></Field>}
             <Field label="Email"><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} type="email" style={inputStyle} /></Field>
             <Field label="Phone"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={inputStyle} /></Field>
             <div style={{ display: "flex", gap: 10 }}>
@@ -2912,7 +2924,7 @@ function HrEmployees({ onOpenProfile, onUpdateSalary, onDeactivate, onReactivate
             {filtered.map((e) => (
               <tr key={e.id} style={{ borderTop: `1px solid ${T.border}`, opacity: e.active === false ? 0.6 : 1 }}>
                 <td style={{ padding: "10px 14px", fontFamily: mono, fontSize: 12 }}>{e.id}</td>
-                <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.email} /></td>
+                <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={shownEmail(e)} /></td>
                 <td style={{ padding: "10px 14px" }}><RolePill role={e.role} /></td>
                 <td style={{ padding: "10px 14px" }}>{e.level ? <Pill tone="teal">{e.level}</Pill> : <span style={{ color: T.muted }}>—</span>}</td>
                 <td style={{ padding: "10px 14px", color: T.muted }}>{e.position}</td>
@@ -3663,7 +3675,7 @@ function AdminUsers({ currentUserId, isMaster, onChangeRole, onRefresh, onVerify
                     <RolePill role={e.role} />
                   )}
                 </td>
-                <td style={{ padding: "10px 14px", color: T.muted }}>{e.email}</td>
+                <td style={{ padding: "10px 14px", color: T.muted }}>{shownEmail(e)}</td>
                 <td style={{ padding: "10px 14px" }}>
                   {e.emailVerified === false ? <Pill tone="amber">Unverified</Pill> : <Pill tone="green">Active</Pill>}
                 </td>
@@ -4128,7 +4140,7 @@ function EmployeeView({ emp, leaveRequests, addLeaveRequest, history, myPayslips
               {myHistory.length > 0 && (
                 <div className="kk-activity-item" style={{ "--accent": "var(--kk-green)" }}>
                   <div className="kk-activity-icon"><Banknote size={15} /></div>
-                  <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>{myHistory[myHistory.length - 1].month} payslip sent</div><div style={{ fontSize: 12.5, color: T.muted }}>Emailed to {emp.email}</div></div>
+                  <div><div style={{ fontWeight: 600, fontSize: 13.5 }}>{myHistory[myHistory.length - 1].month} payslip sent</div><div style={{ fontSize: 12.5, color: T.muted }}>Emailed to {emp.role === "master" ? "your inbox" : emp.email}</div></div>
                 </div>
               )}
               {myRequests.filter((r) => r.status !== "Pending").slice(-1).map((r) => (
@@ -4390,7 +4402,8 @@ export default function App() {
 
   // Sync the module-level mutable data with React state every render, so
   // every component below always reads the latest signups / profile edits.
-  EMPLOYEES = employeesState;
+  const employeesView = useMemo(() => employeesState.map(maskMaster), [employeesState]);
+  EMPLOYEES = employeesView;
   LEAVE_BALANCES = balancesState;
   LEVELS = levelsState;
   COMPANY = companyState;
@@ -4923,7 +4936,10 @@ export default function App() {
     window.history.replaceState(null, "", window.location.pathname);
   };
 
-  const handleSaveProfile = async (fields) => {
+  const handleSaveProfile = async (input) => {
+    // The master's displayed name/position are masked — never write those back.
+    const fields = { ...input };
+    if (loginEmp && loginEmp.role === "master") { delete fields.name; delete fields.position; }
     const payload = { ...fields };
     if (payload.name) {
       const [fn, ...rest] = payload.name.trim().split(/\s+/);
@@ -5114,7 +5130,7 @@ export default function App() {
     />
   );
 
-  const loginEmp = employeesState.find((e) => e.id === currentUserId);
+  const loginEmp = employeesView.find((e) => e.id === currentUserId);
   const role = loginEmp.role;
 
   const decideLeave = async (id, approve, signature, reason) => {
@@ -5383,7 +5399,7 @@ export default function App() {
           <div className="kk-hide-sm" style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 12, marginLeft: 4, borderLeft: `1px solid ${T.border}` }}>
             <Avatar name={loginEmp.name} size={32} />
             <div style={{ lineHeight: 1.25 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{loginEmp.name.split(" ")[0]}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{loginEmp.role === "master" ? loginEmp.name : loginEmp.name.split(" ")[0]}</div>
               <div style={{ fontSize: 11.5, color: T.muted }}>{roleTitle}</div>
             </div>
           </div>
@@ -5409,7 +5425,7 @@ export default function App() {
           )}
 
           {viewMode === "role" && roleNav.length > 0 && PAGES[activeTab].render()}
-          {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesState} />}
+          {viewMode === "role" && role === "manager" && <ManagerView manager={loginEmp} leaveRequests={leaveRequests} onDecide={decideLeave} allEmployees={employeesView} />}
         </main>
       </div>
 

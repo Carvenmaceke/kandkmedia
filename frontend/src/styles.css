@@ -619,25 +619,25 @@ input:focus, select:focus, textarea:focus { background: var(--kk-surface) !impor
 
 /* On-screen payslip (matches the official PDF design; always light) */
 .kk-payslip { background: #fff; color: #111; border-radius: 16px; overflow: hidden; box-shadow: var(--kk-shadow-lg); font-size: 13px; }
-.kk-ps-bar { display: flex; justify-content: space-between; align-items: center; padding: 16px 22px; background: #1F2A44; color: #fff; }
-.kk-ps-panel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin: 16px 22px; background: #F2F4F7; border: 1px solid #9AA3B2; }
+.kk-ps-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 22px; background: #111827; color: #fff; border-bottom: 4px solid #E11D2E; }
+.kk-ps-mark { font-size: 20px; font-weight: 800; letter-spacing: 0.01em; }
+.kk-ps-mark span { color: #E11D2E; }
+.kk-ps-panel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin: 16px 22px; background: #F5F6F8; border: 1px solid #D1D5DB; border-left: 3px solid #E11D2E; }
 .kk-ps-panel > div { padding: 10px 12px; }
-.kk-ps-panel > div + div { border-left: 1px solid #9AA3B2; }
+.kk-ps-panel > div + div { border-left: 1px solid #D1D5DB; }
 .kk-ps-row { display: flex; gap: 8px; padding: 3px 0; font-size: 12px; }
 .kk-ps-row span { width: 84px; flex-shrink: 0; font-weight: 700; }
 .kk-ps-row strong { font-weight: 400; overflow-wrap: anywhere; }
-.kk-ps-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 22px 14px; }
-.kk-ps-box { border: 1px solid #9AA3B2; display: flex; flex-direction: column; min-height: 200px; }
-.kk-ps-title { background: #1F2A44; color: #fff; text-align: center; font-weight: 700; padding: 5px; font-size: 12.5px; }
-.kk-ps-line { display: flex; justify-content: space-between; padding: 5px 10px; }
-.kk-ps-head { font-weight: 700; border-bottom: 1px solid #9AA3B2; margin: 0 6px; padding: 7px 4px 5px; }
-.kk-ps-total { margin-top: auto; display: flex; justify-content: space-between; padding: 7px 10px; font-weight: 700; background: #F2F4F7; border-top: 1px solid #9AA3B2; }
-.kk-ps-net { display: flex; justify-content: space-between; align-items: center; gap: 30px; width: calc(50% - 6px); padding: 10px 14px; background: #1F2A44; color: #fff; font-weight: 700; }
-.kk-ps-net span:last-child { font-size: 18px; }
+.kk-ps-box { border: 1px solid #D1D5DB; display: flex; flex-direction: column; }
+.kk-ps-title { background: #111827; color: #fff; font-weight: 700; padding: 6px 10px; font-size: 12.5px; border-bottom: 2px solid #E11D2E; }
+.kk-ps-line { display: flex; justify-content: space-between; padding: 6px 10px; }
+.kk-ps-head { font-weight: 700; border-bottom: 1px solid #D1D5DB; margin: 0 6px; padding: 7px 4px 5px; }
+.kk-ps-total { margin-top: 18px; display: flex; justify-content: space-between; padding: 8px 10px; font-weight: 700; background: #FDECEE; border-top: 1px solid #D1D5DB; }
+.kk-ps-net { display: flex; justify-content: space-between; align-items: center; gap: 30px; padding: 12px 16px; background: #E11D2E; color: #fff; font-weight: 700; }
+.kk-ps-net span:last-child { font-size: 20px; }
 @media (max-width: 640px) {
-  .kk-ps-panel, .kk-ps-cols { grid-template-columns: 1fr; }
-  .kk-ps-panel > div + div { border-left: none; border-top: 1px solid #9AA3B2; }
-  .kk-ps-net { width: 100%; }
+  .kk-ps-panel { grid-template-columns: 1fr; }
+  .kk-ps-panel > div + div { border-left: none; border-top: 1px solid #D1D5DB; }
 }
 
 /* ── Design v2: phone fixes ───────────────────────────────────────────── */

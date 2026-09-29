@@ -10,6 +10,7 @@ import com.google.zxing.WriterException;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.qrcode.QRCodeWriter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -22,10 +23,18 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import javax.imageio.ImageIO;
 import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.LocalDate;
@@ -36,26 +45,26 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Draws the company payslip with PDFBox, reproducing the approved K &amp; K
- * Media payslip design (Sept 2026 reference) exactly: a US Letter page with a
- * navy "PAYSLIP" header bar, a grey three-column details panel, side-by-side
- * EARNINGS / DEDUCTIONS boxes with shaded totals rows, a navy NETT PAY bar,
- * and YEAR TO DATE TOTALS / ADDITIONAL INFO boxes along the bottom.
- *
- * Every coordinate, colour and font size below comes from that reference
- * document; only the per-employee values change. It uses the PDF standard
- * Helvetica fonts, so output is identical on every server with no system
- * fonts or office software installed.
+ * Draws the company payslip with PDFBox in the K &amp; K Media brand colours
+ * (charcoal and brand red): a charcoal header with the company logo, a
+ * details panel, a single EARNINGS box (staff are paid a fixed monthly
+ * salary, so there are no hours, overtime or deductions), a red NETT PAY
+ * bar, and YEAR TO DATE / ADDITIONAL INFO boxes. Uses the PDF standard
+ * Helvetica fonts, so output is identical on every server.
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PayslipPdfService {
 
-    // Colours from the reference design.
-    private static final Color NAVY = new Color(0x1F, 0x2A, 0x44);
-    private static final Color PANEL = new Color(0xF2, 0xF4, 0xF7);
-    private static final Color RULE = new Color(0x9A, 0xA3, 0xB2);
-    private static final Color FOOTER_GREY = new Color(0x66, 0x66, 0x66);
+    // K and K Media brand colours (match the web app's --kk-ink / --kk-brand).
+    private static final Color INK = new Color(0x11, 0x18, 0x27);
+    private static final Color BRAND = new Color(0xE1, 0x1D, 0x2E);
+    private static final Color TINT = new Color(0xFD, 0xEC, 0xEE);
+    private static final Color PANEL = new Color(0xF5, 0xF6, 0xF8);
+    private static final Color RULE = new Color(0xD1, 0xD5, 0xDB);
+    private static final Color MUTED = new Color(0x6B, 0x72, 0x80);
+    private static final Color ON_INK_MUTED = new Color(0xC9, 0xCD, 0xD6);
 
     private static final PDFont REGULAR = PDType1Font.HELVETICA;
     private static final PDFont BOLD = PDType1Font.HELVETICA_BOLD;
@@ -63,24 +72,33 @@ public class PayslipPdfService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter GENERATED_FMT = DateTimeFormatter.ofPattern("d MMM yyyy HH:mm");
     private static final String DEFAULT_COMPANY_NAME = "K & K MEDIA (PTY) LTD";
-    /** The company address block exactly as it appears on the approved design. */
     private static final List<String> COMPANY_ADDRESS = List.of(
             "CONSTANTIA SQUARE OFFICE", "16TH ROAD", "RANDJESFONTEIN, MIDRAND", "1685");
 
-    // Page frame: 36pt margins on a 612 x 792 page, two 265pt columns with a 10pt gutter.
-    private static final float LEFT_X = 36, RIGHT_X = 311, COL_W = 265, FULL_W = 540;
-    private static final float ROW_STEP = 14;
+    // Page frame: 36pt margins on a 612 x 792 page; bottom boxes are two 265pt columns with a 10pt gutter.
+    private static final float LEFT_X = 36, RIGHT_X = 311, COL_W = 265, FULL_W = 540, RIGHT_EDGE = 576;
+    private static final float BOTTOM_BOXES_Y = 214, BOTTOM_BOXES_H = 150;
 
     private final PayrollRepository payrollRepository;
     private final CompanyRepository companyRepository;
+    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4)).build();
+    private volatile byte[] cachedLogo;
+    private volatile String cachedLogoUrl;
+    private volatile long logoRetryAfter;
 
     @Value("${app.verification-base-url}")
     private String verificationBaseUrl;
 
+    /** Used when the company record has no logo URL; blank disables the logo (a text wordmark is drawn instead). */
+    @Value("${app.payslip-logo-url:https://www.kandkmedia.co.za/wp-content/uploads/2024/05/cropped-cropped-K-and-K-Media-logo-New-1.png}")
+    private String defaultLogoUrl;
+
     public byte[] generate(Payroll payroll) {
         Employee employee = payroll.getEmployee();
         BigDecimal[] ytd = yearToDateTotals(employee.getId(), payroll.getPayPeriod());
-        String companyName = companyName();
+        Company company = companyRepository.findAll().stream().findFirst().orElse(null);
+        String companyName = company != null && notBlank(company.getName()) ? upper(company.getName()) : DEFAULT_COMPANY_NAME;
+        String logoUrl = company != null && notBlank(company.getLogoUrl()) ? company.getLogoUrl().trim() : defaultLogoUrl;
 
         try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             PDPage page = new PDPage(PDRectangle.LETTER);
@@ -92,10 +110,9 @@ public class PayslipPdfService {
 
             try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
                 cs.setLineWidth(0.8f);
-                drawHeader(cs, companyName);
+                drawHeader(doc, cs, payroll, companyName, logoUrl);
                 drawDetailsPanel(cs, payroll, employee, companyName);
                 drawEarnings(cs, payroll);
-                drawDeductions(cs, payroll);
                 drawNettPay(cs, payroll);
                 drawYearToDate(cs, payroll, ytd);
                 drawAdditionalInfo(doc, cs, payroll, employee);
@@ -112,144 +129,125 @@ public class PayslipPdfService {
     /* Sections                                                           */
     /* ------------------------------------------------------------------ */
 
-    private void drawHeader(PDPageContentStream cs, String companyName) throws IOException {
-        fillRect(cs, NAVY, LEFT_X, 726, FULL_W, 30);
-        text(cs, BOLD, 15, 46, 736, "PAYSLIP", Color.WHITE);
-        textRight(cs, REGULAR, 9, 566, 737, companyName, Color.WHITE);
+    private void drawHeader(PDDocument doc, PDPageContentStream cs, Payroll payroll, String companyName, String logoUrl) throws IOException {
+        fillRect(cs, INK, LEFT_X, 712, FULL_W, 48);
+        fillRect(cs, BRAND, LEFT_X, 708, FULL_W, 4);
+
+        PDImageXObject logo = logo(doc, logoUrl);
+        if (logo != null) {
+            float h = 28, w = Math.min(170, logo.getWidth() * (h / logo.getHeight()));
+            h = w * logo.getHeight() / logo.getWidth();
+            cs.drawImage(logo, 50, 736 - h / 2, w, h);
+        } else {
+            // Text wordmark in the brand style when the logo can't be loaded.
+            text(cs, BOLD, 17, 50, 730, "K&K", BRAND);
+            text(cs, BOLD, 17, 50 + width(BOLD, 17, "K&K "), 730, "MEDIA", Color.WHITE);
+        }
+        textRight(cs, BOLD, 16, RIGHT_EDGE - 14, 738, "PAYSLIP", Color.WHITE);
+        textRight(cs, REGULAR, 9, RIGHT_EDGE - 14, 724, payPeriodLabel(payroll.getPayPeriod()) + "  |  " + companyName, ON_INK_MUTED);
     }
 
     private void drawDetailsPanel(PDPageContentStream cs, Payroll payroll, Employee employee, String companyName) throws IOException {
         cs.setNonStrokingColor(PANEL);
         cs.setStrokingColor(RULE);
-        cs.addRect(LEFT_X, 626, FULL_W, 92);
+        cs.addRect(LEFT_X, 598, FULL_W, 96);
         cs.fillAndStroke();
+        fillRect(cs, BRAND, LEFT_X, 598, 3, 96);
 
         // Column 1 — employee
-        label(cs, 46, 702, "Company");
-        value(cs, 104, 702, fit(companyName, 122));
-        label(cs, 46, 689, "Emp Code");
-        value(cs, 104, 689, dash(employee.getEmployeeCode()));
-        label(cs, 46, 676, "Emp Name");
-        value(cs, 104, 676, fit(upper(employee.getFullName()), 122));
-        label(cs, 46, 663, "Emp Address");
+        label(cs, 46, 678, "Company");
+        value(cs, 104, 678, fit(companyName, 122));
+        label(cs, 46, 665, "Emp Code");
+        value(cs, 104, 665, dash(employee.getEmployeeCode()));
+        label(cs, 46, 652, "Emp Name");
+        value(cs, 104, 652, fit(upper(employee.getFullName()), 122));
+        label(cs, 46, 639, "Emp Address");
         List<String> address = employeeAddressLines(employee);
         for (int i = 0; i < address.size(); i++) {
-            value(cs, 104, 663 - 11 * i, address.get(i));
+            value(cs, 104, 639 - 11 * i, address.get(i));
         }
 
         // Column 2 — company address
-        label(cs, 238.4f, 702, "Co. Address");
+        label(cs, 238.4f, 678, "Co. Address");
         for (int i = 0; i < COMPANY_ADDRESS.size(); i++) {
-            value(cs, 294.4f, 702 - 11 * i, COMPANY_ADDRESS.get(i));
+            value(cs, 294.4f, 678 - 11 * i, COMPANY_ADDRESS.get(i));
         }
 
         // Column 3 — payment
-        label(cs, 432.8f, 702, "Payment Date");
-        value(cs, 496.8f, 702, paymentDate(payroll.getPayPeriod()));
-        label(cs, 432.8f, 689, "Date Engaged");
-        value(cs, 496.8f, 689, employee.getStartDate() != null ? employee.getStartDate().format(DATE_FMT) : "-");
-        label(cs, 432.8f, 676, "Account No");
-        value(cs, 496.8f, 676, fit(dash(employee.getBankAccountNumber()), 76));
-        label(cs, 432.8f, 663, "Branch Code");
-        value(cs, 496.8f, 663, fit(dash(employee.getBankBranchCode()), 76));
+        label(cs, 432.8f, 678, "Payment Date");
+        value(cs, 496.8f, 678, paymentDate(payroll.getPayPeriod()));
+        label(cs, 432.8f, 665, "Date Engaged");
+        value(cs, 496.8f, 665, employee.getStartDate() != null ? employee.getStartDate().format(DATE_FMT) : "-");
+        label(cs, 432.8f, 652, "Account No");
+        value(cs, 496.8f, 652, fit(dash(employee.getBankAccountNumber()), 76));
+        label(cs, 432.8f, 639, "Branch Code");
+        value(cs, 496.8f, 639, fit(dash(employee.getBankBranchCode()), 76));
 
         cs.setStrokingColor(RULE);
-        line(cs, 230.4f, 634, 230.4f, 710);
-        line(cs, 424.8f, 634, 424.8f, 710);
+        line(cs, 230.4f, 606, 230.4f, 686);
+        line(cs, 424.8f, 606, 424.8f, 686);
     }
 
+    /** Fixed monthly salary only — no hours, overtime or deductions. */
     private void drawEarnings(PDPageContentStream cs, Payroll payroll) throws IOException {
-        boxWithTitle(cs, LEFT_X, 286, 330, "EARNINGS");
-        columnHeader(cs, 44, 584, "Description");
-        headerRight(cs, 221, 584, "Days");
-        headerRight(cs, 293, 584, "Amount (R)");
+        float y0 = 470, h = 108;
+        boxWithTitle(cs, LEFT_X, y0, FULL_W, h, "EARNINGS");
+        text(cs, BOLD, 8.5f, 46, y0 + h - 32, "Description", Color.BLACK);
+        textRight(cs, BOLD, 8.5f, RIGHT_EDGE - 10, y0 + h - 32, "Amount (R)", Color.BLACK);
         cs.setStrokingColor(RULE);
-        line(cs, 42, 580, 295, 580);
+        line(cs, 44, y0 + h - 37, RIGHT_EDGE - 8, y0 + h - 37);
 
-        List<Object[]> rows = new ArrayList<>();
-        rows.add(new Object[]{"Normal Time", payroll.getBasicSalary()});
-        addIfPositive(rows, "Housing Allowance", payroll.getHousingAllowance());
-        addIfPositive(rows, "Transport Allowance", payroll.getTransportAllowance());
-        addIfPositive(rows, "Overtime", payroll.getOvertime());
-        addIfPositive(rows, "Bonus", payroll.getBonus());
+        text(cs, REGULAR, 9, 46, y0 + h - 52, "Monthly Salary", Color.BLACK);
+        textRight(cs, REGULAR, 9, RIGHT_EDGE - 10, y0 + h - 52, money(payroll.getBasicSalary()), Color.BLACK);
 
-        float y = 567;
-        for (Object[] row : rows) {
-            text(cs, REGULAR, 8.5f, 44, y, (String) row[0], Color.BLACK);
-            textRight(cs, REGULAR, 8.5f, 221, y, "-", Color.BLACK);
-            textRight(cs, REGULAR, 8.5f, 293, y, money((BigDecimal) row[1]), Color.BLACK);
-            y -= ROW_STEP;
-        }
-
-        totalsRow(cs, LEFT_X);
-        text(cs, BOLD, 8.5f, 44, 293, "Total Earnings", Color.BLACK);
-        textRight(cs, BOLD, 8.5f, 293, 293, money(payroll.getGrossPay()), Color.BLACK);
-    }
-
-    private void drawDeductions(PDPageContentStream cs, Payroll payroll) throws IOException {
-        boxWithTitle(cs, RIGHT_X, 286, 330, "DEDUCTIONS");
-        columnHeader(cs, 319, 584, "Description");
-        headerRight(cs, 456, 584, "Days");
-        headerRight(cs, 508, 584, "Amount (R)");
-        headerRight(cs, 568, 584, "Opening Bal.");
+        fillRect(cs, TINT, LEFT_X + 0.4f, y0 + 0.4f, FULL_W - 0.8f, 22);
         cs.setStrokingColor(RULE);
-        line(cs, 317, 580, 570, 580);
+        line(cs, LEFT_X, y0 + 22.4f, LEFT_X + FULL_W, y0 + 22.4f);
+        text(cs, BOLD, 9, 46, y0 + 8, "Total Earnings", Color.BLACK);
+        textRight(cs, BOLD, 9, RIGHT_EDGE - 10, y0 + 8, money(payroll.getGrossPay()), Color.BLACK);
 
-        List<Object[]> rows = new ArrayList<>();
-        rows.add(new Object[]{"Tax", payroll.getPaye()});
-        rows.add(new Object[]{"U.I.F.", payroll.getUif()});
-        addIfPositive(rows, "Other Deductions", payroll.getOtherDeductions());
-
-        float y = 567;
-        for (Object[] row : rows) {
-            text(cs, REGULAR, 8.5f, 319, y, (String) row[0], Color.BLACK);
-            textRight(cs, REGULAR, 8.5f, 456, y, "-", Color.BLACK);
-            textRight(cs, REGULAR, 8.5f, 508, y, money((BigDecimal) row[1]), Color.BLACK);
-            textRight(cs, REGULAR, 8.5f, 568, y, "-", Color.BLACK);
-            y -= ROW_STEP;
-        }
-
-        totalsRow(cs, RIGHT_X);
-        text(cs, BOLD, 8.5f, 319, 293, "Total Deductions", Color.BLACK);
-        textRight(cs, BOLD, 8.5f, 508, 293, money(payroll.getTotalDeductions()), Color.BLACK);
+        text(cs, BOLD, 8.5f, 46, 452, "Deductions:", Color.BLACK);
+        text(cs, REGULAR, 8.5f, 46 + width(BOLD, 8.5f, "Deductions: "), 452, "None", MUTED);
     }
 
     private void drawNettPay(PDPageContentStream cs, Payroll payroll) throws IOException {
-        fillRect(cs, NAVY, RIGHT_X, 248, COL_W, 28);
-        text(cs, BOLD, 11, 321, 258, "NETT PAY", Color.WHITE);
-        textRight(cs, BOLD, 14, 566, 257, "R " + money(payroll.getNetPay()), Color.WHITE);
+        fillRect(cs, BRAND, LEFT_X, 398, FULL_W, 38);
+        text(cs, BOLD, 12, 50, 413, "NETT PAY", Color.WHITE);
+        textRight(cs, BOLD, 17, RIGHT_EDGE - 14, 411, "R " + money(payroll.getNetPay()), Color.WHITE);
     }
 
     private void drawYearToDate(PDPageContentStream cs, Payroll payroll, BigDecimal[] ytd) throws IOException {
-        boxWithTitle(cs, LEFT_X, 88, 150, "YEAR TO DATE TOTALS");
-        text(cs, REGULAR, 8.5f, 44, 202, "Total Earnings", Color.BLACK);
-        textRight(cs, REGULAR, 8.5f, 293, 202, money(ytd[0]), Color.BLACK);
-        text(cs, REGULAR, 8.5f, 44, 188, "Total Deductions", Color.BLACK);
-        textRight(cs, REGULAR, 8.5f, 293, 188, money(ytd[1]), Color.BLACK);
+        float y0 = BOTTOM_BOXES_Y, top = y0 + BOTTOM_BOXES_H;
+        boxWithTitle(cs, LEFT_X, y0, COL_W, BOTTOM_BOXES_H, "YEAR TO DATE TOTALS");
+        text(cs, REGULAR, 8.5f, 44, top - 36, "Total Earnings", Color.BLACK);
+        textRight(cs, REGULAR, 8.5f, 293, top - 36, money(ytd[0]), Color.BLACK);
+        text(cs, REGULAR, 8.5f, 44, top - 50, "Total Nett Pay", Color.BLACK);
+        textRight(cs, REGULAR, 8.5f, 293, top - 50, money(ytd[1]), Color.BLACK);
 
         cs.setStrokingColor(RULE);
-        line(cs, LEFT_X, 168, LEFT_X + COL_W, 168);
-        fillRect(cs, PANEL, LEFT_X + 0.4f, 150, COL_W - 0.8f, 18);
-        textCentered(cs, BOLD, 9, LEFT_X + COL_W / 2, 155, "CURRENT PERIOD", Color.BLACK);
+        line(cs, LEFT_X, top - 70, LEFT_X + COL_W, top - 70);
+        fillRect(cs, PANEL, LEFT_X + 0.4f, top - 88, COL_W - 0.8f, 18);
+        textCentered(cs, BOLD, 9, LEFT_X + COL_W / 2, top - 83, "CURRENT PERIOD", Color.BLACK);
         cs.setStrokingColor(RULE);
-        line(cs, LEFT_X, 150, LEFT_X + COL_W, 150);
+        line(cs, LEFT_X, top - 88, LEFT_X + COL_W, top - 88);
 
-        // Employer UIF contribution matches the employee's 1% UIF deduction.
-        text(cs, REGULAR, 8.5f, 44, 134, "Co. Contributions", Color.BLACK);
-        textRight(cs, REGULAR, 8.5f, 293, 134, money(payroll.getUif()), Color.BLACK);
+        text(cs, REGULAR, 8.5f, 44, top - 104, "Monthly Salary", Color.BLACK);
+        textRight(cs, REGULAR, 8.5f, 293, top - 104, money(payroll.getBasicSalary()), Color.BLACK);
+        text(cs, REGULAR, 8.5f, 44, top - 118, "Nett Pay", Color.BLACK);
+        textRight(cs, BOLD, 8.5f, 293, top - 118, money(payroll.getNetPay()), BRAND);
     }
 
-    /** The reference leaves this panel empty; it carries the details an employee needs to identify and verify the payslip. */
     private void drawAdditionalInfo(PDDocument doc, PDPageContentStream cs, Payroll payroll, Employee employee) throws IOException {
-        boxWithTitle(cs, RIGHT_X, 88, 150, "ADDITIONAL INFO");
+        float y0 = BOTTOM_BOXES_Y, top = y0 + BOTTOM_BOXES_H;
+        boxWithTitle(cs, RIGHT_X, y0, COL_W, BOTTOM_BOXES_H, "ADDITIONAL INFO");
 
         boolean sealed = payroll.getPayslipId() != null && payroll.getVerificationCode() != null;
         float textWidth = sealed ? 150 : 245;
         List<String[]> rows = new ArrayList<>();
         rows.add(new String[]{"Pay Period", payPeriodLabel(payroll.getPayPeriod())});
+        rows.add(new String[]{"Pay Basis", "Monthly salary"});
         rows.add(new String[]{"Job Title", dash(employee.getPosition())});
         rows.add(new String[]{"Department", employee.getDepartment() != null ? dash(employee.getDepartment().getName()) : "-"});
-        if (notBlank(employee.getIncomeTaxNumber())) rows.add(new String[]{"Tax No", employee.getIncomeTaxNumber()});
         if (sealed) {
             rows.add(new String[]{"Payslip ID", payroll.getPayslipId()});
             rows.add(new String[]{"Verify Code", payroll.getVerificationCode()});
@@ -258,7 +256,7 @@ public class PayslipPdfService {
             }
         }
 
-        float y = 204;
+        float y = top - 34;
         for (String[] row : rows) {
             text(cs, BOLD, 8, 319, y, row[0], Color.BLACK);
             text(cs, REGULAR, 8, 372, y, fit(row[1], textWidth - 53), Color.BLACK);
@@ -269,43 +267,30 @@ public class PayslipPdfService {
             String verifyUrl = verificationBaseUrl + "/" + payroll.getVerificationCode();
             PDImageXObject qr = qrImage(doc, verifyUrl);
             if (qr != null) {
-                cs.drawImage(qr, 484, 104, 84, 84);
-                textCentered(cs, REGULAR, 6.5f, 526, 96, "Scan to verify", FOOTER_GREY);
+                cs.drawImage(qr, 484, y0 + 16, 84, 84);
+                textCentered(cs, REGULAR, 6.5f, 526, y0 + 8, "Scan to verify", MUTED);
             }
         }
     }
 
     private void drawFooter(PDPageContentStream cs) throws IOException {
-        text(cs, REGULAR, 7.5f, 36, 30, "This payslip is computer generated. Amounts in South African Rand (ZAR).", FOOTER_GREY);
-        textRight(cs, REGULAR, 7.5f, 576, 30, "Page 1 of 1", FOOTER_GREY);
+        fillRect(cs, BRAND, LEFT_X, 48, FULL_W, 1.5f);
+        text(cs, REGULAR, 7.5f, 36, 34, "This payslip is computer generated. Amounts in South African Rand (ZAR).", MUTED);
+        textRight(cs, REGULAR, 7.5f, RIGHT_EDGE, 34, "Page 1 of 1", MUTED);
     }
 
     /* ------------------------------------------------------------------ */
     /* Drawing helpers                                                    */
     /* ------------------------------------------------------------------ */
 
-    /** Outlined box with a navy title bar across its top 18pt. */
-    private void boxWithTitle(PDPageContentStream cs, float x, float y, float height, String title) throws IOException {
+    /** Outlined box with a charcoal title bar (and a thin red underline) across its top. */
+    private void boxWithTitle(PDPageContentStream cs, float x, float y, float w, float height, String title) throws IOException {
         cs.setStrokingColor(RULE);
-        cs.addRect(x, y, COL_W, height);
+        cs.addRect(x, y, w, height);
         cs.stroke();
-        fillRect(cs, NAVY, x, y + height - 18, COL_W, 18);
-        textCentered(cs, BOLD, 10, x + COL_W / 2, y + height - 12.5f, title, Color.WHITE);
-    }
-
-    /** Shaded 20pt totals strip along the bottom of an EARNINGS/DEDUCTIONS box. */
-    private void totalsRow(PDPageContentStream cs, float x) throws IOException {
-        fillRect(cs, PANEL, x + 0.4f, 286.4f, COL_W - 0.8f, 20);
-        cs.setStrokingColor(RULE);
-        line(cs, x, 306, x + COL_W, 306);
-    }
-
-    private void columnHeader(PDPageContentStream cs, float x, float y, String s) throws IOException {
-        text(cs, BOLD, 8.5f, x, y, s, Color.BLACK);
-    }
-
-    private void headerRight(PDPageContentStream cs, float right, float y, String s) throws IOException {
-        textRight(cs, BOLD, 8.5f, right, y, s, Color.BLACK);
+        fillRect(cs, INK, x, y + height - 20, w, 20);
+        fillRect(cs, BRAND, x, y + height - 22, w, 2);
+        text(cs, BOLD, 9.5f, x + 10, y + height - 14, title, Color.WHITE);
     }
 
     private void label(PDPageContentStream cs, float x, float y, String s) throws IOException {
@@ -368,14 +353,36 @@ public class PayslipPdfService {
         }
     }
 
+    /** The company logo, downloaded once and cached; null (wordmark fallback) if it can't be fetched. */
+    private PDImageXObject logo(PDDocument doc, String url) {
+        if (!notBlank(url)) return null;
+        try {
+            byte[] bytes = cachedLogo;
+            if (bytes == null || !url.equals(cachedLogoUrl)) {
+                if (url.equals(cachedLogoUrl) && System.currentTimeMillis() < logoRetryAfter) return null;
+                cachedLogoUrl = url;
+                cachedLogo = null;
+                HttpResponse<byte[]> res = http.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(6)).GET().build(),
+                        HttpResponse.BodyHandlers.ofByteArray());
+                if (res.statusCode() != 200) {
+                    logoRetryAfter = System.currentTimeMillis() + 10 * 60_000;
+                    return null;
+                }
+                bytes = res.body();
+                cachedLogo = bytes;
+            }
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
+            return img == null ? null : LosslessFactory.createFromImage(doc, img);
+        } catch (Exception e) {
+            log.warn("Payslip logo couldn't be loaded from {}: {}", url, e.getMessage());
+            logoRetryAfter = System.currentTimeMillis() + 10 * 60_000;
+            return null;
+        }
+    }
+
     /* ------------------------------------------------------------------ */
     /* Data                                                               */
     /* ------------------------------------------------------------------ */
-
-    private String companyName() {
-        Company company = companyRepository.findAll().stream().findFirst().orElse(null);
-        return company != null && notBlank(company.getName()) ? upper(company.getName()) : DEFAULT_COMPANY_NAME;
-    }
 
     /** Residential address in the design's style: uppercase, word-wrapped over up to 4 lines. */
     private List<String> employeeAddressLines(Employee e) throws IOException {
@@ -409,23 +416,23 @@ public class PayslipPdfService {
         return fitted;
     }
 
+    /** {earnings, nett pay} summed over the tax year (March to February) up to this period. */
     private BigDecimal[] yearToDateTotals(Long employeeId, String currentPeriod) {
         try {
             YearMonth current = YearMonth.parse(currentPeriod);
-            // South African tax year runs March to February.
             YearMonth taxYearStart = current.getMonthValue() >= 3
                     ? YearMonth.of(current.getYear(), 3)
                     : YearMonth.of(current.getYear() - 1, 3);
 
-            BigDecimal gross = BigDecimal.ZERO, deductions = BigDecimal.ZERO;
+            BigDecimal gross = BigDecimal.ZERO, net = BigDecimal.ZERO;
             for (Payroll p : payrollRepository.findByEmployeeIdOrderByPayPeriodDesc(employeeId)) {
                 YearMonth period = YearMonth.parse(p.getPayPeriod());
                 if (!period.isBefore(taxYearStart) && !period.isAfter(current)) {
                     gross = gross.add(nz(p.getGrossPay()));
-                    deductions = deductions.add(nz(p.getTotalDeductions()));
+                    net = net.add(nz(p.getNetPay()));
                 }
             }
-            return new BigDecimal[]{gross, deductions};
+            return new BigDecimal[]{gross, net};
         } catch (Exception e) {
             return new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO};
         }
@@ -451,10 +458,6 @@ public class PayslipPdfService {
     private static String money(BigDecimal value) {
         DecimalFormat fmt = new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.US));
         return fmt.format(value == null ? BigDecimal.ZERO : value);
-    }
-
-    private static void addIfPositive(List<Object[]> rows, String label, BigDecimal amount) {
-        if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0) rows.add(new Object[]{label, amount});
     }
 
     private static List<String> nonBlank(String... values) {

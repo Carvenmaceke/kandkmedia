@@ -87,6 +87,8 @@ app:
   # "Document Verified" webpage yet, so scanning it shows raw JSON for now.
   verification-base-url: ${VERIFICATION_BASE_URL:http://localhost:8080/api/public/verify}
   support-email: ${SUPPORT_EMAIL:itsupport@kandkmedia.co.za}
+  # Logo drawn on payslips when the company record has none; blank = text wordmark.
+  payslip-logo-url: ${PAYSLIP_LOGO_URL:https://www.kandkmedia.co.za/wp-content/uploads/2024/05/cropped-cropped-K-and-K-Media-logo-New-1.png}
   # IT Assistant chatbot (Groq). Set GROQ_API_KEY as an environment variable
   # on the server — never commit it. Unset = the chat uses its built-in
   # keyword answers instead.

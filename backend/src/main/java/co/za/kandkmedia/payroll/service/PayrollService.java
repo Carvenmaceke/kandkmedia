@@ -10,23 +10,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * NOTE: PAYE and UIF below are simplified placeholders (flat 15% / 1% capped),
- * matching the frontend prototype, purely to make the pipeline demonstrable
- * end-to-end. Replace with a real SARS-compliant tax table before this
- * touches an actual payslip.
+ * K and K Media pays a fixed monthly salary: no hours, overtime, allowances,
+ * tax (PAYE), UIF or other deductions — so every payslip's gross and nett pay
+ * equal the employee's monthly salary.
  */
 @Service
 @RequiredArgsConstructor
 public class PayrollService {
-
-    private static final BigDecimal PAYE_RATE = new BigDecimal("0.15");
-    private static final BigDecimal UIF_RATE = new BigDecimal("0.01");
-    private static final BigDecimal UIF_CAP = new BigDecimal("17712"); // monthly UIF-contributable ceiling
 
     private final PayrollRepository payrollRepository;
     private final EmailService emailService;
@@ -78,32 +72,62 @@ public class PayrollService {
                 });
     }
 
+    /** Salary only. overtime/bonus are accepted for API compatibility but not paid. */
     private Payroll calculate(Employee employee, String payPeriod, BigDecimal overtime, BigDecimal bonus) {
-        BigDecimal basic = employee.getSalary();
-        BigDecimal housing = isSeniorOrManager(employee) ? new BigDecimal("2000") : BigDecimal.ZERO;
-        BigDecimal transport = isIntern(employee) ? BigDecimal.ZERO : new BigDecimal("1000");
-        BigDecimal gross = basic.add(overtime).add(bonus).add(housing).add(transport);
-
-        BigDecimal paye = gross.multiply(PAYE_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal uif = gross.min(UIF_CAP).multiply(UIF_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal totalDeductions = paye.add(uif);
-        BigDecimal net = gross.subtract(totalDeductions);
-
+        BigDecimal salary = employee.getSalary() == null ? BigDecimal.ZERO : employee.getSalary();
         return Payroll.builder()
                 .employee(employee)
                 .payPeriod(payPeriod)
-                .basicSalary(basic)
-                .overtime(overtime)
-                .bonus(bonus)
-                .housingAllowance(housing)
-                .transportAllowance(transport)
-                .grossPay(gross)
-                .paye(paye)
-                .uif(uif)
-                .totalDeductions(totalDeductions)
-                .netPay(net)
+                .basicSalary(salary)
+                .overtime(BigDecimal.ZERO)
+                .bonus(BigDecimal.ZERO)
+                .housingAllowance(BigDecimal.ZERO)
+                .transportAllowance(BigDecimal.ZERO)
+                .grossPay(salary)
+                .paye(BigDecimal.ZERO)
+                .uif(BigDecimal.ZERO)
+                .totalDeductions(BigDecimal.ZERO)
+                .netPay(salary)
                 .status(PayrollStatus.DRAFT)
                 .build();
+    }
+
+    /**
+     * Brings payroll records that haven't been sent yet in line with the salary-only rule:
+     * any old tax/UIF/allowance/overtime figures are cleared and nett pay set to the salary.
+     * Sent payslips are history and are left as they were. Runs once at startup; idempotent.
+     */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    @org.springframework.transaction.annotation.Transactional
+    public void normaliseUnsentRecords() {
+        int fixed = 0;
+        for (Payroll p : payrollRepository.findAll()) {
+            if (p.getStatus() == PayrollStatus.SENT) continue;
+            BigDecimal salary = p.getBasicSalary() == null ? BigDecimal.ZERO : p.getBasicSalary();
+            boolean alreadySalaryOnly = nz(p.getTotalDeductions()).signum() == 0 && nz(p.getOvertime()).signum() == 0
+                    && nz(p.getBonus()).signum() == 0 && nz(p.getHousingAllowance()).signum() == 0
+                    && nz(p.getTransportAllowance()).signum() == 0 && nz(p.getGrossPay()).compareTo(salary) == 0
+                    && nz(p.getNetPay()).compareTo(salary) == 0;
+            if (alreadySalaryOnly) continue;
+            p.setOvertime(BigDecimal.ZERO);
+            p.setBonus(BigDecimal.ZERO);
+            p.setHousingAllowance(BigDecimal.ZERO);
+            p.setTransportAllowance(BigDecimal.ZERO);
+            p.setPaye(BigDecimal.ZERO);
+            p.setUif(BigDecimal.ZERO);
+            p.setOtherDeductions(BigDecimal.ZERO);
+            p.setTotalDeductions(BigDecimal.ZERO);
+            p.setGrossPay(salary);
+            p.setNetPay(salary);
+            if (p.getPayslipId() != null) sealPayslip(p); // finalized but unsent: re-hash the corrected document
+            payrollRepository.save(p);
+            fixed++;
+        }
+        if (fixed > 0) org.slf4j.LoggerFactory.getLogger(PayrollService.class).info("Updated {} unsent payroll record(s) to salary-only", fixed);
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     /** Advances every record for a pay period exactly one stage — mirrors the HR "Advance to X" button. */
@@ -253,13 +277,5 @@ public class PayrollService {
         payroll.setDocumentHash(payslipSecurityService.sha256Hex(pdf));
     }
 
-    private boolean isSeniorOrManager(Employee employee) {
-        String level = employee.getLevel() != null ? employee.getLevel().getName() : "";
-        return "Senior".equals(level) || "Manager".equals(level);
-    }
 
-    private boolean isIntern(Employee employee) {
-        String level = employee.getLevel() != null ? employee.getLevel().getName() : "";
-        return "Intern".equals(level);
-    }
 }

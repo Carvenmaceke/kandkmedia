@@ -190,18 +190,10 @@ const PAST_MONTHS = ["June 2026", "July 2026", "August 2026"];
 const CURRENT_MONTH = "September 2026";
 const STAGES = ["DRAFT", "REVIEWED", "APPROVED", "FINALIZED", "PUBLISHED", "SENT"];
 
-function calcPayroll(emp, monthIndex) {
-  const basic = emp.salary;
-  const overtime = [750, 400, 0][monthIndex % 3];
-  const bonus = monthIndex === 2 ? Math.round(basic * 0.03) : 0;
-  const housing = emp.level === "Manager" || emp.level === "Senior" ? 2000 : 0;
-  const transport = emp.level === "Intern" ? 0 : 1000;
-  const gross = basic + overtime + bonus + housing + transport;
-  const paye = Math.round(gross * 0.15);
-  const uif = Math.round(Math.min(gross, 17712) * 0.01);
-  const totalDeductions = paye + uif;
-  const net = gross - totalDeductions;
-  return { basic, overtime, bonus, housing, transport, gross, paye, uif, totalDeductions, net };
+/** K and K Media pays a fixed monthly salary: no hours, overtime, allowances, tax, UIF or deductions. */
+function calcPayroll(emp) {
+  const basic = Number(emp.salary) || 0;
+  return { basic, overtime: 0, bonus: 0, housing: 0, transport: 0, gross: basic, paye: 0, uif: 0, totalDeductions: 0, net: basic };
 }
 
 function buildHistory(seedEmployees) {
@@ -637,18 +629,18 @@ function loadJsPDF() {
   return jsPDFPromise;
 }
 /* ---------------------------------------------------------------------- */
-/** Builds the payslip in the approved K & K Media design — the same layout
- *  the backend's PayslipPdfService draws (US Letter, navy header bar, grey
- *  details panel, EARNINGS/DEDUCTIONS boxes, NETT PAY bar, YTD/ADDITIONAL
- *  INFO boxes). Only used when there's no server-generated payslip yet (HR's
- *  estimate before a draft exists, or offline mode). Coordinates are in PDF
- *  points measured from the bottom-left, as in the reference document, and
- *  flipped for jsPDF's top-left origin. */
+/** Builds the payslip in the K & K Media brand design — the same layout the
+ *  backend's PayslipPdfService draws (US Letter, charcoal header with a red
+ *  rule, details panel, a salary-only EARNINGS box, red NETT PAY bar,
+ *  YTD / ADDITIONAL INFO boxes). Only used when there's no server-generated
+ *  payslip yet (HR's estimate before a draft exists, or offline mode).
+ *  Coordinates are PDF points from the bottom-left, flipped for jsPDF. */
 async function downloadPayslipPdf(emp, month, figures) {
   const jsPDF = await loadJsPDF();
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const H = 792;
-  const NAVY = [31, 42, 68], PANEL = [242, 244, 247], RULE = [154, 163, 178], GREY = [102, 102, 102], BLACK = [0, 0, 0], WHITE = [255, 255, 255];
+  const INK = [17, 24, 39], BRAND = [225, 29, 46], TINT = [253, 236, 238], PANEL = [245, 246, 248], RULE = [209, 213, 219];
+  const MUTED = [107, 114, 128], ON_INK_MUTED = [201, 205, 214], BLACK = [0, 0, 0], WHITE = [255, 255, 255];
   const amt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fill = (c, x, y, w, h) => { doc.setFillColor(...c); doc.rect(x, H - y - h, w, h, "F"); };
   const stroke = (x, y, w, h) => { doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.rect(x, H - y - h, w, h, "S"); };
@@ -664,9 +656,9 @@ async function downloadPayslipPdf(emp, month, figures) {
     while (v && doc.getTextWidth(v + "...") > maxW) v = v.slice(0, -1);
     return v + "...";
   };
-  const boxWithTitle = (x, y, h, title) => {
-    stroke(x, y, 265, h); fill(NAVY, x, y + h - 18, 265, 18);
-    txt(title, x + 132.5, y + h - 12.5, { size: 10, bold: true, color: WHITE, align: "center" });
+  const boxWithTitle = (x, y, w, h, title) => {
+    stroke(x, y, w, h); fill(INK, x, y + h - 20, w, 20); fill(BRAND, x, y + h - 22, w, 2);
+    txt(title, x + 10, y + h - 14, { size: 9.5, bold: true, color: WHITE });
   };
   const fmtDate = (iso) => { if (!iso) return "-"; const [y, m, d] = String(iso).slice(0, 10).split("-"); return d ? `${d}/${m}/${y}` : "-"; };
   const periodDate = (() => {
@@ -676,75 +668,72 @@ async function downloadPayslipPdf(emp, month, figures) {
   })();
   const companyName = (COMPANY.name || "K & K Media (Pty) Ltd").toUpperCase();
 
-  // Header
-  fill(NAVY, 36, 726, 540, 30);
-  txt("PAYSLIP", 46, 736, { size: 15, bold: true, color: WHITE });
-  txt(companyName, 566, 737, { size: 9, color: WHITE, align: "right" });
+  // Header: charcoal bar, wordmark, red rule
+  fill(INK, 36, 712, 540, 48); fill(BRAND, 36, 708, 540, 4);
+  txt("K&K", 50, 730, { size: 17, bold: true, color: BRAND });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(17);
+  txt("MEDIA", 50 + doc.getTextWidth("K&K "), 730, { size: 17, bold: true, color: WHITE });
+  txt("PAYSLIP", 562, 738, { size: 16, bold: true, color: WHITE, align: "right" });
+  txt(`${month}  |  ${companyName}`, 562, 724, { size: 9, color: ON_INK_MUTED, align: "right" });
 
   // Details panel
-  doc.setFillColor(...PANEL); doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.rect(36, H - 626 - 92, 540, 92, "FD");
+  doc.setFillColor(...PANEL); doc.setDrawColor(...RULE); doc.setLineWidth(0.8); doc.rect(36, H - 598 - 96, 540, 96, "FD");
+  fill(BRAND, 36, 598, 3, 96);
   const label = (s, x, y) => txt(s, x, y, { size: 8, bold: true });
   const value = (s, x, y) => txt(s, x, y, { size: 8 });
-  label("Company", 46, 702); value(fit(companyName, 122), 104, 702);
-  label("Emp Code", 46, 689); value(emp.id || "-", 104, 689);
-  label("Emp Name", 46, 676); value(fit(legalName(emp).toUpperCase(), 122), 104, 676);
-  label("Emp Address", 46, 663);
+  label("Company", 46, 678); value(fit(companyName, 122), 104, 678);
+  label("Emp Code", 46, 665); value(emp.id || "-", 104, 665);
+  label("Emp Name", 46, 652); value(fit(legalName(emp).toUpperCase(), 122), 104, 652);
+  label("Emp Address", 46, 639);
   const addr = [
     [emp.resUnitNumber, emp.resComplexName].filter(Boolean).join(" "),
     [emp.resStreetNumber, emp.resStreetName].filter(Boolean).join(" "),
     [emp.resSuburb, emp.resCity].filter(Boolean).join(", "),
     emp.resPostalCode,
   ].filter(Boolean).map((l) => fit(l.toUpperCase(), 122));
-  (addr.length ? addr.slice(0, 4) : ["-"]).forEach((l, i) => value(l, 104, 663 - 11 * i));
-  label("Co. Address", 238.4, 702);
-  ["CONSTANTIA SQUARE OFFICE", "16TH ROAD", "RANDJESFONTEIN, MIDRAND", "1685"].forEach((l, i) => value(l, 294.4, 702 - 11 * i));
-  label("Payment Date", 432.8, 702); value(periodDate ? periodDate.toLocaleDateString("en-GB") : "-", 496.8, 702);
-  label("Date Engaged", 432.8, 689); value(fmtDate(emp.start), 496.8, 689);
-  label("Account No", 432.8, 676); value(fit(emp.bankAccountNumber, 76), 496.8, 676);
-  label("Branch Code", 432.8, 663); value(fit(emp.bankBranchCode, 76), 496.8, 663);
-  line(230.4, 634, 230.4, 710); line(424.8, 634, 424.8, 710);
+  (addr.length ? addr.slice(0, 4) : ["-"]).forEach((l, i) => value(l, 104, 639 - 11 * i));
+  label("Co. Address", 238.4, 678);
+  ["CONSTANTIA SQUARE OFFICE", "16TH ROAD", "RANDJESFONTEIN, MIDRAND", "1685"].forEach((l, i) => value(l, 294.4, 678 - 11 * i));
+  label("Payment Date", 432.8, 678); value(periodDate ? periodDate.toLocaleDateString("en-GB") : "-", 496.8, 678);
+  label("Date Engaged", 432.8, 665); value(fmtDate(emp.start), 496.8, 665);
+  label("Account No", 432.8, 652); value(fit(emp.bankAccountNumber, 76), 496.8, 652);
+  label("Branch Code", 432.8, 639); value(fit(emp.bankBranchCode, 76), 496.8, 639);
+  line(230.4, 606, 230.4, 686); line(424.8, 606, 424.8, 686);
 
-  // Earnings
-  boxWithTitle(36, 286, 330, "EARNINGS");
-  txt("Description", 44, 584, { bold: true }); txt("Days", 221, 584, { bold: true, align: "right" }); txt("Amount (R)", 293, 584, { bold: true, align: "right" });
-  line(42, 580, 295, 580);
-  const earnings = [["Normal Time", figures.basic], ["Housing Allowance", figures.housing], ["Transport Allowance", figures.transport], ["Overtime", figures.overtime], ["Bonus", figures.bonus]]
-    .filter(([l, v], i) => i === 0 || Number(v) > 0);
-  earnings.forEach(([l, v], i) => { const y = 567 - 14 * i; txt(l, 44, y); txt("-", 221, y, { align: "right" }); txt(amt(v), 293, y, { align: "right" }); });
-  fill(PANEL, 36.4, 286.4, 264.2, 20); line(36, 306, 301, 306);
-  txt("Total Earnings", 44, 293, { bold: true }); txt(amt(figures.gross), 293, 293, { bold: true, align: "right" });
-
-  // Deductions
-  boxWithTitle(311, 286, 330, "DEDUCTIONS");
-  txt("Description", 319, 584, { bold: true }); txt("Days", 456, 584, { bold: true, align: "right" });
-  txt("Amount (R)", 508, 584, { bold: true, align: "right" }); txt("Opening Bal.", 568, 584, { bold: true, align: "right" });
-  line(317, 580, 570, 580);
-  const deductions = [["Tax", figures.paye], ["U.I.F.", figures.uif], ["Other Deductions", figures.otherDeductions]].filter(([l, v], i) => i < 2 || Number(v) > 0);
-  deductions.forEach(([l, v], i) => { const y = 567 - 14 * i; txt(l, 319, y); txt("-", 456, y, { align: "right" }); txt(amt(v), 508, y, { align: "right" }); txt("-", 568, y, { align: "right" }); });
-  fill(PANEL, 311.4, 286.4, 264.2, 20); line(311, 306, 576, 306);
-  txt("Total Deductions", 319, 293, { bold: true }); txt(amt(figures.totalDeductions), 508, 293, { bold: true, align: "right" });
+  // Earnings — monthly salary only
+  boxWithTitle(36, 470, 540, 108, "EARNINGS");
+  txt("Description", 46, 546, { bold: true }); txt("Amount (R)", 566, 546, { bold: true, align: "right" });
+  line(44, 541, 568, 541);
+  txt("Monthly Salary", 46, 526, { size: 9 }); txt(amt(figures.basic), 566, 526, { size: 9, align: "right" });
+  fill(TINT, 36.4, 470.4, 539.2, 22); line(36, 492.4, 576, 492.4);
+  txt("Total Earnings", 46, 478, { size: 9, bold: true }); txt(amt(figures.gross), 566, 478, { size: 9, bold: true, align: "right" });
+  txt("Deductions:", 46, 452, { bold: true });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
+  txt("None", 46 + doc.getTextWidth("Deductions: "), 452, { color: MUTED });
 
   // Nett pay
-  fill(NAVY, 311, 248, 265, 28);
-  txt("NETT PAY", 321, 258, { size: 11, bold: true, color: WHITE });
-  txt(`R ${amt(figures.net)}`, 566, 257, { size: 14, bold: true, color: WHITE, align: "right" });
+  fill(BRAND, 36, 398, 540, 38);
+  txt("NETT PAY", 50, 413, { size: 12, bold: true, color: WHITE });
+  txt(`R ${amt(figures.net)}`, 562, 411, { size: 17, bold: true, color: WHITE, align: "right" });
 
   // Year to date (this period only — the running total lives on the server)
-  boxWithTitle(36, 88, 150, "YEAR TO DATE TOTALS");
-  txt("Total Earnings", 44, 202); txt(amt(figures.gross), 293, 202, { align: "right" });
-  txt("Total Deductions", 44, 188); txt(amt(figures.totalDeductions), 293, 188, { align: "right" });
-  line(36, 168, 301, 168); fill(PANEL, 36.4, 150, 264.2, 18);
-  txt("CURRENT PERIOD", 168.5, 155, { size: 9, bold: true, align: "center" }); line(36, 150, 301, 150);
-  txt("Co. Contributions", 44, 134); txt(amt(figures.uif), 293, 134, { align: "right" });
+  boxWithTitle(36, 214, 265, 150, "YEAR TO DATE TOTALS");
+  txt("Total Earnings", 44, 328); txt(amt(figures.gross), 293, 328, { align: "right" });
+  txt("Total Nett Pay", 44, 314); txt(amt(figures.net), 293, 314, { align: "right" });
+  line(36, 294, 301, 294); fill(PANEL, 36.4, 276, 264.2, 18);
+  txt("CURRENT PERIOD", 168.5, 281, { size: 9, bold: true, align: "center" }); line(36, 276, 301, 276);
+  txt("Monthly Salary", 44, 260); txt(amt(figures.basic), 293, 260, { align: "right" });
+  txt("Nett Pay", 44, 246); txt(amt(figures.net), 293, 246, { bold: true, color: BRAND, align: "right" });
 
   // Additional info
-  boxWithTitle(311, 88, 150, "ADDITIONAL INFO");
-  [["Pay Period", month], ["Job Title", emp.position || "-"], ["Department", emp.dept || "-"], ...(emp.incomeTaxNumber ? [["Tax No", emp.incomeTaxNumber]] : []), ["Status", "Estimate - not yet finalised"]]
-    .forEach(([k, v], i) => { const y = 204 - 12 * i; txt(k, 319, y, { size: 8, bold: true }); txt(fit(v, 192), 372, y, { size: 8 }); });
+  boxWithTitle(311, 214, 265, 150, "ADDITIONAL INFO");
+  [["Pay Period", month], ["Pay Basis", "Monthly salary"], ["Job Title", emp.position || "-"], ["Department", emp.dept || "-"], ["Status", "Estimate - not yet finalised"]]
+    .forEach(([k, v], i) => { const y = 330 - 12 * i; txt(k, 319, y, { size: 8, bold: true }); txt(fit(v, 192), 372, y, { size: 8 }); });
 
   // Footer
-  txt("This payslip is computer generated. Amounts in South African Rand (ZAR).", 36, 30, { size: 7.5, color: GREY });
-  txt("Page 1 of 1", 576, 30, { size: 7.5, color: GREY, align: "right" });
+  fill(BRAND, 36, 48, 540, 1.5);
+  txt("This payslip is computer generated. Amounts in South African Rand (ZAR).", 36, 34, { size: 7.5, color: MUTED });
+  txt("Page 1 of 1", 576, 34, { size: 7.5, color: MUTED, align: "right" });
 
   doc.setProperties({ title: "Payslip - K & K Media (Pty) Ltd", author: "K & K Media (Pty) Ltd" });
   const filename = `${month.replace(" ", "-")}-${emp.id}.pdf`;
@@ -1037,9 +1026,6 @@ async function downloadOnboardingDocument(employee) {
 /* ---------------------------------------------------------------------- */
 function Payslip({ emp, month, figures, onClose }) {
   const amt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const earnings = [["Normal Time", figures.basic], ["Housing Allowance", figures.housing], ["Transport Allowance", figures.transport], ["Overtime", figures.overtime], ["Bonus", figures.bonus]]
-    .filter(([, v], i) => i === 0 || Number(v) > 0);
-  const deductions = [["Tax", figures.paye], ["U.I.F.", figures.uif], ["Other Deductions", figures.otherDeductions]].filter(([, v], i) => i < 2 || Number(v) > 0);
   const detail = (k, v) => <div className="kk-ps-row"><span>{k}</span><strong>{v || "-"}</strong></div>;
   return (
     <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "32px 16px", overflowY: "auto" }} onClick={onClose}>
@@ -1052,27 +1038,23 @@ function Payslip({ emp, month, figures, onClose }) {
           </div>
         </div>
         <div className="kk-payslip">
-          <div className="kk-ps-bar"><span style={{ fontSize: 20, fontWeight: 800, letterSpacing: "0.02em" }}>PAYSLIP</span><span style={{ fontSize: 12 }}>{(COMPANY.name || "").toUpperCase()}</span></div>
+          <div className="kk-ps-bar">
+            <span className="kk-ps-mark"><span>K&amp;K</span> MEDIA</span>
+            <span style={{ textAlign: "right" }}><span style={{ display: "block", fontSize: 20, fontWeight: 800, letterSpacing: "0.02em" }}>PAYSLIP</span><span style={{ fontSize: 11.5, opacity: 0.75 }}>{month} · {(COMPANY.name || "").toUpperCase()}</span></span>
+          </div>
           <div className="kk-ps-panel">
             <div>{detail("Emp Code", emp.id)}{detail("Emp Name", legalName(emp).toUpperCase())}{detail("Position", emp.position)}</div>
             <div>{detail("Pay Period", month)}{detail("Department", emp.dept)}{detail("Office", emp.office)}</div>
             <div>{detail("Date Engaged", emp.start)}{detail("Account No", emp.bankAccountNumber)}{detail("Branch Code", emp.bankBranchCode)}</div>
           </div>
-          <div className="kk-ps-cols">
+          <div style={{ padding: "0 22px" }}>
             <div className="kk-ps-box">
               <div className="kk-ps-title">EARNINGS</div>
               <div className="kk-ps-line kk-ps-head"><span>Description</span><span>Amount (R)</span></div>
-              {earnings.map(([k, v]) => <div key={k} className="kk-ps-line"><span>{k}</span><span className="num">{amt(v)}</span></div>)}
+              <div className="kk-ps-line"><span>Monthly Salary</span><span className="num">{amt(figures.basic)}</span></div>
               <div className="kk-ps-total"><span>Total Earnings</span><span className="num">{amt(figures.gross)}</span></div>
             </div>
-            <div className="kk-ps-box">
-              <div className="kk-ps-title">DEDUCTIONS</div>
-              <div className="kk-ps-line kk-ps-head"><span>Description</span><span>Amount (R)</span></div>
-              {deductions.map(([k, v]) => <div key={k} className="kk-ps-line"><span>{k}</span><span className="num">{amt(v)}</span></div>)}
-              <div className="kk-ps-total"><span>Total Deductions</span><span className="num">{amt(figures.totalDeductions)}</span></div>
-            </div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 22px" }}>
+            <div style={{ fontSize: 12, padding: "8px 2px 12px" }}><strong>Deductions:</strong> <span style={{ color: "#6B7280" }}>None</span></div>
             <div className="kk-ps-net"><span>NETT PAY</span><span className="num">R {amt(figures.net)}</span></div>
           </div>
           <div style={{ padding: "14px 22px 18px", fontSize: 11, color: "#666", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -3283,7 +3265,7 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
   const visibleEmployees = API_BASE_URL ? EMPLOYEES.filter((e) => payrollRecords[e.id]) : EMPLOYEES;
   return (
     <div>
-      <SectionTitle sub={`Reviewing variable earnings and deductions for ${CURRENT_MONTH}`}>Payroll — {CURRENT_MONTH}</SectionTitle>
+      <SectionTitle sub={`Monthly salaries for ${CURRENT_MONTH} — salary only, no deductions`}>Payroll — {CURRENT_MONTH}</SectionTitle>
       <Card style={{ padding: "20px 22px 4px", marginBottom: 16 }}>
         <div className="kk-card-title">Batch progress</div>
         <PipelineStepper stages={STAGES} current={stageIdx} />
@@ -3300,10 +3282,10 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
       </div>
       <Card style={{ overflow: "hidden" }}>
         <table className="data-table">
-          <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Basic", "Overtime", "Bonus", "Gross", "Deductions", "Net Pay", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+          <thead><tr style={{ background: T.bg, textAlign: "left" }}>{["Employee", "Monthly Salary", "Deductions", "Nett Pay", ""].map((h) => <th key={h} style={{ padding: "10px 14px", fontSize: 11.5, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
           <tbody>
             {visibleEmployees.length === 0 && (
-              <EmptyRow colSpan={8} icon={Banknote}>No employees have a salary set yet — add one under Employees to generate their payslip.</EmptyRow>
+              <EmptyRow colSpan={5} icon={Banknote}>No employees have a salary set yet — add one under Employees to generate their payslip.</EmptyRow>
             )}
             {visibleEmployees.map((e) => {
               const real = hasRealRecords ? payrollRecords[e.id] : null;
@@ -3312,10 +3294,7 @@ function HrPayroll({ payrollStage, setPayslipView, payrollRecords, resendPayslip
                 <tr key={e.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 14px" }}><PersonCell name={e.name} sub={e.id} /></td>
                   <td style={{ padding: "10px 14px", fontFamily: mono }}>{money(f.basic)}</td>
-                  <td style={{ padding: "10px 14px", fontFamily: mono, color: T.muted }}>{money(f.overtime)}</td>
-                  <td style={{ padding: "10px 14px", fontFamily: mono, color: T.muted }}>{money(f.bonus)}</td>
-                  <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 600 }}>{money(f.gross)}</td>
-                  <td style={{ padding: "10px 14px", fontFamily: mono, color: T.red }}>-{money(f.totalDeductions)}</td>
+                  <td style={{ padding: "10px 14px", color: T.muted }}>None</td>
                   <td style={{ padding: "10px 14px", fontFamily: mono, fontWeight: 700, color: T.text }}>{money(f.net)}</td>
                   <td style={{ padding: "10px 14px" }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>

@@ -250,9 +250,11 @@ class EmailServiceTest {
         }
 
         @Test
-        void attachmentsWithoutBrevoFailClearly() {
-            Object r = ReflectionTestUtils.invokeMethod(emailJs(), "send", "a@kandkmedia.co.za", null, "Payslip", "Attached", "p.pdf", new byte[]{1, 2});
-            assertThat(r.toString()).contains("ok=false").contains("BREVO_API_KEY");
+        void attachmentsWithoutBrevoAreSentWithoutThePdfAndPointToTheApp() {
+            Object r = ReflectionTestUtils.invokeMethod(emailJs(), "send", "a@kandkmedia.co.za", null, "Payslip", "Your payslip.", "p.pdf", new byte[]{1, 2});
+            assertThat(r.toString()).contains("ok=true");
+            assertThat(bodies).hasSize(1);
+            assertThat(bodies.get(0)).contains("Your payslip.").contains("p.pdf").contains("Payroll & Leave");
         }
     }
 }

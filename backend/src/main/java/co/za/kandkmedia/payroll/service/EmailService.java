@@ -249,7 +249,8 @@ public class EmailService {
     /**
      * Sends through EmailJS. The template must use {{to_email}} as "To", {{subject}} as the subject and
      * {{message}} as the body. EmailJS can't take attachments on the free plan, so emails with a PDF
-     * (payslips, leave letters) go through the Brevo API instead when BREVO_API_KEY is set.
+     * (payslips, leave letters) go through the Brevo API when BREVO_API_KEY is set; otherwise they're
+     * sent through EmailJS without the PDF, telling the employee to download it from the app.
      */
     private SendResult sendViaEmailJs(String to, String replyTo, String subject, String textBody, String attachmentFilename, byte[] attachmentBytes) {
         if (attachmentBytes != null) {
@@ -257,7 +258,9 @@ public class EmailService {
             if (brevoKey != null && !brevoKey.isBlank()) {
                 return sendViaBrevo(to, replyTo, subject, textBody, attachmentFilename, attachmentBytes);
             }
-            return SendResult.failure("This email has a PDF attached, which EmailJS can't send on its free plan. Set BREVO_API_KEY so emails with attachments go through Brevo.");
+            // No attachment support: send the email anyway and point them to the copy in the app.
+            textBody = textBody + "\n\nThe PDF (" + attachmentFilename + ") couldn't be attached to this email. "
+                    + "Download it from the K and K Media app: sign in and open Payroll & Leave.";
         }
         String serviceId = cleanSecret(emailJsServiceId);
         String templateId = cleanSecret(emailJsTemplateId);

@@ -182,7 +182,7 @@ EMAILJS_SERVICE_ID=service_...
 EMAILJS_TEMPLATE_ID=template_...
 EMAILJS_PUBLIC_KEY=...                       # Account → API keys
 EMAILJS_PRIVATE_KEY=...                      # Account → API keys — never commit
-BREVO_API_KEY=xkeysib-...                    # optional: emails with a PDF (payslips) go via Brevo
+BREVO_API_KEY=xkeysib-...                    # optional: emails with a PDF go via Brevo; without it they go via EmailJS minus the PDF, pointing to the app
 ```
 
 Use **Company & Settings → Send Test

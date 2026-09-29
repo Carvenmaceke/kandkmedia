@@ -1209,7 +1209,78 @@ function ProfileDrawer({ emp, onClose, onUpdateManager, onOpenPersonalInfo, canS
 /* ---------------------------------------------------------------------- */
 /* AUTH SCREENS — LOGIN & SIGN UP                                         */
 /* ---------------------------------------------------------------------- */
+/** "Report an issue" from the login / signup screens — for people who can't get in yet.
+ *  Goes to the same public support endpoint, so it lands in the IT inbox
+ *  (itsupport@kandkmedia.co.za) and the reporter gets a confirmation email. */
+function ReportIssueModal({ onClose }) {
+  const [form, setForm] = useState({ name: "", email: "", description: "" });
+  const [state, setState] = useState({ sending: false, error: "", sent: false });
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const description = form.description.trim();
+    if (!form.name.trim() || !form.email.trim() || !description) {
+      setState({ sending: false, error: "Please fill in your name, email and a description of the issue.", sent: false });
+      return;
+    }
+    const firstLine = description.split(/\n/)[0];
+    const ticket = {
+      subject: "Login / signup: " + (firstLine.length > 70 ? firstLine.slice(0, 67) + "…" : firstLine),
+      category: "Login / Signup Issue", priority: "High", description,
+    };
+    setState({ sending: true, error: "", sent: false });
+    const result = await sendRequestToServer("/api/public/support", ticket,
+      { name: form.name.trim(), email: form.email.trim(), id: "", role: null, dept: "", office: "" });
+    if (result.ok) setState({ sending: false, error: "", sent: true });
+    else setState({ sending: false, sent: false, error: result.reason === "not-connected"
+      ? "Reporting isn't available in this demo — email itsupport@kandkmedia.co.za instead."
+      : "Couldn't send your report. Please check your connection and try again, or email itsupport@kandkmedia.co.za." });
+  };
+
+  return (
+    <div className="kk-overlay" style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div className="kk-pop" role="dialog" aria-modal="true" aria-labelledby="kk-report-title" onClick={(e) => e.stopPropagation()}
+        style={{ width: 460, maxWidth: "100%", background: T.surface, borderRadius: 20, padding: 24, boxShadow: "0 24px 60px rgba(0,0,0,0.25)", maxHeight: "calc(100vh - 32px)", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+          <div>
+            <div id="kk-report-title" style={{ fontSize: 18, fontWeight: 750, color: T.text, display: "flex", alignItems: "center", gap: 8 }}><LifeBuoy size={18} color={T.teal} /> Report an issue</div>
+            <div style={{ fontSize: 13, color: T.muted, marginTop: 4, lineHeight: 1.5 }}>Can't log in or sign up? Tell IT support what's happening.</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, padding: 4, lineHeight: 0 }}><X size={18} /></button>
+        </div>
+        {state.sent ? (
+          <div>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", background: T.greenBg, color: T.green, padding: "12px 14px", borderRadius: 12, fontSize: 13.5, lineHeight: 1.5 }}>
+              <CheckCircle2 size={17} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>Sent to IT support. We've emailed a confirmation to <strong>{form.email.trim()}</strong> and will reply there.</span>
+            </div>
+            <div style={{ marginTop: 16 }}><Button variant="teal" full onClick={onClose}>Done</Button></div>
+          </div>
+        ) : (
+          <form onSubmit={submit}>
+            <Field label="Your name">
+              <input value={form.name} onChange={set("name")} autoComplete="name" autoFocus placeholder="e.g. Zanele Khumalo" style={inputStyle} required />
+            </Field>
+            <Field label="Your email (for the reply)">
+              <input value={form.email} onChange={set("email")} type="email" autoComplete="email" placeholder={`you@${ALLOWED_EMAIL_DOMAIN}`} style={inputStyle} required />
+            </Field>
+            <Field label="Describe your issue">
+              <textarea value={form.description} onChange={set("description")} rows={5} style={{ ...inputStyle, resize: "vertical" }}
+                placeholder="What were you trying to do, what happened, and any error message you saw…" required />
+            </Field>
+            <FormError>{state.error}</FormError>
+            <Button type="submit" variant="teal" full disabled={state.sending} icon={state.sending ? undefined : Send}>{state.sending ? "Sending…" : "Send to IT support"}</Button>
+            <div style={{ fontSize: 12, color: T.muted, textAlign: "center", marginTop: 10 }}>Goes to itsupport@kandkmedia.co.za</div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AuthShell({ children, theme }) {
+  const [reporting, setReporting] = useState(false);
   const features = [
     { icon: Banknote, title: "Payroll & payslips", desc: "Generated from the company template and delivered to your inbox every month." },
     { icon: CalendarDays, title: "Leave, signed digitally", desc: "Apply, attach proof and track approvals with signed decision letters." },
@@ -1255,8 +1326,15 @@ function AuthShell({ children, theme }) {
             {theme && <ThemeToggle theme={theme} />}
           </div>
           {children}
+          <div style={{ marginTop: 18, textAlign: "center", fontSize: 12.5, color: T.muted }}>
+            Having trouble?{" "}
+            <button type="button" onClick={() => setReporting(true)} style={{ background: "none", border: "none", color: T.teal, fontWeight: 650, cursor: "pointer", fontSize: 12.5, padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <LifeBuoy size={13} /> Report an issue
+            </button>
+          </div>
         </div>
       </main>
+      {reporting && <ReportIssueModal onClose={() => setReporting(false)} />}
     </div>
   );
 }

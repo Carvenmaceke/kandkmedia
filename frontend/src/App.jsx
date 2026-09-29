@@ -95,7 +95,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://kandkmedia.on
 const SUPPORT_CATEGORIES = ["System Malfunction / Bug", "Payslip Issue", "Leave Application Issue", "Account / Access Issue", "Other"];
 const OFFICE_ISSUE_TYPES = ["Hardware / Equipment", "Network / WiFi", "Printer / Scanner", "Workstation / Computer", "Other"];
 const SUPPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
-const OFFICES = ["Midrand", "Sandton", "Rosebank"];
+// HR assigns each person's office when scheduling their week — employees never pick it.
+const OFFICES = ["Midrand", "Rosebank"];
 const TICKET_STATUSES = ["Open", "In Progress", "Resolved"];
 
 // Sourced from K and K Media's internal "IT Operations Documentation"
@@ -174,7 +175,7 @@ const LEAVE_POLICY = {
 // real account, not sample data, and without it nobody could log in to
 // assign roles to anyone else.
 let EMPLOYEES = [
-  { id: "EMP-00001", name: "Carven Maceke", role: "master", level: null, position: "Jnr IT Specialist", dept: "IT", salary: 6500, manager: null, managerName: "Matuma Letsoalo (Executive Chairman)", employmentType: "12-month renewable contract", start: "2026-08-01", email: "carven.maceke@kandkmedia.co.za", phone: "0607950837", office: "Sandton", agreedToTerms: true, termsAgreedAt: new Date().toISOString() },
+  { id: "EMP-00001", name: "Carven Maceke", role: "master", level: null, position: "Jnr IT Specialist", dept: "IT", salary: 6500, manager: null, managerName: "Matuma Letsoalo (Executive Chairman)", employmentType: "12-month renewable contract", start: "2026-08-01", email: "carven.maceke@kandkmedia.co.za", phone: "0607950837", office: "Midrand", agreedToTerms: true, termsAgreedAt: new Date().toISOString() },
 ];
 
 const ROLE_LABEL = { master: "Master", admin: "Admin", hr: "HR", manager: "Manager", employee: "Employee", it_support: "IT Support" };
@@ -696,8 +697,10 @@ async function downloadPayslipPdf(emp, month, figures) {
   ["CONSTANTIA SQUARE OFFICE", "16TH ROAD", "RANDJESFONTEIN, MIDRAND", "1685"].forEach((l, i) => value(l, 294.4, 678 - 11 * i));
   label("Payment Date", 432.8, 678); value(periodDate ? periodDate.toLocaleDateString("en-GB") : "-", 496.8, 678);
   label("Date Engaged", 432.8, 665); value(fmtDate(emp.start), 496.8, 665);
-  label("Account No", 432.8, 652); value(fit(emp.bankAccountNumber, 76), 496.8, 652);
-  label("Branch Code", 432.8, 639); value(fit(emp.bankBranchCode, 76), 496.8, 639);
+  const bankValue = (v) => (v && String(v).trim() ? fit(v, 76) : "Not provided");
+  label("Bank", 432.8, 652); value(bankValue(emp.bankName), 496.8, 652);
+  label("Account No", 432.8, 639); value(bankValue(emp.bankAccountNumber), 496.8, 639);
+  label("Branch Code", 432.8, 626); value(bankValue(emp.bankBranchCode), 496.8, 626);
   line(230.4, 606, 230.4, 686); line(424.8, 606, 424.8, 686);
 
   // Earnings — monthly salary only
@@ -1045,7 +1048,7 @@ function Payslip({ emp, month, figures, onClose }) {
           <div className="kk-ps-panel">
             <div>{detail("Emp Code", emp.id)}{detail("Emp Name", legalName(emp).toUpperCase())}{detail("Position", emp.position)}</div>
             <div>{detail("Pay Period", month)}{detail("Department", emp.dept)}{detail("Office", emp.office)}</div>
-            <div>{detail("Date Engaged", emp.start)}{detail("Account No", emp.bankAccountNumber)}{detail("Branch Code", emp.bankBranchCode)}</div>
+            <div>{detail("Date Engaged", emp.start)}{detail("Bank", emp.bankName || "Not provided")}{detail("Account No", emp.bankAccountNumber || "Not provided")}{detail("Branch Code", emp.bankBranchCode || "Not provided")}</div>
           </div>
           <div style={{ padding: "0 22px" }}>
             <div className="kk-ps-box">
@@ -1512,7 +1515,7 @@ function ResetPasswordScreen({ email, onReset, onResend, goLogin, theme }) {
 function SignupScreen({ onSignup, goLogin, theme }) {
   const [form, setForm] = useState({
     name: "", email: "", phone: "", password: "", confirm: "",
-    role: "employee", dept: DEPARTMENTS[0], position: "", office: OFFICES[0], signature: null,
+    role: "employee", dept: DEPARTMENTS[0], position: "", signature: null,
   });
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
@@ -1623,12 +1626,6 @@ function SignupScreen({ onSignup, goLogin, theme }) {
           </div>
         </div>
 
-        <Field label="Office">
-          <select value={form.office} onChange={set("office")} style={inputStyle}>
-            {OFFICES.map((o) => <option key={o}>{o}</option>)}
-          </select>
-          <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Which office you're based at — used to route IT support requests to the right location.</div>
-        </Field>
 
         <div style={{ background: T.bg, borderRadius: 8, padding: "10px 12px", marginBottom: 14, fontSize: 11.5, color: T.muted }}>
           HR will add your personal, tax, and banking details (needed for payroll) once your account is created — you don't need to provide those here.
@@ -1934,7 +1931,7 @@ function mapBackendEmployee(be) {
     start: be.startDate || "",
     email: be.email,
     phone: be.phone || "",
-    office: be.office || OFFICES[0],
+    office: OFFICES.includes(be.office) ? be.office : "",
     employmentType: be.employmentType || "",
     active: be.active !== false,
     terminationDate: be.terminationDate || null,
@@ -1983,7 +1980,6 @@ function thisWeekDates(weekOffset = 0) {
 /* Office colours used by every schedule view. */
 const OFFICE_STYLE = {
   Midrand: { fg: T.teal, bg: T.tealLight },
-  Sandton: { fg: T.indigo, bg: T.indigoBg },
   Rosebank: { fg: T.purple, bg: T.purpleBg },
 };
 function OfficeChip({ office, full }) {
@@ -2157,7 +2153,7 @@ function TicketDetailModal({ ticket, onClose, onSave, onClear }) {
 
         <div style={{ marginTop: 14 }}>
           <label style={{ fontSize: 12, fontWeight: 700, color: T.muted }}>Response to {ticket.empName}</label>
-          <textarea value={response} onChange={(e) => setResponse(e.target.value)} rows={4} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="e.g. I'll be at the Sandton office from 2pm today and can look at this then…" />
+          <textarea value={response} onChange={(e) => setResponse(e.target.value)} rows={4} style={{ ...inputStyle, marginTop: 5, resize: "vertical" }} placeholder="e.g. I'll be at the Rosebank office from 2pm today and can look at this then…" />
         </div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "space-between" }}>
@@ -2344,7 +2340,7 @@ function SupportCenter({ emp, tickets, onSubmit, onBack, isAdminView, onUpdateTi
 
 /* ---------------------------------------------------------------------- */
 /* OFFICE ISSUES — separate feature: on-site hardware/network/equipment   */
-/* issues at a specific office (Midrand/Sandton), managed by IT Support   */
+/* issues at a specific office (Midrand/Rosebank), managed by IT Support  */
 /* ---------------------------------------------------------------------- */
 function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availability, onSetAvailability, onUpdateIssue, onClearIssue, onRefresh }) {
   const [view, setView] = useState(isAdminView ? "all" : "new");
@@ -2406,7 +2402,7 @@ function OfficeIssueCenter({ emp, issues, onSubmit, onBack, isAdminView, availab
         <Card style={{ padding: 16, marginBottom: 20 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: T.muted, marginBottom: 8 }}>Your Availability (shown to employees before they report an issue)</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <input value={availabilityDraft} onChange={(e) => setAvailabilityDraft(e.target.value)} style={{ ...inputStyle, flex: 1 }} placeholder="e.g. At the Midrand office until 1pm, then Sandton" />
+            <input value={availabilityDraft} onChange={(e) => setAvailabilityDraft(e.target.value)} style={{ ...inputStyle, flex: 1 }} placeholder="e.g. At the Midrand office until 1pm, then Rosebank" />
             <Button variant="teal" small onClick={() => onSetAvailability(availabilityDraft)}>Save</Button>
           </div>
         </Card>
@@ -2643,7 +2639,7 @@ function PersonalInfoSection({ emp, onSave }) {
 }
 
 function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
-  const [form, setForm] = useState({ name: emp.name, email: emp.email, phone: emp.phone || "", position: emp.position, dept: emp.dept, office: emp.office || OFFICES[0] });
+  const [form, setForm] = useState({ name: emp.name, email: emp.email, phone: emp.phone || "", position: emp.position, dept: emp.dept });
   const [saved, setSaved] = useState(false);
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
   const [pwMsg, setPwMsg] = useState(null);
@@ -2708,11 +2704,7 @@ function Settings({ emp, onSaveProfile, onChangePassword, onBack }) {
                 </Field>
               </div>
             </div>
-            <Field label="Office">
-              <select value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} style={inputStyle}>
-                {OFFICES.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </Field>
+            <div style={{ fontSize: 12, color: T.muted, margin: "-2px 0 12px" }}>Office: <strong style={{ color: T.text }}>{emp.office || "Not assigned yet"}</strong> — HR sets this when scheduling your week.</div>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <Button type="submit" variant="teal" small>Save Changes</Button>
               {saved && <Pill tone="green">Saved</Pill>}
@@ -4811,7 +4803,7 @@ export default function App() {
         id, name: form.name, role: form.role, level: null, dept: form.dept,
         position: form.position || (form.role === "hr" ? "HR Officer" : form.role === "admin" ? "System Administrator" : form.role === "it_support" ? "IT Support" : "Employee"),
         salary: 0, manager: null, start: "2026-09-10", email: form.email, phone: form.phone, password: form.password,
-        office: form.office || OFFICES[0],
+        office: null, // HR assigns the office when scheduling
         agreedToTerms: true, termsAgreedAt: new Date().toISOString(), onboardingSignature: form.signature,
         ...onboardingInfo,
       };
@@ -4828,7 +4820,7 @@ export default function App() {
     const infoKeys = PERSONAL_INFO_GROUPS.flatMap((g) => g.fields.map(([key]) => key));
     const payload = {
       firstName, lastName, email: form.email, password: form.password,
-      phone: form.phone, position: form.position, department: form.dept, office: form.office,
+      phone: form.phone, position: form.position, department: form.dept,
       agreedToTerms: true, signature: form.signature,
       ...Object.fromEntries(infoKeys.map((k) => [k, form[k] || null])),
     };
@@ -4919,6 +4911,7 @@ export default function App() {
     // The master's displayed name/position are masked — never write those back.
     const fields = { ...input };
     if (loginEmp && loginEmp.role === "master") { delete fields.name; delete fields.position; }
+    delete fields.office; // only HR sets offices (through the schedule)
     const payload = { ...fields };
     if (payload.name) {
       const [fn, ...rest] = payload.name.trim().split(/\s+/);

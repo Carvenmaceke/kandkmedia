@@ -83,7 +83,14 @@ public class EmployeeProfileService {
 
         if (dto.getPhone() != null) e.setPhone(dto.getPhone());
         if (dto.getPosition() != null) e.setPosition(dto.getPosition());
-        if (dto.getOffice() != null) e.setOffice(dto.getOffice());
+        // Only HR sets someone's office (through their schedule); self-service edits ignore it.
+        if (dto.getOffice() != null && allowSalaryEdit) {
+            String office = dto.getOffice().trim();
+            if (!office.isEmpty() && !WorkScheduleService.OFFICES.contains(office)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Office must be one of " + String.join(", ", WorkScheduleService.OFFICES) + ".");
+            }
+            e.setOffice(office.isEmpty() ? null : office);
+        }
         if (dto.getEmploymentType() != null) e.setEmploymentType(dto.getEmploymentType());
         if (dto.getRateType() != null) e.setRateType(dto.getRateType());
         if (dto.getSalary() != null) e.setSalary(dto.getSalary());

@@ -327,7 +327,7 @@ HR gives each employee a plan on the Work Schedule screen
 - `{"daysPerWeek": null}` clears a plan; `DELETE /api/hr/schedule` clears all.
 
 `GET /api/hr/schedule/week?start=YYYY-MM-DD` returns any week's schedule,
-headcount vs desk capacity (Midrand, Sandton, Rosebank) and warnings.
+headcount vs desk capacity (Midrand, Rosebank) and warnings. Offices are Midrand and Rosebank only; employees never pick one at sign-up — HR assigns it through the schedule (the office with most scheduled days becomes their office).
 Schedules are computed live (`WorkScheduleService`), so there's nothing to
 regenerate. Employees see this and next week at `GET /api/me/schedule`.
 

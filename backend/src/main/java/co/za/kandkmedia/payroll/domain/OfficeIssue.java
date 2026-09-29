@@ -32,7 +32,7 @@ public class OfficeIssue {
     private String department;
 
     @Column(nullable = false)
-    private String office; // "Midrand" or "Sandton"
+    private String office; // "Midrand" or "Rosebank"
 
     @Column(nullable = false)
     private String subject;

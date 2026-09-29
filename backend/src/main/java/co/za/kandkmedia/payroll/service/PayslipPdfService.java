@@ -178,10 +178,13 @@ public class PayslipPdfService {
         value(cs, 496.8f, 678, paymentDate(payroll.getPayPeriod()));
         label(cs, 432.8f, 665, "Date Engaged");
         value(cs, 496.8f, 665, employee.getStartDate() != null ? employee.getStartDate().format(DATE_FMT) : "-");
-        label(cs, 432.8f, 652, "Account No");
-        value(cs, 496.8f, 652, fit(dash(employee.getBankAccountNumber()), 76));
-        label(cs, 432.8f, 639, "Branch Code");
-        value(cs, 496.8f, 639, fit(dash(employee.getBankBranchCode()), 76));
+        // Banking details appear as soon as HR (or the employee at sign-up) has filled them in.
+        label(cs, 432.8f, 652, "Bank");
+        value(cs, 496.8f, 652, fit(orNotProvided(employee.getBankName()), 76));
+        label(cs, 432.8f, 639, "Account No");
+        value(cs, 496.8f, 639, fit(orNotProvided(employee.getBankAccountNumber()), 76));
+        label(cs, 432.8f, 626, "Branch Code");
+        value(cs, 496.8f, 626, fit(orNotProvided(employee.getBankBranchCode()), 76));
 
         cs.setStrokingColor(RULE);
         line(cs, 230.4f, 606, 230.4f, 686);
@@ -468,6 +471,10 @@ public class PayslipPdfService {
 
     private static boolean notBlank(String s) {
         return s != null && !s.isBlank();
+    }
+
+    private static String orNotProvided(String s) {
+        return notBlank(s) ? s.trim() : "Not provided";
     }
 
     private static String dash(String s) {

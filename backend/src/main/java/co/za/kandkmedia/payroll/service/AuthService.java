@@ -151,7 +151,7 @@ public class AuthService {
                 .email(email)
                 .phone(req.getPhone())
                 .position(req.getPosition())
-                .office(req.getOffice())
+                .office(null) // HR assigns the office when scheduling — employees don't pick it
                 .department(department)
                 .level(level)
                 .salary(BigDecimal.ZERO)

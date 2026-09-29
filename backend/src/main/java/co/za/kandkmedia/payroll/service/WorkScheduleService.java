@@ -48,7 +48,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class WorkScheduleService {
 
-    public static final List<String> OFFICES = List.of("Midrand", "Sandton", "Rosebank");
+    public static final List<String> OFFICES = List.of("Midrand", "Rosebank");
     public static final String ROTATING = "ROTATING";
     public static final String FIXED = "FIXED";
 
@@ -137,6 +137,9 @@ public class WorkScheduleService {
             e.setOfficeDays(null);
             e.setDaysPerWeek(fixed.size());
             e.setAssignedWorkDays(null);
+            Map<String, Integer> perOffice = new LinkedHashMap<>();
+            fixed.values().forEach(o -> perOffice.merge(o, 1, Integer::sum));
+            e.setOffice(mainOffice(perOffice));
             return employeeRepository.save(e);
         }
         throw bad("mode must be ROTATING or FIXED.");
@@ -155,7 +158,49 @@ public class WorkScheduleService {
         e.setFixedDays(null);
         e.setDaysPerWeek(total);
         e.setAssignedWorkDays(null);
+        e.setOffice(mainOffice(clean));
         return e;
+    }
+
+    /** The office HR schedules someone at most — becomes their office (employees never pick it themselves). */
+    private static String mainOffice(Map<String, Integer> daysPerOffice) {
+        return daysPerOffice.entrySet().stream()
+                .max(Comparator.comparingInt((Map.Entry<String, Integer> x) -> x.getValue())
+                        .thenComparing(x -> -OFFICES.indexOf(x.getKey())))
+                .map(Map.Entry::getKey).orElse(null);
+    }
+
+    /**
+     * Offices are Midrand and Rosebank only. At startup, anyone still set to a removed office
+     * (e.g. Sandton) is cleared for HR to assign, and schedule days at a removed office move to Midrand.
+     */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void dropRemovedOffices() {
+        String fallback = OFFICES.get(0);
+        List<Employee> changed = new ArrayList<>();
+        for (Employee e : employeeRepository.findAll()) {
+            boolean dirty = false;
+            if (e.getOffice() != null && !OFFICES.contains(e.getOffice())) {
+                e.setOffice(null);
+                dirty = true;
+            }
+            Map<String, Integer> counts = readJson(e.getOfficeDays(), new TypeReference<Map<String, Integer>>() {});
+            if (counts.keySet().stream().anyMatch(o -> !OFFICES.contains(o))) {
+                Map<String, Integer> fixedCounts = new LinkedHashMap<>();
+                counts.forEach((o, n) -> fixedCounts.merge(OFFICES.contains(o) ? o : fallback, n == null ? 0 : n, Integer::sum));
+                e.setOfficeDays(writeJson(fixedCounts));
+                dirty = true;
+            }
+            Map<String, String> fixedDays = readJson(e.getFixedDays(), new TypeReference<Map<String, String>>() {});
+            if (fixedDays.values().stream().anyMatch(o -> !OFFICES.contains(o))) {
+                Map<String, String> remapped = new LinkedHashMap<>();
+                fixedDays.forEach((d, o) -> remapped.put(d, OFFICES.contains(o) ? o : fallback));
+                e.setFixedDays(writeJson(remapped));
+                dirty = true;
+            }
+            if (dirty) changed.add(e);
+        }
+        if (!changed.isEmpty()) employeeRepository.saveAll(changed);
     }
 
     private Employee clear(Employee e) {
@@ -336,7 +381,6 @@ public class WorkScheduleService {
         Company c = company();
         Map<String, Integer> cap = new LinkedHashMap<>();
         cap.put("Midrand", c.getMidrandCapacity());
-        cap.put("Sandton", c.getSandtonCapacity());
         cap.put("Rosebank", c.getRosebankCapacity() != null ? c.getRosebankCapacity() : 10);
         return cap;
     }
@@ -348,7 +392,6 @@ public class WorkScheduleService {
             if (n < 0) throw bad("Capacity can't be negative.");
             switch (checkOffice(office)) {
                 case "Midrand" -> c.setMidrandCapacity(n);
-                case "Sandton" -> c.setSandtonCapacity(n);
                 case "Rosebank" -> c.setRosebankCapacity(n);
                 default -> { }
             }

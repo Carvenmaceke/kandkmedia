@@ -55,6 +55,7 @@ class PayslipPdfServiceTest {
                 .startDate(LocalDate.of(2026, 8, 1))
                 .bankAccountNumber("1706477870")
                 .bankBranchCode("470010")
+                .bankName("Capitec")
                 .resStreetNumber("42")
                 .resStreetName("Example Street")
                 .resSuburb("Sandton")
@@ -106,7 +107,7 @@ class PayslipPdfServiceTest {
         assertThat(text).doesNotContain("DEDUCTIONS", "Tax", "U.I.F", "Normal Time", "Days", "Overtime", "Opening Bal.", "Co. Contributions");
         // Per-employee values
         assertThat(text).contains("K & K MEDIA (PTY) LTD", "EMP-00042", "BELLE PETERSEN", "42 EXAMPLE STREET",
-                "SANDTON, JOHANNESBURG", "30/09/2026", "01/08/2026", "1706477870", "470010");
+                "SANDTON, JOHANNESBURG", "30/09/2026", "01/08/2026", "Capitec", "1706477870", "470010");
         // Salary = total earnings = nett pay
         assertThat(text).contains("22,000.00", "R 22,000.00");
         assertThat(text).contains("September 2026", "Graphic Designer", "Creative Services", "PAY-2026-09-000042", "ABC123XYZ");
@@ -147,6 +148,6 @@ class PayslipPdfServiceTest {
 
         String text = render(payroll);
 
-        assertThat(text).contains("EMP-00007", "NKOSI", "R 0.00");
+        assertThat(text).contains("EMP-00007", "NKOSI", "R 0.00", "Not provided"); // no banking details on file yet
     }
 }

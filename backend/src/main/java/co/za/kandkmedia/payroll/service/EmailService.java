@@ -65,10 +65,6 @@ public class EmailService {
     @Value("${app.mail-from:payroll@kandkmedia.co.za}")
     private String fromAddress;
 
-    /** Where employees sign in — linked from payslip notices. */
-    @Value("${app.portal-url:https://carvenmaceke.github.io/kandkmedia/}")
-    private String portalUrl;
-
     @Value("${app.support-email:itsupport@kandkmedia.co.za}")
     private String supportEmail;
 
@@ -417,8 +413,9 @@ public class EmailService {
         String text = "Hi " + employee.getFirstName() + ",\n\n" +
                 "Your payslip for " + month + " has been processed and is now available to download.\n\n" +
                 "To view or download it:\n" +
-                "1. Sign in at " + portalUrl + "\n" +
-                "2. Open Payroll & Leave > My Payslips\n\n" +
+                "1. Log in to the K and K Media portal\n" +
+                "2. Go to Payroll & Leave\n" +
+                "3. Open My Payslips\n\n" +
                 "If anything on your payslip looks wrong, log a Payslip Issue under Support in the app.\n\n" +
                 "Regards,\nK and K Media Payroll";
 
@@ -451,17 +448,17 @@ public class EmailService {
     public boolean sendLeaveLetter(co.za.kandkmedia.payroll.domain.LeaveRequest request) {
         Employee employee = request.getEmployee();
         boolean approved = request.getStatus() == co.za.kandkmedia.payroll.domain.LeaveStatus.APPROVED;
-        byte[] pdf = leaveLetterPdfService.generate(request);
-
         String subject = "Your " + request.getLeaveType().getName() + " request has been " + (approved ? "approved" : "declined");
         String text = "Hi " + employee.getFirstName() + ",\n\n" +
                 "Your " + request.getLeaveType().getName() + " request (" + request.getStartDate() + " to " + request.getEndDate() + ") has been " +
                 (approved ? "approved." : "declined.") +
                 (!approved && request.getDecisionReason() != null ? "\n\nReason: " + request.getDecisionReason() : "") +
-                "\n\nThe signed letter is attached.\n\nRegards,\nK and K Media";
-        String filename = "Leave-" + request.getStatus() + "-" + request.getId() + "-" + employee.getEmployeeCode() + ".pdf";
+                "\n\nTo view or download your signed leave letter:\n" +
+                "1. Log in to the K and K Media portal\n" +
+                "2. Go to Payroll & Leave\n" +
+                "3. Open Leave History\n\nRegards,\nK and K Media";
 
-        SendResult result = send(employee.getEmail(), null, subject, text, filename, pdf);
+        SendResult result = send(employee.getEmail(), null, subject, text, null, null);
         request.setLetterEmailSent(result.ok());
         request.setLetterEmailFailureReason(result.ok() ? null : result.errorMessage());
         return result.ok();

@@ -229,7 +229,6 @@ class EmailServiceTest {
         @Test
         void payslipEmailIsANoticeWithoutThePdf() {
             EmailService svc = emailJs();
-            ReflectionTestUtils.setField(svc, "portalUrl", "https://carvenmaceke.github.io/kandkmedia/");
             co.za.kandkmedia.payroll.domain.Employee e = co.za.kandkmedia.payroll.domain.Employee.builder()
                     .firstName("Thabo").lastName("M").email("thabo@kandkmedia.co.za").employeeCode("EMP-00001").build();
             co.za.kandkmedia.payroll.domain.Payroll p = co.za.kandkmedia.payroll.domain.Payroll.builder().employee(e).payPeriod("2026-09").build();
@@ -237,9 +236,24 @@ class EmailServiceTest {
             assertThat(svc.sendPayslip(p)).isTrue();
             assertThat(p.isEmailSent()).isTrue();
             assertThat(bodies.get(0)).contains("Your September 2026 payslip is available")
-                    .contains("available to download").contains("https://carvenmaceke.github.io/kandkmedia/")
-                    .contains("My Payslips").doesNotContain("couldn't be attached");
+                    .contains("available to download").contains("Log in to the K and K Media portal")
+                    .contains("Go to Payroll & Leave").contains("My Payslips").doesNotContain("http").doesNotContain("couldn't be attached");
             assertThat(brevoBodies).isEmpty();
+        }
+
+        @Test
+        void leaveDecisionEmailIsANoticeWithoutThePdf() {
+            co.za.kandkmedia.payroll.domain.Employee e = co.za.kandkmedia.payroll.domain.Employee.builder()
+                    .firstName("Thabo").lastName("M").email("thabo@kandkmedia.co.za").employeeCode("EMP-00001").build();
+            co.za.kandkmedia.payroll.domain.LeaveType type = new co.za.kandkmedia.payroll.domain.LeaveType();
+            type.setName("Annual Leave");
+            co.za.kandkmedia.payroll.domain.LeaveRequest r = new co.za.kandkmedia.payroll.domain.LeaveRequest();
+            r.setEmployee(e); r.setLeaveType(type); r.setStatus(co.za.kandkmedia.payroll.domain.LeaveStatus.APPROVED);
+            r.setStartDate(java.time.LocalDate.of(2026, 10, 1)); r.setEndDate(java.time.LocalDate.of(2026, 10, 3));
+
+            assertThat(emailJs().sendLeaveLetter(r)).isTrue();
+            assertThat(bodies.get(0)).contains("has been approved").contains("Go to Payroll & Leave").contains("Leave History")
+                    .doesNotContain("http").doesNotContain("couldn't be attached");
         }
 
         @Test

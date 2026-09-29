@@ -106,7 +106,7 @@ public class DataSeeder implements CommandLineRunner {
                 .startDate(LocalDate.now())
                 .email("carven.maceke@kandkmedia.co.za")
                 .phone("0607950837")
-                .office("Sandton")
+                .office("Midrand")
                 .company(company)
                 .agreedToTerms(true)
                 .build());

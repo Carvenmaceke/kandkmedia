@@ -103,14 +103,14 @@ class WorkScheduleServiceTest {
 
     @Test
     void everyDayAndMandatoryFixedDaysAreKeptExactly() {
-        Employee everyDay = person(1, "Sandton");
+        Employee everyDay = person(1, "Rosebank");
         service.updatePlan(everyDay, Map.of("mode", "FIXED", "fixedDays", Map.of(
-                "MONDAY", "Sandton", "TUESDAY", "Sandton", "WEDNESDAY", "Sandton", "THURSDAY", "Sandton", "FRIDAY", "Sandton")));
+                "MONDAY", "Rosebank", "TUESDAY", "Rosebank", "WEDNESDAY", "Rosebank", "THURSDAY", "Rosebank", "FRIDAY", "Rosebank")));
         Employee mandatory = person(2, "Midrand");
         service.updatePlan(mandatory, Map.of("mode", "FIXED", "fixedDays", Map.of("MONDAY", "Midrand", "TUESDAY", "Midrand", "WEDNESDAY", "Rosebank")));
 
         for (int w = 0; w < 3; w++) {
-            assertThat(week(everyDay, w)).hasSize(5).containsValue("Sandton").doesNotContainValue("Midrand");
+            assertThat(week(everyDay, w)).hasSize(5).containsValue("Rosebank").doesNotContainValue("Midrand");
             assertThat(week(mandatory, w)).containsEntry(DayOfWeek.MONDAY, "Midrand").containsEntry(DayOfWeek.TUESDAY, "Midrand")
                     .containsEntry(DayOfWeek.WEDNESDAY, "Rosebank").hasSize(3);
         }
@@ -136,9 +136,9 @@ class WorkScheduleServiceTest {
 
     @Test
     void legacyDaysPerWeekCountsAsRotatingAtHomeOffice() {
-        Employee e = person(1, "Sandton");
+        Employee e = person(1, "Rosebank");
         e.setDaysPerWeek(2);
-        assertThat(week(e, 0)).hasSize(2).containsValue("Sandton");
+        assertThat(week(e, 0)).hasSize(2).containsValue("Rosebank");
     }
 
     @Test
@@ -162,11 +162,46 @@ class WorkScheduleServiceTest {
         assertThat(a.getDaysPerWeek()).isNull();
 
         Employee b = rotating(2, Map.of("Midrand", 2));
-        Employee c = person(3, "Sandton");
-        service.updatePlan(c, Map.of("mode", "FIXED", "fixedDays", Map.of("MONDAY", "Sandton")));
+        Employee c = person(3, "Rosebank");
+        service.updatePlan(c, Map.of("mode", "FIXED", "fixedDays", Map.of("MONDAY", "Rosebank")));
         service.resetAll();
         assertThat(service.planOf(b)).isNull();
         assertThat(service.planOf(c)).isNull();
         assertThat(service.weekSchedule(MONDAY).days()).isEmpty();
+    }
+
+    @Test
+    void onlyMidrandAndRosebankAreOffices() {
+        assertThat(WorkScheduleService.OFFICES).containsExactly("Midrand", "Rosebank");
+        assertThat(service.capacity()).containsOnlyKeys("Midrand", "Rosebank");
+        Employee e = person(1, "Midrand");
+        assertThatThrownBy(() -> service.updatePlan(e, Map.of("mode", "ROTATING", "officeDays", Map.of("Sandton", 2))))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("Unknown office");
+    }
+
+    @Test
+    void schedulingSetsTheOfficeFromThePlan() {
+        Employee e = person(1, null);
+        service.updatePlan(e, Map.of("mode", "ROTATING", "officeDays", Map.of("Midrand", 1, "Rosebank", 2)));
+        assertThat(e.getOffice()).isEqualTo("Rosebank");
+        service.updatePlan(e, Map.of("mode", "FIXED", "fixedDays", Map.of("MONDAY", "Midrand", "TUESDAY", "Midrand", "FRIDAY", "Rosebank")));
+        assertThat(e.getOffice()).isEqualTo("Midrand");
+    }
+
+    @Test
+    void removedOfficesAreClearedAndTheirDaysMoveToMidrand() {
+        Employee a = person(1, "Sandton");
+        a.setScheduleMode("ROTATING");
+        a.setOfficeDays("{\"Sandton\":2,\"Rosebank\":1}");
+        Employee b = person(2, "Rosebank");
+        b.setScheduleMode("FIXED");
+        b.setFixedDays("{\"MONDAY\":\"Sandton\",\"TUESDAY\":\"Rosebank\"}");
+
+        service.dropRemovedOffices();
+
+        assertThat(a.getOffice()).isNull();
+        assertThat(service.planOf(a).officeDays()).containsEntry("Midrand", 2).containsEntry("Rosebank", 1).doesNotContainKey("Sandton");
+        assertThat(b.getOffice()).isEqualTo("Rosebank");
+        assertThat(service.planOf(b).fixedDays()).containsEntry(DayOfWeek.MONDAY, "Midrand").containsEntry(DayOfWeek.TUESDAY, "Rosebank");
     }
 }

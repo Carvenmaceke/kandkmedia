@@ -83,4 +83,42 @@ class EmployeeProfileServiceTest {
         assertThat(result.getPosition()).isEqualTo("Senior Developer");
         assertThat(result.getSalary()).isEqualByComparingTo(BigDecimal.valueOf(20000)); // unchanged
     }
+
+    @Test
+    void bankingDetailsHrFillsInAreSavedForThePayslip() {
+        Employee employee = employee();
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+        when(employeeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        EmployeeProfileDto dto = new EmployeeProfileDto();
+        dto.setBankName("Capitec");
+        dto.setBankAccountNumber("1706477870");
+        dto.setBankBranchCode("470010");
+        Employee result = service.updateProfile(1L, dto, true);
+
+        assertThat(result.getBankName()).isEqualTo("Capitec");
+        assertThat(result.getBankAccountNumber()).isEqualTo("1706477870");
+        assertThat(result.getBankBranchCode()).isEqualTo("470010");
+    }
+
+    @Test
+    void onlyHrSetsTheOfficeAndOnlyMidrandOrRosebank() {
+        Employee employee = employee();
+        employee.setOffice("Midrand");
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+        when(employeeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        EmployeeProfileDto self = new EmployeeProfileDto();
+        self.setOffice("Rosebank");
+        assertThat(service.updateProfile(1L, self, false).getOffice()).isEqualTo("Midrand"); // ignored for employees
+
+        EmployeeProfileDto hr = new EmployeeProfileDto();
+        hr.setOffice("Rosebank");
+        assertThat(service.updateProfile(1L, hr, true).getOffice()).isEqualTo("Rosebank");
+
+        EmployeeProfileDto bad = new EmployeeProfileDto();
+        bad.setOffice("Sandton");
+        assertThatThrownBy(() -> service.updateProfile(1L, bad, true))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("Midrand, Rosebank");
+    }
 }

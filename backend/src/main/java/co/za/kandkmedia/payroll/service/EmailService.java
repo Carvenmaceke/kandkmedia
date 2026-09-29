@@ -450,7 +450,7 @@ public class EmailService {
         boolean approved = request.getStatus() == co.za.kandkmedia.payroll.domain.LeaveStatus.APPROVED;
         String subject = "Your " + request.getLeaveType().getName() + " request has been " + (approved ? "approved" : "declined");
         String text = "Hi " + employee.getFirstName() + ",\n\n" +
-                "Your " + request.getLeaveType().getName() + " request (" + request.getStartDate() + " to " + request.getEndDate() + ") has been " +
+                "This confirms that your " + request.getLeaveType().getName() + " request (" + request.getStartDate() + " to " + request.getEndDate() + ") has been " +
                 (approved ? "approved." : "declined.") +
                 (!approved && request.getDecisionReason() != null ? "\n\nReason: " + request.getDecisionReason() : "") +
                 "\n\nTo view or download your signed leave letter:\n" +
@@ -549,6 +549,60 @@ public class EmailService {
         issue.setEmailSent(result.ok());
         issue.setEmailFailureReason(result.ok() ? null : result.errorMessage());
         return result.ok();
+    }
+
+    /**
+     * Confirms to the employee that their System Issue (support ticket) or Office Issue was logged.
+     * Best effort: a failure is logged but never blocks the submission. Returns whether it went out.
+     */
+    public boolean sendIssueReceived(String kind, Long id, String toEmail, String employeeName, String subject,
+                                     String category, String priority, String office) {
+        if (toEmail == null || toEmail.isBlank()) return false;
+        String text = "Hi " + firstNameOf(employeeName) + ",\n\n" +
+                "Your " + kind + " has been logged and IT support has been notified.\n\n" +
+                "Reference: #" + id + "\n" +
+                "Subject: " + nullToDash(subject) + "\n" +
+                "Type: " + nullToDash(category) + "\n" +
+                "Priority: " + nullToDash(priority) + "\n" +
+                (office != null && !office.isBlank() ? "Office: " + office + "\n" : "") +
+                "Status: Open\n\n" +
+                "We'll email you whenever there's an update.\n\n" +
+                "Regards,\nK and K Media IT Support";
+        SendResult r = send(toEmail, supportEmail, kind + " #" + id + " received: " + subject, text, null, null);
+        if (!r.ok()) log.warn("Couldn't send {} #{} confirmation to {}: {}", kind, id, toEmail, r.errorMessage());
+        return r.ok();
+    }
+
+    /** Tells the employee their System Issue / Office Issue has a new status and/or a reply from IT. */
+    public boolean sendIssueUpdate(String kind, Long id, String toEmail, String employeeName, String subject,
+                                   co.za.kandkmedia.payroll.domain.TicketStatus status, String response) {
+        if (toEmail == null || toEmail.isBlank()) return false;
+        String statusLabel = switch (status) {
+            case IN_PROGRESS -> "In Progress";
+            case RESOLVED -> "Resolved";
+            default -> "Open";
+        };
+        String headline = switch (status) {
+            case IN_PROGRESS -> "IT support is now working on it.";
+            case RESOLVED -> "It has been marked as resolved.";
+            default -> "It is open and waiting for IT support.";
+        };
+        String text = "Hi " + firstNameOf(employeeName) + ",\n\n" +
+                "There's an update on your " + kind + " #" + id + " (\"" + nullToDash(subject) + "\"). " + headline + "\n\n" +
+                "Status: " + statusLabel + "\n" +
+                (response != null && !response.isBlank() ? "\nMessage from IT support:\n" + response.trim() + "\n" : "") +
+                (status == co.za.kandkmedia.payroll.domain.TicketStatus.RESOLVED
+                        ? "\nIf the problem is still there, log a new issue in the app and mention reference #" + id + ".\n"
+                        : "\nWe'll email you again when there's another update.\n") +
+                "\nRegards,\nK and K Media IT Support";
+        SendResult r = send(toEmail, supportEmail, "Update on your " + kind + " #" + id + ": " + statusLabel, text, null, null);
+        if (!r.ok()) log.warn("Couldn't send {} #{} update to {}: {}", kind, id, toEmail, r.errorMessage());
+        return r.ok();
+    }
+
+    private static String firstNameOf(String fullName) {
+        if (fullName == null || fullName.isBlank()) return "there";
+        return fullName.trim().split("\\s+")[0];
     }
 
     private String nullToDash(String s) {

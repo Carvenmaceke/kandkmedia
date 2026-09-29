@@ -40,6 +40,8 @@ public class SupportService {
 
         ticket = supportTicketRepository.save(ticket);
         emailService.sendSupportRequest(ticket);
+        emailService.sendIssueReceived("System Issue", ticket.getId(), ticket.getEmployeeEmail(), ticket.getEmployeeName(), ticket.getSubject(),
+                ticket.getCategory(), ticket.getPriority(), null);
         return supportTicketRepository.save(ticket);
     }
 
@@ -57,16 +59,27 @@ public class SupportService {
             case "resolved" -> TicketStatus.RESOLVED;
             default -> TicketStatus.OPEN;
         };
+        boolean statusChanged = ticket.getStatus() != mapped;
+        boolean newReply = response != null && !response.isBlank() && !response.trim().equals(ticket.getResponse() == null ? "" : ticket.getResponse().trim());
         ticket.setStatus(mapped);
         ticket.setResponse(response);
-        return supportTicketRepository.save(ticket);
+        ticket = supportTicketRepository.save(ticket);
+        if (statusChanged || newReply) {
+            emailService.sendIssueUpdate("System Issue", ticket.getId(), ticket.getEmployeeEmail(), ticket.getEmployeeName(), ticket.getSubject(), mapped, response);
+        }
+        return ticket;
     }
 
     public SupportTicket resolve(Long id) {
         SupportTicket ticket = supportTicketRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Support ticket not found."));
+        boolean statusChanged = ticket.getStatus() != TicketStatus.RESOLVED;
         ticket.setStatus(TicketStatus.RESOLVED);
-        return supportTicketRepository.save(ticket);
+        ticket = supportTicketRepository.save(ticket);
+        if (statusChanged) {
+            emailService.sendIssueUpdate("System Issue", ticket.getId(), ticket.getEmployeeEmail(), ticket.getEmployeeName(), ticket.getSubject(), TicketStatus.RESOLVED, ticket.getResponse());
+        }
+        return ticket;
     }
 
     /** Removes a ticket from the list entirely — only once it's Resolved,

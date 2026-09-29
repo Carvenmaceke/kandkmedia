@@ -257,6 +257,19 @@ class EmailServiceTest {
         }
 
         @Test
+        void issueEmailsSpellOutTheTicketAndTheUpdate() {
+            EmailService svc = emailJs();
+            assertThat(svc.sendIssueReceived("Office Issue", 9L, "thabo@kandkmedia.co.za", "Thabo Mokoena", "Printer jam", "Printer/Scanner", "Low", "Rosebank")).isTrue();
+            assertThat(bodies.get(0)).contains("Office Issue #9 received: Printer jam").contains("Hi Thabo,")
+                    .contains("has been logged").contains("Office: Rosebank").contains("Status: Open");
+
+            assertThat(svc.sendIssueUpdate("System Issue", 7L, "thabo@kandkmedia.co.za", "Thabo Mokoena", "Can't log in",
+                    co.za.kandkmedia.payroll.domain.TicketStatus.RESOLVED, "Password reset — try again")).isTrue();
+            assertThat(bodies.get(1)).contains("Update on your System Issue #7: Resolved").contains("There's an update")
+                    .contains("marked as resolved").contains("Message from IT support:").contains("Password reset — try again");
+        }
+
+        @Test
         void explainsTheNonBrowserSetting() {
             status = 403; reply = "API calls are disabled for non-browser applications";
             assertThat(emailJs().sendTestEmail("someone@kandkmedia.co.za").errorMessage()).contains("Allow EmailJS API for non-browser applications");

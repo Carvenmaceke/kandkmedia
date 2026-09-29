@@ -1,0 +1,28 @@
+name: Deploy Backend to Render
+
+# After Backend CI passes on main, ask Render to redeploy the backend.
+# The deploy hook URL is a secret: add it in GitHub under
+# Settings > Secrets and variables > Actions > New repository secret,
+# named RENDER_DEPLOY_HOOK. Without it this workflow does nothing.
+on:
+  workflow_run:
+    workflows: ["Backend CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK secret not set - skipping deploy."
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK" > /dev/null
+          echo "Render deploy triggered."

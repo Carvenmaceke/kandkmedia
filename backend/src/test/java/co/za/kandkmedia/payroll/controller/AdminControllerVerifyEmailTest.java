@@ -30,7 +30,8 @@ class AdminControllerVerifyEmailTest {
             Mockito.mock(CompanyRepository.class), Mockito.mock(DepartmentRepository.class),
             Mockito.mock(EmployeeLevelRepository.class), userRepository,
             Mockito.mock(SupportService.class), Mockito.mock(OfficeIssueService.class),
-            Mockito.mock(PayrollSettingsRepository.class), Mockito.mock(EmailService.class));
+            Mockito.mock(PayrollSettingsRepository.class), Mockito.mock(EmailService.class),
+            Mockito.mock(co.za.kandkmedia.payroll.service.AccountCleanupService.class));
 
     @Test
     void verifiesAnUnverifiedAccountAndClearsItsCode() {

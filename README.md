@@ -38,3 +38,22 @@ is further along.
 ## License
 
 Proprietary — see [`LICENSE`](./LICENSE). Internal use only.
+
+## Hosting on the company domain (no github.io address)
+
+The frontend can be served from Render at the root of its own domain, e.g.
+`portal.kandkmedia.co.za`, instead of GitHub Pages:
+
+1. Render → **New → Static Site** → this repository.
+   - Root directory: `frontend`
+   - Build command: `npm install && npm run build`
+   - Publish directory: `dist`
+   - Environment variable: `VITE_BASE=/`
+2. Render → the static site → **Settings → Custom Domains** → add `portal.kandkmedia.co.za`,
+   then add the CNAME record Render shows in the domain's DNS (Afrihost).
+3. Optional: give the backend `api.kandkmedia.co.za` the same way and rebuild the
+   frontend with `VITE_API_BASE_URL=https://api.kandkmedia.co.za`.
+4. Once the new address works: make the repository private and turn off GitHub Pages
+   (repository Settings → Pages). Render keeps deploying from a private repository.
+
+The backend already accepts requests from `*.kandkmedia.co.za` and `*.onrender.com`.

@@ -90,12 +90,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // The frontend is currently deployed on GitHub Pages and Netlify —
-        // both patterns are needed until/unless it moves to a
-        // kandkmedia.co.za custom domain.
+        // The company domain (e.g. portal.kandkmedia.co.za), plus Render's own
+        // *.onrender.com address and the older GitHub Pages / Netlify hosts.
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:*",
+                "https://kandkmedia.co.za",
                 "https://*.kandkmedia.co.za",
+                "https://*.onrender.com",
                 "https://carvenmaceke.github.io",
                 "https://*.netlify.app"
         ));
